@@ -1,19 +1,32 @@
 #!/usr/bin/env -S uv run --script
 # /// script
+# requires-python = ">=3.14"
 # dependencies = [
 #   "pygls",
+#   "rich",
 #   "tree-sitter",
 #   "tree-sitter-language-pack",
+#   "typer",
 # ]
 # ///
 
 import logging
+import sys
+import unittest
+from dataclasses import dataclass
 from textwrap import dedent
+from typing import Callable, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
+import typer
 from pygls.server import LanguageServer
 from tree_sitter_language_pack import get_language, get_parser
+
+app = typer.Typer(
+    no_args_is_help=True,
+    rich_markup_mode="markdown",
+)
 
 logging.basicConfig(
     filename="pygls.log",
@@ -22,12 +35,154 @@ logging.basicConfig(
 )
 
 
+@dataclass
+class Expr:
+    range: L.Range
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Expr":
+        dispatch: dict[str, Callable[[T.Node], "Expr"]] = {
+            "array": Array.from_tree,
+            "document": Document.from_tree,
+            "id": Id.from_tree,
+            "local_bind": Local.from_tree,
+            "number": Number.from_tree,
+            "string_content": Str.from_tree,
+        }
+
+        return dispatch[node.type](node)
+
+
+@dataclass
+class Document(Expr):
+    body: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Document":
+        return Document(
+            range=lsp_range_of(node),
+            body=Expr.from_tree(node.named_children[0]),
+        )
+
+
+@dataclass
+class Id(Expr):
+    name: str
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Id":
+        assert node.text is not None
+        return Id(
+            range=lsp_range_of(node),
+            name=node.text.decode(),
+        )
+
+
+@dataclass
+class Number(Expr):
+    value: float
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Number":
+        assert node.text is not None
+        return Number(
+            range=lsp_range_of(node),
+            value=float(node.text.decode()),
+        )
+
+
+@dataclass
+class Str(Expr):
+    value: str
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Str":
+        assert node.text is not None
+        return Str(
+            range=lsp_range_of(node),
+            value=node.text.decode(),
+        )
+
+
+@dataclass
+class Bool(Expr):
+    value: bool
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Bool":
+        assert node.text is not None
+        return Bool(
+            range=lsp_range_of(node),
+            value=node.text.decode() == "true",
+        )
+
+
+@dataclass
+class Array(Expr):
+    values: list[Expr]
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Array":
+        return Array(
+            range=lsp_range_of(node),
+            values=[Expr.from_tree(c) for c in node.named_children],
+        )
+
+
+@dataclass
+class Bind:
+    range: L.Range
+    id: Id
+    value: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Bind":
+        [id, value] = node.named_children
+        return Bind(
+            range=L.Range(
+                to_lsp_position(id.range.start_point),
+                to_lsp_position(value.range.end_point),
+            ),
+            id=cast(Id, Expr.from_tree(id)),
+            value=Expr.from_tree(value),
+        )
+
+
+@dataclass
+class Local(Expr):
+    binds: list[Bind]
+    body: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Local":
+        _, *binds, expr = node.named_children
+        return Local(
+            range=lsp_range_of(node),
+            binds=[Bind.from_tree(b) for b in binds],
+            body=Expr.from_tree(expr),
+        )
+
+
+def to_lsp_position(point: T.Point) -> L.Position:
+    return L.Position(point.row, point.column)
+
+
+def lsp_range_of(node: T.Node) -> L.Range:
+    return L.Range(
+        to_lsp_position(node.range.start_point),
+        to_lsp_position(node.range.end_point),
+    )
+
+
 server = LanguageServer("pj", "v0.1")
 
 
-def document_root(uri: str) -> T.Node:
-    source = server.workspace.get_document(uri).source
+def parse(source: str) -> T.Node:
     return get_parser("jsonnet").parse(source.encode("utf-8")).root_node
+
+
+def document_root(uri: str) -> T.Node:
+    return parse(server.workspace.get_document(uri).source)
 
 
 @server.feature(L.TEXT_DOCUMENT_COMPLETION)
@@ -78,6 +233,60 @@ def completions(params: L.CompletionParams):
     )
 
 
-server.start_io()
+class PositionDSL(L.Position):
+    def length(self, n: int) -> L.Range:
+        return L.Range(self, L.Position(self.line, self.character + n))
+
+    def end_at(self, end_line: int, end_character: int) -> L.Range:
+        return L.Range(self, L.Position(end_line, end_character))
+
+
+def start_at(line: int, character: int) -> PositionDSL:
+    return PositionDSL(line, character)
+
+
+class TestAST(unittest.TestCase):
+    def test_parse_number(self):
+        self.assertEqual(
+            Expr.from_tree(parse("1")),
+            Document(
+                range=start_at(0, 0).length(1),
+                body=Number(
+                    range=start_at(0, 0).length(1),
+                    value=1,
+                ),
+            ),
+        )
+
+    def test_parse_array(self):
+        self.assertEqual(
+            Expr.from_tree(parse("[1]")),
+            Document(
+                range=start_at(0, 0).length(3),
+                body=Array(
+                    start_at(0, 0).length(3),
+                    [
+                        Number(
+                            range=start_at(0, 1).length(1),
+                            value=1,
+                        ),
+                    ],
+                ),
+            ),
+        )
+
+
+@app.command()
+def serve():
+    server.start_io()
+
+
+@app.command()
+def test():
+    unittest.main(argv=sys.argv[1:])
+
+
+if __name__ == "__main__":
+    app()
 
 # vim:ft=python tw=88
