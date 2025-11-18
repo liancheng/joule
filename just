@@ -51,6 +51,8 @@ class Expr:
             "number": Number.from_tree,
             "string_content": Str.from_tree,
             "string": Str.from_tree,
+            "true": Bool.from_tree,
+            "false": Bool.from_tree,
         }
 
         return dispatch[node.type](node)
@@ -301,6 +303,22 @@ class TestAST(unittest.TestCase):
             Number(range=t.full_range, value=1),
         )
 
+    def test_parse_single_quoted_string(self):
+        t = TestDocument("'hello'")
+
+        self.assertEqual(
+            t.document.body,
+            Str(range=t.full_range, value="hello"),
+        )
+
+    def test_parse_double_quoted_string(self):
+        t = TestDocument('"hello"')
+
+        self.assertEqual(
+            t.document.body,
+            Str(range=t.full_range, value="hello"),
+        )
+
     def test_parse_verbatim_string(self):
         t = TestDocument(
             dedent(
@@ -332,10 +350,49 @@ class TestAST(unittest.TestCase):
                     Bind(
                         range=t.start_of("x").to(t.end_of("1")),
                         id=Id(t.range_of("x"), name="x"),
-                        value=Number(t.start_of("1").length(1), value=1),
+                        value=Number(t.range_of("1"), value=1),
                     ),
                 ],
                 body=Id(t.range_of("x", occurrence=2), name="x"),
+            ),
+        )
+
+    def test_parse_local_multi_binds(self):
+        t = TestDocument(
+            dedent(
+                """\
+                local x = 1, y = 2;
+                [x, y]
+                """
+            )
+        )
+
+        local = t.document.body.to(Local)
+
+        self.assertEqual(
+            local.binds,
+            [
+                Bind(
+                    range=t.start_of("x").to(t.end_of("1")),
+                    id=Id(range=t.range_of("x"), name="x"),
+                    value=Number(range=t.range_of("1"), value=1.0),
+                ),
+                Bind(
+                    range=t.start_of("y").to(t.end_of("2")),
+                    id=Id(range=t.range_of("y"), name="y"),
+                    value=Number(range=t.range_of("2"), value=2.0),
+                ),
+            ],
+        )
+
+        self.assertEqual(
+            local.body,
+            Array(
+                range=t.range_of("[x, y]", line=2),
+                values=[
+                    Id(range=t.range_of("x", line=2), name="x"),
+                    Id(range=t.range_of("y", line=2), name="y"),
+                ],
             ),
         )
 
@@ -351,7 +408,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_parse_array(self):
-        t = TestDocument("[1, 2, '3']")
+        t = TestDocument("[1, true, '3']")
 
         self.assertEqual(
             t.document.body,
@@ -359,7 +416,7 @@ class TestAST(unittest.TestCase):
                 range=t.full_range,
                 values=[
                     Number(range=t.range_of("1"), value=1.0),
-                    Number(range=t.range_of("2"), value=2.0),
+                    Bool(range=t.range_of("true"), value=True),
                     Str(range=t.range_of("'3'"), value="3"),
                 ],
             ),
