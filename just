@@ -50,6 +50,7 @@ class Expr:
             "local_bind": Local.from_tree,
             "number": Number.from_tree,
             "string_content": Str.from_tree,
+            "string": Str.from_tree,
         }
 
         return dispatch[node.type](node)
@@ -107,10 +108,11 @@ class Str(Expr):
 
     @staticmethod
     def from_tree(node: T.Node) -> "Str":
-        assert node.text is not None
+        _, content, _ = node.named_children
+        assert content.text is not None
         return Str(
             range=lsp_range_of(node),
-            value=node.text.decode(),
+            value=content.text.decode(),
         )
 
 
@@ -263,11 +265,14 @@ class TestDocument:
 
         line -= 1
         occurrence -= 1
+
         character = self.lines[line].find(needle)
+        assert character >= 0
 
         while occurrence > 0:
             occurrence -= 1
             character = self.lines[line].find(needle, character + len(needle))
+            assert character >= 0
 
         return PositionDSL(line, character)
 
@@ -294,6 +299,26 @@ class TestAST(unittest.TestCase):
         self.assertEqual(
             t.document.body,
             Number(range=t.full_range, value=1),
+        )
+
+    def test_parse_verbatim_string(self):
+        t = TestDocument(
+            dedent(
+                """\
+                |||
+                    hello
+                |||
+                """
+            )
+        )
+
+        # Seems that the Jsonnet tree-sitter grammar does NOT handle indentations.
+        self.assertEqual(
+            t.document.body,
+            Str(
+                range=t.start_of("|||").to(t.end_of("|||", line=3)),
+                value="\n    hello\n",
+            ),
         )
 
     def test_parse_local(self):
@@ -326,15 +351,16 @@ class TestAST(unittest.TestCase):
         )
 
     def test_parse_array(self):
-        t = TestDocument("[1, 2]")
+        t = TestDocument("[1, 2, '3']")
 
         self.assertEqual(
             t.document.body,
             Array(
                 range=t.full_range,
                 values=[
-                    Number(range=t.range_of("1"), value=1),
-                    Number(range=t.range_of("2"), value=2),
+                    Number(range=t.range_of("1"), value=1.0),
+                    Number(range=t.range_of("2"), value=2.0),
+                    Str(range=t.range_of("'3'"), value="3"),
                 ],
             ),
         )
