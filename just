@@ -473,34 +473,34 @@ class TestDocument:
         self.document = Document.from_tree(self.root_node)
         self.body_range = self.document.body.range
 
-    def start_of(self, needle: str, line=1, occurrence=1) -> L.Position:
-        assert line >= 1 and occurrence >= 1
+    def start_of(self, needle: str, line=1, nth=1) -> L.Position:
+        assert line >= 1 and nth >= 1
 
         line -= 1
-        occurrence -= 1
+        nth -= 1
 
         character = self.lines[line].find(needle)
         assert character >= 0
 
-        while occurrence > 0:
-            occurrence -= 1
+        while nth > 0:
+            nth -= 1
             character = self.lines[line].find(needle, character + len(needle))
             assert character >= 0
 
         return L.Position(line, character)
 
-    def end_of(self, needle: str, line=1, occurrence=1) -> L.Position:
-        pos = self.start_of(needle, line, occurrence)
+    def end_of(self, needle: str, line=1, nth=1) -> L.Position:
+        pos = self.start_of(needle, line, nth)
         pos.character += len(needle)
         return pos
 
-    def range_of(self, needle: str, line=1, occurrence=1) -> L.Range:
-        start = self.start_of(needle, line, occurrence)
+    def range_of(self, needle: str, line=1, nth=1) -> L.Range:
+        start = self.start_of(needle, line, nth)
         end = L.Position(start.line, start.character + len(needle))
         return L.Range(start, end)
 
-    def id(self, name: str, line=1, occurrence=1) -> Id:
-        return at(self.range_of(name, line, occurrence)).id(name)
+    def id(self, name: str, line=1, nth=1) -> Id:
+        return at(self.range_of(name, line, nth)).id(name)
 
 
 class TestAST(unittest.TestCase):
@@ -538,7 +538,7 @@ class TestAST(unittest.TestCase):
                         at(t.range_of("1")).num(1),
                     ),
                 ],
-                body=t.id("x", occurrence=2),
+                body=t.id("x", nth=2),
             ),
         )
 
@@ -617,7 +617,7 @@ class TestAST(unittest.TestCase):
                 expr=t.id("x"),
                 specs=[
                     at(t.range_of("for x in [1, 2]")).for_spec(
-                        id=t.id("x", occurrence=2),
+                        id=t.id("x", nth=2),
                         expr=at(t.range_of("[1, 2]")).arr(
                             [
                                 at(t.range_of("1")).num(1.0),
@@ -626,8 +626,7 @@ class TestAST(unittest.TestCase):
                         ),
                     ),
                     at(t.range_of("if x > 1")).if_spec(
-                        t.id("x", occurrence=3)
-                        > at(t.range_of("1", occurrence=2)).num(1.0),
+                        t.id("x", nth=3) > at(t.range_of("1", nth=2)).num(1.0),
                     ),
                 ],
             ),
