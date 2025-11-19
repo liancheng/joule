@@ -415,9 +415,7 @@ def completions(params: L.CompletionParams):
 class TestDocument:
     def __init__(self, source: str) -> None:
         self.lines = source.splitlines(keepends=False)
-        self.root_node = parse(source)
-        self.document = Document.from_tree(self.root_node)
-        self.body_range = self.document.body.range
+        self.body = Document.from_tree(parse(source)).body
 
     def start_of(self, needle: str, line=1, nth=1) -> L.Position:
         assert line >= 1 and nth >= 1
@@ -460,12 +458,10 @@ class TestDocument:
             case _:
                 pass
 
-        range = self.range_of(literal, line, nth)
-        return Num(range, value)
+        return Num(self.range_of(literal, line, nth), value)
 
     def str(self, value: str, literal: str, line=1, nth=1) -> Str:
-        range = self.range_of(literal, line, nth)
-        return Str(range, value)
+        return Str(self.range_of(literal, line, nth), value)
 
 
 class TestAST(unittest.TestCase):
@@ -473,7 +469,7 @@ class TestAST(unittest.TestCase):
         t = TestDocument("1")
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             t.num(1),
         )
 
@@ -487,17 +483,17 @@ class TestAST(unittest.TestCase):
         ]:
             t = TestDocument(literal)
             self.assertEqual(
-                t.document.body,
-                Str(t.body_range, expected),
+                t.body,
+                Str(t.body.range, expected),
             )
 
     def test_local(self):
         t = TestDocument("local x = 1; x")
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             Local(
-                range=t.body_range,
+                range=t.body.range,
                 binds=[t.id("x").bind(t.num(1))],
                 body=t.id("x", nth=2),
             ),
@@ -514,9 +510,9 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             Local(
-                range=t.body_range,
+                range=t.body.range,
                 binds=[
                     t.id("x").bind(t.num(1)),
                     t.id("y").bind(t.num(2)),
@@ -529,17 +525,17 @@ class TestAST(unittest.TestCase):
         t = TestDocument("[]")
 
         self.assertEqual(
-            t.document.body,
-            Array(range=t.body_range, values=[]),
+            t.body,
+            Array(range=t.body.range, values=[]),
         )
 
     def test_array(self):
         t = TestDocument("[1, true, '3']")
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             Array(
-                range=t.body_range,
+                range=t.body.range,
                 values=[
                     t.num(1),
                     t.boolean(True),
@@ -553,7 +549,7 @@ class TestAST(unittest.TestCase):
             t = TestDocument(f"a {op.value} b")
 
             self.assertEqual(
-                t.document.body,
+                t.body,
                 t.id("a").bin_op(op, t.id("b")),
             )
 
@@ -561,7 +557,7 @@ class TestAST(unittest.TestCase):
         t = TestDocument("a + b * c")
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             t.id("a") + t.id("b") * t.id("c"),
         )
 
@@ -569,9 +565,9 @@ class TestAST(unittest.TestCase):
         t = TestDocument("[x for x in [1, 2] if x > 1]")
 
         self.assertEqual(
-            t.document.body,
+            t.body,
             ListComp(
-                range=t.body_range,
+                range=t.body.range,
                 expr=t.id("x"),
                 for_spec=ForSpec(
                     range=t.range_of("for x in [1, 2]"),
