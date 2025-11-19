@@ -51,7 +51,7 @@ class Expr:
             "forloop": ListComp.from_tree,
             "id": Id.from_tree,
             "local_bind": Local.from_tree,
-            "number": Number.from_tree,
+            "number": Num.from_tree,
             "string": Str.from_tree,
             "true": Bool.from_tree,
         }
@@ -128,17 +128,21 @@ class Id(Expr):
             name=node.text.decode(),
         )
 
+    def bind(self, value: Expr) -> "Bind":
+        range = L.Range(self.range.start, value.range.end)
+        return Bind(range, self, value)
+
 
 @dataclass
-class Number(Expr):
+class Num(Expr):
     value: float
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Number":
+    def from_tree(node: T.Node) -> "Num":
         assert node.type == "number"
         assert node.text is not None
 
-        return Number(
+        return Num(
             range=lsp_range_of(node),
             value=float(node.text.decode()),
         )
@@ -408,64 +412,6 @@ def completions(params: L.CompletionParams):
     )
 
 
-@dataclass
-class ExprBuilder:
-    range: L.Range
-
-    def id(self, name: str) -> Id:
-        return Id(self.range, name)
-
-    def num(self, value: float) -> Number:
-        return Number(self.range, value)
-
-    def str(self, raw: str) -> Str:
-        return Str(self.range, raw)
-
-    def boolean(self, value: bool) -> Bool:
-        return Bool(self.range, value)
-
-    def arr(self, values: list[Expr]) -> Array:
-        return Array(self.range, values)
-
-    def bin_op(self, op: Operator | str, lhs: Expr, rhs: Expr) -> Binary:
-        return Binary(self.range, Operator(op) if isinstance(op, str) else op, lhs, rhs)
-
-    def bind(self, id: Id, value: Expr) -> Bind:
-        return Bind(self.range, id, value)
-
-    def local(self, binds: list[Bind], body: Expr) -> Local:
-        return Local(self.range, binds, body)
-
-    def list_comp(
-        self,
-        expr: Expr,
-        specs: list[ForSpec | IfSpec] = [],
-    ) -> ListComp:
-        match specs:
-            case [ForSpec() as for_spec, *comp_spec]:
-                return ListComp(self.range, expr, for_spec, comp_spec)
-
-            case []:
-                raise RuntimeError(
-                    "A list comprehension must have at least 1 for-spec."
-                )
-
-            case _:
-                raise RuntimeError(
-                    "The first spec of a list comprehension must be a for-spec."
-                )
-
-    def for_spec(self, id: Id, expr: Expr) -> ForSpec:
-        return ForSpec(self.range, id, expr)
-
-    def if_spec(self, condition: Expr) -> IfSpec:
-        return IfSpec(self.range, condition)
-
-
-def at(range: L.Range) -> ExprBuilder:
-    return ExprBuilder(range)
-
-
 class TestDocument:
     def __init__(self, source: str) -> None:
         self.lines = source.splitlines(keepends=False)
@@ -500,7 +446,26 @@ class TestDocument:
         return L.Range(start, end)
 
     def id(self, name: str, line=1, nth=1) -> Id:
-        return at(self.range_of(name, line, nth)).id(name)
+        return Id(self.range_of(name, line, nth), name)
+
+    def boolean(self, value: bool, line=1, nth=1) -> Bool:
+        needle = "true" if value else "false"
+        range = self.range_of(needle, line, nth)
+        return Bool(range, value)
+
+    def num(self, value: float | int, literal: str | None = None, line=1, nth=1) -> Num:
+        match value, literal:
+            case int(), None:
+                literal = str(value)
+            case _:
+                pass
+
+        range = self.range_of(literal, line, nth)
+        return Num(range, value)
+
+    def str(self, value: str, literal: str, line=1, nth=1) -> Str:
+        range = self.range_of(literal, line, nth)
+        return Str(range, value)
 
 
 class TestAST(unittest.TestCase):
@@ -509,21 +474,21 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).num(1),
+            t.num(1),
         )
 
     def test_string(self):
-        for input, expected in [
+        for literal, expected in [
             ("'hello\\nworld'", "hello\\nworld"),
             ('"hello\\nworld"', "hello\\nworld"),
             ("@'hello\\nworld'", "hello\\nworld"),
             ('@"hello\\nworld"', "hello\\nworld"),
             ("|||\n  hello\n|||", "\n  hello\n"),
         ]:
-            t = TestDocument(input)
+            t = TestDocument(literal)
             self.assertEqual(
                 t.document.body,
-                at(t.body_range).str(expected),
+                Str(t.body_range, expected),
             )
 
     def test_local(self):
@@ -531,13 +496,9 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).local(
-                binds=[
-                    at(t.range_of("x = 1")).bind(
-                        t.id("x"),
-                        at(t.range_of("1")).num(1),
-                    ),
-                ],
+            Local(
+                range=t.body_range,
+                binds=[t.id("x").bind(t.num(1))],
                 body=t.id("x", nth=2),
             ),
         )
@@ -554,16 +515,11 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).local(
+            Local(
+                range=t.body_range,
                 binds=[
-                    at(t.range_of("x = 1")).bind(
-                        t.id("x"),
-                        at(t.range_of("1")).num(1),
-                    ),
-                    at(t.range_of("y = 2")).bind(
-                        t.id("y"),
-                        at(t.range_of("2")).num(2),
-                    ),
+                    t.id("x").bind(t.num(1)),
+                    t.id("y").bind(t.num(2)),
                 ],
                 body=t.id("x", line=2) + t.id("y", line=2),
             ),
@@ -574,7 +530,7 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).arr([]),
+            Array(range=t.body_range, values=[]),
         )
 
     def test_array(self):
@@ -582,11 +538,12 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).arr(
-                [
-                    at(t.range_of("1")).num(1),
-                    at(t.range_of("true")).boolean(True),
-                    at(t.range_of("'3'")).str("3"),
+            Array(
+                range=t.body_range,
+                values=[
+                    t.num(1),
+                    t.boolean(True),
+                    t.str("3", literal="'3'"),
                 ],
             ),
         )
@@ -613,20 +570,24 @@ class TestAST(unittest.TestCase):
 
         self.assertEqual(
             t.document.body,
-            at(t.body_range).list_comp(
+            ListComp(
+                range=t.body_range,
                 expr=t.id("x"),
-                specs=[
-                    at(t.range_of("for x in [1, 2]")).for_spec(
-                        id=t.id("x", nth=2),
-                        expr=at(t.range_of("[1, 2]")).arr(
-                            [
-                                at(t.range_of("1")).num(1.0),
-                                at(t.range_of("2")).num(2.0),
-                            ]
-                        ),
+                for_spec=ForSpec(
+                    range=t.range_of("for x in [1, 2]"),
+                    id=t.id("x", nth=2),
+                    expr=Array(
+                        range=t.range_of("[1, 2]"),
+                        values=[
+                            t.num(1),
+                            t.num(2),
+                        ],
                     ),
-                    at(t.range_of("if x > 1")).if_spec(
-                        t.id("x", nth=3) > at(t.range_of("1", nth=2)).num(1.0),
+                ),
+                comp_spec=[
+                    IfSpec(
+                        range=t.range_of("if x > 1"),
+                        condition=t.id("x", nth=3) > t.num(1, nth=2),
                     ),
                 ],
             ),
