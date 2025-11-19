@@ -48,6 +48,7 @@ class Expr:
             "binary": Binary.from_tree,
             "document": Document.from_tree,
             "false": Bool.from_tree,
+            "forloop": ListComp.from_tree,
             "id": Id.from_tree,
             "local_bind": Local.from_tree,
             "number": Number.from_tree,
@@ -241,6 +242,68 @@ class Local(Expr):
         )
 
 
+@dataclass
+class ForSpec:
+    range: L.Range
+    id: Id
+    expr: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "ForSpec":
+        assert node.type == "forspec"
+        id, expr = node.named_children
+
+        return ForSpec(
+            lsp_range_of(node),
+            Id.from_tree(id),
+            Expr.from_tree(expr),
+        )
+
+
+@dataclass
+class IfSpec:
+    range: L.Range
+    condition: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "IfSpec":
+        assert node.type == "ifspec"
+        [condition] = node.named_children
+
+        return IfSpec(
+            lsp_range_of(node),
+            Expr.from_tree(condition),
+        )
+
+
+@dataclass
+class ListComp(Expr):
+    expr: Expr
+    for_spec: ForSpec
+    comp_spec: list[ForSpec | IfSpec]
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "ListComp":
+        if len(node.named_children) == 2:
+            expr, for_spec = node.named_children
+            comp_spec = []
+        else:
+            expr, for_spec, comp_spec = node.named_children
+            comp_spec = comp_spec.named_children
+
+        return ListComp(
+            range=lsp_range_of(node),
+            expr=Expr.from_tree(expr),
+            for_spec=ForSpec.from_tree(for_spec),
+            comp_spec=[
+                ForSpec.from_tree(spec)
+                if spec.type == "forspec"
+                else IfSpec.from_tree(spec)
+                for spec in comp_spec
+            ],
+        )
+
+
 def lsp_position_of(point: T.Point) -> L.Position:
     return L.Position(point.row, point.column)
 
@@ -339,13 +402,23 @@ class ExprBuilder:
     def local(self, binds: list[Bind], body: Expr) -> Local:
         return Local(self.range, binds, body)
 
+    def list_comp(
+        self,
+        expr: Expr,
+        for_spec: ForSpec,
+        comp_spec: list[ForSpec | IfSpec] = [],
+    ) -> ListComp:
+        return ListComp(self.range, expr, for_spec, comp_spec)
+
+    def for_spec(self, id: Id, expr: Expr) -> ForSpec:
+        return ForSpec(self.range, id, expr)
+
+    def if_spec(self, condition: Expr) -> IfSpec:
+        return IfSpec(self.range, condition)
+
 
 def at(range: L.Range) -> ExprBuilder:
     return ExprBuilder(range)
-
-
-def span(start: L.Position, end: L.Position) -> ExprBuilder:
-    return at(L.Range(start, end))
 
 
 class TestDocument:
@@ -380,6 +453,9 @@ class TestDocument:
         start = self.start_of(needle, line, occurrence)
         end = L.Position(start.line, start.character + len(needle))
         return L.Range(start, end)
+
+    def id(self, name: str, line=1, occurrence=1) -> Id:
+        return at(self.range_of(name, line, occurrence)).id(name)
 
 
 class TestAST(unittest.TestCase):
@@ -482,8 +558,8 @@ class TestAST(unittest.TestCase):
                 t.document.body,
                 at(t.body_range).bin_op(
                     op,
-                    at(t.range_of("a")).id("a"),
-                    at(t.range_of("b")).id("b"),
+                    t.id("a"),
+                    t.id("b"),
                 ),
             )
 
@@ -494,12 +570,40 @@ class TestAST(unittest.TestCase):
             t.document.body,
             at(t.body_range).bin_op(
                 "+",
-                at(t.range_of("a")).id("a"),
+                t.id("a"),
                 at(t.range_of("b * c")).bin_op(
                     "*",
-                    at(t.range_of("b")).id("b"),
-                    at(t.range_of("c")).id("c"),
+                    t.id("b"),
+                    t.id("c"),
                 ),
+            ),
+        )
+
+    def test_list_comp(self):
+        t = TestDocument("[x for x in [1, 2] if x > 1]")
+
+        self.assertEqual(
+            t.document.body,
+            at(t.body_range).list_comp(
+                expr=t.id("x"),
+                for_spec=at(t.range_of("for x in [1, 2]")).for_spec(
+                    id=at(t.range_of("x", occurrence=2)).id("x"),
+                    expr=at(t.range_of("[1, 2]")).arr(
+                        [
+                            at(t.range_of("1")).num(1),
+                            at(t.range_of("2")).num(2),
+                        ]
+                    ),
+                ),
+                comp_spec=[
+                    at(t.range_of("if x > 1")).if_spec(
+                        at(t.range_of("x > 1")).bin_op(
+                            ">",
+                            t.id("x", occurrence=3),
+                            at(t.range_of("1", occurrence=2)).num(1),
+                        )
+                    )
+                ],
             ),
         )
 
