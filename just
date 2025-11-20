@@ -252,22 +252,31 @@ class Bind:
     @staticmethod
     def from_tree(node: T.Node) -> "Bind":
         assert node.type == "bind"
+        assert 2 <= len(node.named_children) <= 3
 
-        [id_node, second, *rest] = node.named_children
-        id = Id.from_tree(id_node)
+        range = range_of(node)
 
-        match second, rest:
-            case body_node, [] if node.field_name_for_child(0) == "function":
-                body = Expr.from_tree(body_node)
-                value = Fn(merge_ranges(id, body), [], body)
-            case params_node, [body_node]:
-                params = [Param.from_tree(p) for p in params_node.named_children]
-                body = Expr.from_tree(body_node)
-                value = Fn(merge_ranges(id, body), params, body)
-            case value_node, _:
-                value = Expr.from_tree(value_node)
+        [id, *maybe_params, body] = node.named_children
+        params = [param for params in maybe_params for param in params.named_children]
 
-        return Bind(range_of(node), id, value)
+        match id, params, body:
+            case _ if node.field_name_for_child(0) == "function":
+                return Bind(
+                    range=range,
+                    id=Id.from_tree(id),
+                    value=Fn(
+                        range=range,
+                        params=[Param.from_tree(param) for param in params],
+                        body=Expr.from_tree(body),
+                    ),
+                )
+
+            case _:
+                return Bind(
+                    range=range,
+                    id=Id.from_tree(id),
+                    value=Expr.from_tree(body),
+                )
 
 
 @dataclass
@@ -278,11 +287,12 @@ class Local(Expr):
     @staticmethod
     def from_tree(node: T.Node) -> "Local":
         assert node.type == "local_bind"
+
         _, *binds, expr = node.named_children
 
         return Local(
             range=range_of(node),
-            binds=[Bind.from_tree(b) for b in binds],
+            binds=list(map(Bind.from_tree, binds)),
             body=Expr.from_tree(expr),
         )
 
@@ -296,6 +306,7 @@ class Param:
     @staticmethod
     def from_tree(node: T.Node) -> "Param":
         assert node.type == "param"
+        assert 1 <= len(node.named_children) <= 2
 
         [id_node, *tail] = node.named_children
 
@@ -316,17 +327,19 @@ class Fn(Expr):
     @staticmethod
     def from_tree(node: T.Node) -> "Fn":
         assert node.type == "anonymous_function"
+        assert 1 <= len(node.named_children) <= 2
 
         [*init, body_node] = node.named_children
-        body = Expr.from_tree(body_node)
 
-        match init:
-            case [params_node]:
-                params = [Param.from_tree(p) for p in params_node.named_children]
-            case _:
-                params = []
-
-        return Fn(range=range_of(node), params=params, body=body)
+        return Fn(
+            range=range_of(node),
+            params=[
+                Param.from_tree(param)
+                for params in init
+                for param in params.named_children
+            ],
+            body=Expr.from_tree(body_node),
+        )
 
 
 @dataclass
@@ -338,8 +351,9 @@ class ForSpec:
     @staticmethod
     def from_tree(node: T.Node) -> "ForSpec":
         assert node.type == "forspec"
-        id, expr = node.named_children
+        assert len(node.named_children) == 2
 
+        id, expr = node.named_children
         return ForSpec(
             range_of(node),
             Id.from_tree(id),
@@ -355,8 +369,9 @@ class IfSpec:
     @staticmethod
     def from_tree(node: T.Node) -> "IfSpec":
         assert node.type == "ifspec"
-        [condition] = node.named_children
+        assert len(node.named_children) == 1
 
+        [condition] = node.named_children
         return IfSpec(
             range_of(node),
             Expr.from_tree(condition),
@@ -371,13 +386,10 @@ class ListComp(Expr):
 
     @staticmethod
     def from_tree(node: T.Node) -> "ListComp":
-        if len(node.named_children) == 2:
-            expr, for_spec = node.named_children
-            comp_spec = []
-        else:
-            expr, for_spec, comp_spec = node.named_children
-            comp_spec = comp_spec.named_children
+        assert node.type == "forloop"
+        assert len(node.named_children) >= 2
 
+        [expr, for_spec, *rest] = node.named_children
         return ListComp(
             range=range_of(node),
             expr=Expr.from_tree(expr),
@@ -386,9 +398,25 @@ class ListComp(Expr):
                 ForSpec.from_tree(spec)
                 if spec.type == "forspec"
                 else IfSpec.from_tree(spec)
-                for spec in comp_spec
+                for comp_spec in rest
+                for spec in comp_spec.named_children
             ],
         )
+
+
+@dataclass
+class Import(Expr):
+    path: Expr
+
+
+@dataclass
+class ImportBin(Import):
+    pass
+
+
+@dataclass
+class ImportStr(Import):
+    pass
 
 
 def position_of(point: T.Point) -> L.Position:
