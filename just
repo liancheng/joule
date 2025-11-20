@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --script --offline
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
@@ -44,6 +44,7 @@ class Expr:
     @staticmethod
     def from_tree(node: T.Node) -> "Expr":
         dispatch: dict[str, Callable[[T.Node], "Expr"]] = {
+            "anonymous_function": Fn.from_tree,
             "array": Array.from_tree,
             "binary": Binary.from_tree,
             "document": Document.from_tree,
@@ -67,8 +68,7 @@ class Expr:
         return cast(ExprType, self)
 
     def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
-        range = L.Range(self.range.start, rhs.range.end)
-        return Binary(range, op, self, rhs)
+        return Binary(merge_ranges(self, rhs), op, self, rhs)
 
     def __add__(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.Plus, rhs)
@@ -94,10 +94,11 @@ class Expr:
     def __ge__(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.GE, rhs)
 
-    def __eq__(self, rhs: "Expr") -> "Binary":
+    def eq(self, rhs: object) -> "Binary":
+        assert isinstance(rhs, Expr)
         return self.bin_op(Operator.Eq, rhs)
 
-    def __ne__(self, rhs: "Expr") -> "Binary":
+    def not_eq(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.NotEq, rhs)
 
 
@@ -108,9 +109,10 @@ class Document(Expr):
     @staticmethod
     def from_tree(node: T.Node) -> "Document":
         assert node.type == "document"
+        [body] = node.children
         return Document(
-            range=lsp_range_of(node),
-            body=Expr.from_tree(node.named_children[0]),
+            range=range_of(node),
+            body=Expr.from_tree(body),
         )
 
 
@@ -124,13 +126,12 @@ class Id(Expr):
         assert node.text is not None
 
         return Id(
-            range=lsp_range_of(node),
+            range=range_of(node),
             name=node.text.decode(),
         )
 
     def bind(self, value: Expr) -> "Bind":
-        range = L.Range(self.range.start, value.range.end)
-        return Bind(range, self, value)
+        return Bind(merge_ranges(self, value), self, value)
 
 
 @dataclass
@@ -143,7 +144,7 @@ class Num(Expr):
         assert node.text is not None
 
         return Num(
-            range=lsp_range_of(node),
+            range=range_of(node),
             value=float(node.text.decode()),
         )
 
@@ -160,7 +161,7 @@ class Str(Expr):
         assert content.text is not None
 
         return Str(
-            range=lsp_range_of(node),
+            range=range_of(node),
             # The raw string content before escaping or indentations are handled.
             raw=content.text.decode(),
         )
@@ -176,7 +177,7 @@ class Bool(Expr):
         assert node.text is not None
 
         return Bool(
-            range=lsp_range_of(node),
+            range=range_of(node),
             value=node.text.decode() == "true",
         )
 
@@ -189,7 +190,7 @@ class Array(Expr):
     def from_tree(node: T.Node) -> "Array":
         assert node.type == "array"
         return Array(
-            range=lsp_range_of(node),
+            range=range_of(node),
             values=[Expr.from_tree(c) for c in node.named_children],
         )
 
@@ -235,7 +236,7 @@ class Binary(Expr):
         assert op.text is not None
 
         return Binary(
-            range=lsp_range_of(node),
+            range=range_of(node),
             op=Operator(op.text.decode("utf-8")),
             lhs=Expr.from_tree(lhs),
             rhs=Expr.from_tree(rhs),
@@ -251,16 +252,22 @@ class Bind:
     @staticmethod
     def from_tree(node: T.Node) -> "Bind":
         assert node.type == "bind"
-        [id, value] = node.named_children
 
-        return Bind(
-            range=L.Range(
-                lsp_position_of(id.range.start_point),
-                lsp_position_of(value.range.end_point),
-            ),
-            id=Expr.from_tree(id).to(Id),
-            value=Expr.from_tree(value),
-        )
+        [id_node, second, *rest] = node.named_children
+        id = Id.from_tree(id_node)
+
+        match second, rest:
+            case body_node, [] if node.field_name_for_child(0) == "function":
+                body = Expr.from_tree(body_node)
+                value = Fn(merge_ranges(id, body), [], body)
+            case params_node, [body_node]:
+                params = [Param.from_tree(p) for p in params_node.named_children]
+                body = Expr.from_tree(body_node)
+                value = Fn(merge_ranges(id, body), params, body)
+            case value_node, _:
+                value = Expr.from_tree(value_node)
+
+        return Bind(range_of(node), id, value)
 
 
 @dataclass
@@ -274,10 +281,52 @@ class Local(Expr):
         _, *binds, expr = node.named_children
 
         return Local(
-            range=lsp_range_of(node),
+            range=range_of(node),
             binds=[Bind.from_tree(b) for b in binds],
             body=Expr.from_tree(expr),
         )
+
+
+@dataclass
+class Param:
+    range: L.Range
+    id: Id
+    value: Expr | None = None
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Param":
+        assert node.type == "param"
+
+        [id_node, *tail] = node.named_children
+
+        match tail:
+            case [value_node]:
+                value = Expr.from_tree(value_node)
+            case _:
+                value = None
+
+        return Param(range=range_of(node), id=Id.from_tree(id_node), value=value)
+
+
+@dataclass
+class Fn(Expr):
+    params: list[Param]
+    body: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Fn":
+        assert node.type == "anonymous_function"
+
+        [*init, body_node] = node.named_children
+        body = Expr.from_tree(body_node)
+
+        match init:
+            case [params_node]:
+                params = [Param.from_tree(p) for p in params_node.named_children]
+            case _:
+                params = []
+
+        return Fn(range=range_of(node), params=params, body=body)
 
 
 @dataclass
@@ -292,7 +341,7 @@ class ForSpec:
         id, expr = node.named_children
 
         return ForSpec(
-            lsp_range_of(node),
+            range_of(node),
             Id.from_tree(id),
             Expr.from_tree(expr),
         )
@@ -309,7 +358,7 @@ class IfSpec:
         [condition] = node.named_children
 
         return IfSpec(
-            lsp_range_of(node),
+            range_of(node),
             Expr.from_tree(condition),
         )
 
@@ -330,7 +379,7 @@ class ListComp(Expr):
             comp_spec = comp_spec.named_children
 
         return ListComp(
-            range=lsp_range_of(node),
+            range=range_of(node),
             expr=Expr.from_tree(expr),
             for_spec=ForSpec.from_tree(for_spec),
             comp_spec=[
@@ -342,15 +391,42 @@ class ListComp(Expr):
         )
 
 
-def lsp_position_of(point: T.Point) -> L.Position:
+def position_of(point: T.Point) -> L.Position:
     return L.Position(point.row, point.column)
 
 
-def lsp_range_of(node: T.Node) -> L.Range:
+def range_of(node: T.Node) -> L.Range:
     return L.Range(
-        lsp_position_of(node.range.start_point),
-        lsp_position_of(node.range.end_point),
+        position_of(node.range.start_point),
+        position_of(node.range.end_point),
     )
+
+
+def merge_ranges(
+    lhs: L.Range | T.Range | T.Node | Expr,
+    rhs: L.Range | T.Range | T.Node | Expr,
+) -> L.Range:
+    match lhs:
+        case L.Range() as r:
+            start = r.start
+        case T.Range() as r:
+            start = position_of(r.start_point)
+        case T.Node() as n:
+            start = position_of(n.start_point)
+        case Expr() as e:
+            start = e.range.start
+
+    match rhs:
+        case L.Range() as r:
+            end = r.end
+        case T.Range() as r:
+            end = position_of(r.end_point)
+        case T.Node() as n:
+            end = position_of(n.end_point)
+        case Expr() as e:
+            end = e.range.end
+
+    return L.Range(start, end)
 
 
 server = LanguageServer("pj", "v0.1")
@@ -456,12 +532,19 @@ class TestDocument:
             case int(), None:
                 literal = str(value)
             case _:
-                pass
+                assert literal is not None
 
         return Num(self.range_of(literal, line, nth), value)
 
     def str(self, value: str, literal: str, line=1, nth=1) -> Str:
         return Str(self.range_of(literal, line, nth), value)
+
+    def param(
+        self, name: str, line: int = 1, nth: int = 1, value: Expr | None = None
+    ) -> Param:
+        id = self.id(name, line, nth)
+        range = id.range if value is None else merge_ranges(id, value)
+        return Param(range, id, value)
 
 
 class TestAST(unittest.TestCase):
@@ -589,6 +672,29 @@ class TestAST(unittest.TestCase):
             ),
         )
 
+    def test_fn(self):
+        t = TestDocument("function(x = 1, y = 2) x + y")
+
+        self.assertEqual(
+            t.body,
+            Fn(
+                t.body.range,
+                params=[
+                    t.param("x", value=t.num(1)),
+                    t.param("y", value=t.num(2)),
+                ],
+                body=t.id("x", nth=2) + t.id("y", nth=2),
+            ),
+        )
+
+    def test_fn_no_params(self):
+        t = TestDocument("function() 1")
+
+        self.assertEqual(
+            t.body,
+            Fn(t.body.range, [], t.num(1)),
+        )
+
 
 @app.command()
 def serve():
@@ -597,7 +703,8 @@ def serve():
 
 @app.command()
 def test():
-    unittest.main(argv=["--verbose", "--locals"])
+    print(parse("local f() = 1; f()"))
+    unittest.main(argv=["--locals"], verbosity=1)
 
 
 if __name__ == "__main__":
