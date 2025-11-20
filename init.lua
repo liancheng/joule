@@ -1,6 +1,6 @@
-vim.lsp.config["pj"] = {
-	cmd = { "./just" },
+vim.lsp.config["just"] = {
+	cmd = { "./just", "serve" },
 	filetypes = { "jsonnet" },
 }
 
-vim.lsp.enable("pj", true)
+vim.lsp.enable("just", true)
