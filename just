@@ -134,6 +134,9 @@ class Id(Expr):
     def bind(self, value: Expr) -> "Bind":
         return Bind(merge_ranges(self, value), self, value)
 
+    def arg(self, value: Expr) -> "CallArg":
+        return CallArg(merge_ranges(self, value), value, self)
+
 
 @dataclass
 class Num(Expr):
@@ -296,7 +299,7 @@ class Local(Expr):
 @dataclass
 class Param:
     range: L.Range
-    id: Id
+    name: Id
     value: Expr | None = None
 
     @staticmethod
@@ -308,7 +311,7 @@ class Param:
 
         return Param(
             range=range_of(node),
-            id=Id.from_tree(id_node),
+            name=Id.from_tree(id_node),
             value=next(iter(map(Expr.from_tree, maybe_value)), None),
         )
 
@@ -337,9 +340,33 @@ class Fn(Expr):
 
 
 @dataclass
+class CallArg:
+    range: L.Range
+    value: Expr
+    name: Id | None = None
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "CallArg":
+        if node.type == "named_argument":
+            assert len(node.named_children) == 2
+            name, value = node.named_children
+
+            return CallArg(
+                range=range_of(node),
+                value=Expr.from_tree(value),
+                name=Id.from_tree(name),
+            )
+        else:
+            return CallArg(
+                range=range_of(node),
+                value=Expr.from_tree(node),
+            )
+
+
+@dataclass
 class Call(Expr):
     fn: Expr
-    args: list[Expr]
+    args: list[CallArg]
 
     @staticmethod
     def from_tree(node: T.Node) -> "Call":
@@ -352,7 +379,7 @@ class Call(Expr):
             range=range_of(node),
             fn=Expr.from_tree(fn),
             args=[
-                Expr.from_tree(arg)
+                CallArg.from_tree(arg)
                 for args in maybe_args
                 for arg in args.named_children
             ],
@@ -593,6 +620,9 @@ class TestDocument:
         range = id.range if value is None else merge_ranges(id, value)
         return Param(range, id, value)
 
+    def arg(self, value: Expr) -> CallArg:
+        return CallArg(value.range, value)
+
 
 class TestAST(unittest.TestCase):
     def test_number(self):
@@ -635,8 +665,8 @@ class TestAST(unittest.TestCase):
                 """\
                 local
                     f1(x) = x + 1,
-                    f2(y) = y + 2;
-                f2(1)
+                    f2(y, z) = y + z;
+                f2(f1(3), z = 4)
                 """
             )
         )
@@ -655,16 +685,28 @@ class TestAST(unittest.TestCase):
                     ),
                     t.id("f2", line=3).bind(
                         Fn(
-                            range=t.range_of("f2(y) = y + 2", line=3),
-                            params=[t.param("y", line=3)],
-                            body=t.id("y", line=3, nth=2) + t.num(2, line=3, nth=2),
+                            range=t.range_of("f2(y, z) = y + z", line=3),
+                            params=[
+                                t.param("y", line=3),
+                                t.param("z", line=3),
+                            ],
+                            body=t.id("y", line=3, nth=2) + t.id("z", line=3, nth=2),
                         )
                     ),
                 ],
                 body=Call(
-                    range=t.range_of("f2(1)", line=4),
+                    range=t.range_of("f2(f1(3), z = 4)", line=4),
                     fn=t.id("f2", line=4),
-                    args=[t.num(1, line=4)],
+                    args=[
+                        t.arg(
+                            Call(
+                                range=t.range_of("f1(3)", line=4),
+                                fn=t.id("f1", line=4),
+                                args=[t.arg(t.num(3, line=4))],
+                            )
+                        ),
+                        t.id("z", line=4).arg(t.num(4, line=4)),
+                    ],
                 ),
             ),
         )
