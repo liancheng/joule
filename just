@@ -15,7 +15,7 @@ import unittest
 from dataclasses import dataclass
 from enum import StrEnum
 from textwrap import dedent
-from typing import Callable, Type, TypeVar, cast
+from typing import Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -43,15 +43,20 @@ class Expr:
 
     @staticmethod
     def from_tree(node: T.Node) -> "Expr":
-        dispatch: dict[str, Callable[[T.Node], "Expr"]] = {
+        global dispatch
+
+        dispatch = {
             "anonymous_function": Fn.from_tree,
             "array": Array.from_tree,
+            "assert": AssertExpr.from_tree,
             "binary": Binary.from_tree,
             "document": Document.from_tree,
             "false": Bool.from_tree,
             "forloop": ListComp.from_tree,
             "functioncall": Call.from_tree,
             "id": Id.from_tree,
+            "import": Import.from_tree,
+            "importstr": Import.from_tree,
             "local_bind": Local.from_tree,
             "number": Num.from_tree,
             "string": Str.from_tree,
@@ -110,11 +115,8 @@ class Document(Expr):
     @staticmethod
     def from_tree(node: T.Node) -> "Document":
         assert node.type == "document"
-        [body] = node.children
-        return Document(
-            range=range_of(node),
-            body=Expr.from_tree(body),
-        )
+        body, *_ = node.named_children
+        return Document(range_of(node), Expr.from_tree(body))
 
 
 @dataclass
@@ -247,6 +249,45 @@ class Binary(Expr):
         )
 
 
+# Unfortunately, `tree-sitter-jsonnet` did a bad job in parsing assert expressions
+# (an expression following an assertion). Ideally, an `AssertExpr` should map to a
+# single tree-sitter node containing an assertion followed by an expression. E.g., the
+# given the following expression:
+#
+#   assert true: "never"; x
+#
+# it should be parsed into a single `<assert_expr>` node:
+#
+#   <assert_expr>     | assert true: "never"; x
+#       <assert>      | assert true: "never"
+#           <_expr>   |        true
+#           <string>  |              "never"
+#       <id>          |                       x
+#
+# However, `tree-sitter-jsonnet` explicitly hides the top node by prefixing the rule
+# with an underscore (`_assert_expr`), and therefore the parser only returns the two
+# child nodes:
+#
+#   <assert>          | assert true: "never"
+#       <_expr>       |        true
+#       <string>      |              "never"
+#   <id>              |                       x
+#
+# This complicates parsing values in local bindings and function bodies, because a bound
+# value and a function body can be either one node for a regular expression or two nodes
+# for an assertion expression.
+def parse_expr(nodes: list[T.Node]) -> Expr:
+    assert 1 <= len(nodes) <= 2
+
+    if len(nodes) == 2:
+        value, _ = nodes
+        assert value.type == "assert"
+    else:
+        [value] = nodes
+
+    return Expr.from_tree(value)
+
+
 @dataclass
 class Bind:
     range: L.Range
@@ -258,24 +299,44 @@ class Bind:
         assert node.type == "bind"
         assert 2 <= len(node.named_children) <= 3
 
-        id, *maybe_params, body_or_value = node.named_children
+        if len(node.children_by_field_name("function")) == 0:
+            id, *value_nodes = node.named_children
+            return Bind(
+                range=range_of(node),
+                id=Id.from_tree(id),
+                value=parse_expr(value_nodes),
+            )
+        else:
+            # Following `id`, here could be:
+            #
+            #  - 0 or 1 `params` node holding the function parameter list:
+            #    - 0 nodes if the parameter list is empty, or
+            #    - 1 `params` node with all the parameters as its children.
+            #  - 1 or 2 `body` nodes:
+            #    - 2 nodes if the body is an assertion expression, or
+            #    - 1 node for other regular expressions.
+            id, *_ = node.named_children
 
-        range = range_of(node)
-        value = (
-            Fn(
-                range=range,
+            maybe_params = node.children_by_field_name("params")
+            assert len(maybe_params) <= 1
+
+            body_nodes = node.children_by_field_name("body")
+
+            fn = Fn(
+                range=range_of(node),
                 params=[
                     Param.from_tree(param)
                     for params in maybe_params
                     for param in params.named_children
                 ],
-                body=Expr.from_tree(body_or_value),
+                body=parse_expr(body_nodes),
             )
-            if node.field_name_for_child(0) == "function"
-            else Expr.from_tree(body_or_value)
-        )
 
-        return Bind(range=range, id=Id.from_tree(id), value=value)
+            return Bind(
+                range=fn.range,
+                id=Id.from_tree(id),
+                value=fn,
+            )
 
 
 @dataclass
@@ -451,17 +512,55 @@ class ListComp(Expr):
 
 @dataclass
 class Import(Expr):
-    path: Expr
+    type: str
+    path: Str
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Import":
+        assert node.type in ["import", "importstr"]
+        assert len(node.named_children) == 1
+
+        [path] = node.named_children
+        return Import(
+            range_of(node),
+            node.type,
+            Str.from_tree(path),
+        )
 
 
 @dataclass
-class ImportBin(Import):
-    pass
+class Assert:
+    range: L.Range
+    condition: Expr
+    message: Expr | None = None
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Assert":
+        assert node.type == "assert"
+        assert 1 <= len(node.named_children) <= 2
+
+        condition, *maybe_message = node.named_children
+        return Assert(
+            range_of(node),
+            Expr.from_tree(condition),
+            next(map(Expr.from_tree, maybe_message), None),
+        )
 
 
 @dataclass
-class ImportStr(Import):
-    pass
+class AssertExpr(Expr):
+    assertion: Assert
+    body: Expr
+
+    @staticmethod
+    def from_tree(node: T.Node) -> "Expr":
+        body = node.next_named_sibling
+        assert body is not None
+        return AssertExpr(
+            merge_ranges(node, body),
+            Assert.from_tree(node),
+            Expr.from_tree(body),
+        )
 
 
 def position_of(point: T.Point) -> L.Position:
@@ -822,6 +921,114 @@ class TestAST(unittest.TestCase):
         self.assertEqual(
             t.body,
             Fn(t.body.range, [], t.num(1)),
+        )
+
+    def test_import(self):
+        t = TestDocument("import 'test.jsonnet'")
+
+        self.assertEqual(
+            t.body,
+            Import(
+                range=t.body.range,
+                type="import",
+                path=t.str(
+                    value="test.jsonnet",
+                    literal="'test.jsonnet'",
+                ),
+            ),
+        )
+
+    def test_importstr(self):
+        t = TestDocument("importstr 'test.jsonnet'")
+
+        self.assertEqual(
+            t.body,
+            Import(
+                range=t.body.range,
+                type="importstr",
+                path=t.str(
+                    value="test.jsonnet",
+                    literal="'test.jsonnet'",
+                ),
+            ),
+        )
+
+    def test_assert_expr_without_message(self):
+        t = TestDocument("assert true; false")
+
+        self.assertEqual(
+            t.body,
+            AssertExpr(
+                range=t.body.range,
+                assertion=Assert(
+                    range=t.range_of("assert true"),
+                    condition=t.boolean(True),
+                    message=None,
+                ),
+                body=t.boolean(False),
+            ),
+        )
+
+    def test_assert_expr_with_message(self):
+        t = TestDocument("assert true: 'never'; false")
+
+        self.assertEqual(
+            t.body,
+            AssertExpr(
+                range=t.body.range,
+                assertion=Assert(
+                    range=t.range_of("assert true: 'never'"),
+                    condition=t.boolean(True),
+                    message=t.str("never", "'never'"),
+                ),
+                body=t.boolean(False),
+            ),
+        )
+
+    def test_assert_expr_in_bind(self):
+        t = TestDocument("local x = assert true; false; x")
+
+        self.assertEqual(
+            t.body,
+            Local(
+                range=t.body.range,
+                binds=[
+                    t.id("x").bind(
+                        AssertExpr(
+                            range=t.range_of("assert true; false"),
+                            assertion=Assert(
+                                range=t.range_of("assert true"),
+                                condition=t.boolean(True),
+                            ),
+                            body=t.boolean(False),
+                        )
+                    )
+                ],
+                body=t.id("x", nth=2),
+            ),
+        )
+
+    def test_nested_assert_expr(self):
+        # Assertions are right associated.
+        t = TestDocument("assert true; assert false; x")
+
+        self.assertEqual(
+            t.body,
+            AssertExpr(
+                range=t.body.range,
+                assertion=Assert(
+                    range=t.range_of("assert true"),
+                    condition=t.boolean(True),
+                ),
+                body=AssertExpr(
+                    range=t.range_of("assert false; x"),
+                    assertion=Assert(
+                        range=t.range_of("assert false"),
+                        condition=t.boolean(False),
+                    ),
+                    body=t.id("x"),
+                ),
+            ),
         )
 
 
