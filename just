@@ -13,10 +13,10 @@
 import logging
 import unittest
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 from textwrap import dedent
-from typing import Type, TypeVar, cast
+from typing import Any, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -42,9 +42,12 @@ ExprType = TypeVar("ExprType")
 
 
 @dataclass
-class Expr:
+class HasRange:
     range: L.Range
 
+
+@dataclass
+class Expr(HasRange):
     @staticmethod
     def from_tree(node: T.Node) -> "Expr":
         global dispatch
@@ -110,6 +113,69 @@ class Expr:
 
     def not_eq(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.NotEq, rhs)
+
+    @property
+    def pretty_tree(self) -> str:
+        lines = []
+
+        def class_name_of(value: Any) -> str:
+            return value.__class__.__name__
+
+        def children_of(value: Any) -> list[Any]:
+            match value:
+                # When `value` is a `dataclass`, returns all the fields that are not the
+                # "range" field, which is printed as part of the tree node label.
+                case d if is_dataclass(d):
+                    return [
+                        (f.name, getattr(d, f.name))
+                        for f in fields(d)
+                        if f.name != "range"
+                    ]
+                # When `value` is a field of a `dataclass`, and itself is a list.
+                case _, [*children]:
+                    return children
+                case _, child if is_dataclass(child):
+                    return children_of(child)
+                case _:
+                    return []
+
+        def label_of(value: Any) -> str:
+            match value:
+                case HasRange() as r:
+                    return f"{class_name_of(value)} [{r.range}]"
+                case d if is_dataclass(d):
+                    return f"{class_name_of(value)}"
+                case field_name, []:
+                    return f"{field_name}=[]"
+                case field_name, list():
+                    return f"{field_name}=[...]"
+                case field_name, v:
+                    return f"{field_name}={label_of(v)}"
+                case _:
+                    return str(value)
+
+        def build(value: Any, depth: int, last_chidren: list[bool]):
+            line = ""
+
+            if depth > 0:
+                for is_last_child in last_chidren[:-1]:
+                    line += " " * 3 if is_last_child else " │ "
+                line += " └╴" if last_chidren[-1] else " ├╴"
+
+            line += label_of(value)
+            lines.append(line)
+
+            match children_of(value):
+                case [*init, last]:
+                    for child in init:
+                        build(child, depth + 1, last_chidren + [False])
+                    build(last, depth + 1, last_chidren + [True])
+                case _:
+                    pass
+
+        build(self, depth=0, last_chidren=[])
+
+        return "\n".join(lines)
 
 
 @dataclass
@@ -293,8 +359,7 @@ def parse_expr(nodes: list[T.Node]) -> Expr:
 
 
 @dataclass
-class Bind:
-    range: L.Range
+class Bind(HasRange):
     id: Id
     value: Expr
 
@@ -362,8 +427,7 @@ class Local(Expr):
 
 
 @dataclass
-class Param:
-    range: L.Range
+class Param(HasRange):
     name: Id
     value: Expr | None = None
 
@@ -405,8 +469,7 @@ class Fn(Expr):
 
 
 @dataclass
-class Arg:
-    range: L.Range
+class Arg(HasRange):
     value: Expr
     name: Id | None = None
 
@@ -450,8 +513,7 @@ class Call(Expr):
 
 
 @dataclass
-class ForSpec:
-    range: L.Range
+class ForSpec(HasRange):
     id: Id
     expr: Expr
 
@@ -470,8 +532,7 @@ class ForSpec:
 
 
 @dataclass
-class IfSpec:
-    range: L.Range
+class IfSpec(HasRange):
     condition: Expr
 
     @staticmethod
@@ -531,8 +592,7 @@ class Import(Expr):
 
 
 @dataclass
-class Assert:
-    range: L.Range
+class Assert(HasRange):
     condition: Expr
     message: Expr | None = None
 
@@ -916,10 +976,90 @@ class TestDocument:
 
 
 class TestAST(unittest.TestCase):
+    def assertExprEqual(self, actual, expected):
+        self.assertEqual(
+            actual,
+            expected,
+            msg="\n".join(
+                [
+                    "\n",
+                    "Actual",
+                    "------",
+                    actual.pretty_tree,
+                    "",
+                    "Expected",
+                    "--------",
+                    expected.pretty_tree,
+                ]
+            ),
+        )
+
+    def test_pretty_tree(self):
+        self.maxDiff = None
+
+        t = TestDocument(
+            dedent(
+                """\
+                local
+                    v0 = 1,
+                    v1 = local f0(x) = x + 2; f0(3);
+                v0 + v1
+                """
+            )
+        )
+
+        self.assertEqual(
+            t.body.pretty_tree,
+            dedent(
+                """\
+                Local [0:0-3:7]
+                 ├╴binds=[...]
+                 │  ├╴Bind [1:4-1:10]
+                 │  │  ├╴id=Id [1:4-1:6]
+                 │  │  │  └╴name=v0
+                 │  │  └╴value=Num [1:9-1:10]
+                 │  │     └╴value=1.0
+                 │  └╴Bind [2:4-2:35]
+                 │     ├╴id=Id [2:4-2:6]
+                 │     │  └╴name=v1
+                 │     └╴value=Local [2:9-2:35]
+                 │        ├╴binds=[...]
+                 │        │  └╴Bind [2:15-2:28]
+                 │        │     ├╴id=Id [2:15-2:17]
+                 │        │     │  └╴name=f0
+                 │        │     └╴value=Fn [2:15-2:28]
+                 │        │        ├╴params=[...]
+                 │        │        │  └╴Param [2:18-2:19]
+                 │        │        │     ├╴name=Id [2:18-2:19]
+                 │        │        │     │  └╴name=x
+                 │        │        │     └╴value=None
+                 │        │        └╴body=Binary [2:23-2:28]
+                 │        │           ├╴op=+
+                 │        │           ├╴lhs=Id [2:23-2:24]
+                 │        │           │  └╴name=x
+                 │        │           └╴rhs=Num [2:27-2:28]
+                 │        │              └╴value=2.0
+                 │        └╴body=Call [2:30-2:35]
+                 │           ├╴fn=Id [2:30-2:32]
+                 │           │  └╴name=f0
+                 │           └╴args=[...]
+                 │              └╴Arg [2:33-2:34]
+                 │                 ├╴value=Num [2:33-2:34]
+                 │                 │  └╴value=3.0
+                 │                 └╴name=None
+                 └╴body=Binary [3:0-3:7]
+                    ├╴op=+
+                    ├╴lhs=Id [3:0-3:2]
+                    │  └╴name=v0
+                    └╴rhs=Id [3:5-3:7]
+                       └╴name=v1"""
+            ),
+        )
+
     def test_number(self):
         t = TestDocument("1")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             t.num(1),
         )
@@ -933,7 +1073,7 @@ class TestAST(unittest.TestCase):
             ("|||\n  hello\n|||", "\n  hello\n"),
         ]:
             t = TestDocument(literal)
-            self.assertEqual(
+            self.assertExprEqual(
                 t.body,
                 Str(t.body.range, expected),
             )
@@ -941,7 +1081,7 @@ class TestAST(unittest.TestCase):
     def test_local(self):
         t = TestDocument("local x = 1; x")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Local(
                 range=t.body.range,
@@ -962,7 +1102,7 @@ class TestAST(unittest.TestCase):
             )
         )
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Local(
                 range=t.body.range,
@@ -1012,7 +1152,7 @@ class TestAST(unittest.TestCase):
             )
         )
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Local(
                 range=t.body.range,
@@ -1027,7 +1167,7 @@ class TestAST(unittest.TestCase):
     def test_empty_array(self):
         t = TestDocument("[]")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Array(range=t.body.range, values=[]),
         )
@@ -1035,7 +1175,7 @@ class TestAST(unittest.TestCase):
     def test_array(self):
         t = TestDocument("[1, true, '3']")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Array(
                 range=t.body.range,
@@ -1051,7 +1191,7 @@ class TestAST(unittest.TestCase):
         for op in Operator:
             t = TestDocument(f"a {op.value} b")
 
-            self.assertEqual(
+            self.assertExprEqual(
                 t.body,
                 t.id("a").bin_op(op, t.id("b")),
             )
@@ -1059,7 +1199,7 @@ class TestAST(unittest.TestCase):
     def test_binary_precedences(self):
         t = TestDocument("a + b * c")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             t.id("a") + t.id("b") * t.id("c"),
         )
@@ -1067,7 +1207,7 @@ class TestAST(unittest.TestCase):
     def test_list_comp(self):
         t = TestDocument("[x for x in [1, 2] if x > 1]")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             ListComp(
                 range=t.body.range,
@@ -1095,7 +1235,7 @@ class TestAST(unittest.TestCase):
     def test_fn(self):
         t = TestDocument("function(x, y = 2) x + y")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Fn(
                 t.body.range,
@@ -1110,7 +1250,7 @@ class TestAST(unittest.TestCase):
     def test_fn_no_params(self):
         t = TestDocument("function() 1")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Fn(t.body.range, [], t.num(1)),
         )
@@ -1118,7 +1258,7 @@ class TestAST(unittest.TestCase):
     def test_import(self):
         t = TestDocument("import 'test.jsonnet'")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Import(
                 range=t.body.range,
@@ -1133,7 +1273,7 @@ class TestAST(unittest.TestCase):
     def test_importstr(self):
         t = TestDocument("importstr 'test.jsonnet'")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Import(
                 range=t.body.range,
@@ -1148,7 +1288,7 @@ class TestAST(unittest.TestCase):
     def test_assert_expr_without_message(self):
         t = TestDocument("assert true; false")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             AssertExpr(
                 range=t.body.range,
@@ -1164,7 +1304,7 @@ class TestAST(unittest.TestCase):
     def test_assert_expr_with_message(self):
         t = TestDocument("assert true: 'never'; false")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             AssertExpr(
                 range=t.body.range,
@@ -1180,7 +1320,7 @@ class TestAST(unittest.TestCase):
     def test_assert_expr_in_bind(self):
         t = TestDocument("local x = assert true; false; x")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             Local(
                 range=t.body.range,
@@ -1204,7 +1344,7 @@ class TestAST(unittest.TestCase):
         # Assertions are right associated.
         t = TestDocument("assert true; assert false; x")
 
-        self.assertEqual(
+        self.assertExprEqual(
             t.body,
             AssertExpr(
                 range=t.body.range,
