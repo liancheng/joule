@@ -17,7 +17,7 @@ from dataclasses import dataclass, fields
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, Any, Type, TypeVar, cast
+from typing import Annotated, Any, ClassVar, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -38,7 +38,6 @@ logging.basicConfig(
 
 log = logging.root
 
-
 ExprType = TypeVar("ExprType")
 
 
@@ -48,50 +47,71 @@ class AST:
 
     @property
     def pretty_tree(self) -> str:
-        @dataclass
-        class PrettyNode:
-            value: Any
-            label: str | None = None
-
-            def __repr__(self):
-                match self.value:
-                    case AST() as ast:
-                        repr = f"{ast.__class__.__name__} [{ast.range}]"
-                    case [_, *_]:
-                        repr = "[...]"
-                    case _:
-                        repr = str(self.value)
-
-                return repr if self.label is None else f"{self.label}={repr}"
-
-            @property
-            def children(self) -> list["PrettyNode"]:
-                match self.value:
-                    case AST() as ast:
-                        return [
-                            PrettyNode(getattr(ast, f.name), f.name)
-                            for f in fields(ast)
-                            if f.name != "range"
-                        ]
-                    case list() as elems:
-                        return [PrettyNode(e) for e in elems]
-                    case _:
-                        return []
-
-        def dump(buf: list[str], nodes: list[PrettyNode], branches: str = ""):
+        def grow(buf: list[str], nodes: list[PrettyNode], branches: str = ""):
             for i in range(len(nodes)):
                 last = i == len(nodes) - 1
-                new_branch = " " * 4 if last else ":   "
-                fork = "`-- " if last else ":-- "
+                new_branch = " " * 4 if last else "|   "
+                fork = "`-- " if last else "|-- "
 
                 buf.append(f"{branches}{fork}{nodes[i]}")
-                dump(buf, nodes[i].children, branches + new_branch)
+                grow(buf, nodes[i].children, branches + new_branch)
 
         root = PrettyNode(self)
         lines = [str(root)]
-        dump(lines, root.children)
+        grow(lines, root.children)
 
         return "\n".join(lines)
+
+
+@dataclass
+class PrettyNode:
+    """A class for pretty-printed AST nodes.
+
+    A pretty-printed AST node can be one of the following:
+
+    * An `AST` object, with or without a label.
+    * A field of an `AST` object with the field name as label.
+    * An element of a list, with its index as label.
+    """
+
+    value: Any
+    label: str | None = None
+
+    ESCAPE_TABLE: ClassVar[dict[int, str]] = str.maketrans(
+        {"\n": r"\n", "\t": r"\t", "\r": r"\r", '"': r"\""}
+    )
+
+    def __repr__(self):
+        def escape(s: str) -> str:
+            escaped = self.value[0:10].translate(PrettyNode.ESCAPE_TABLE)
+            postfix = "" if len(s) <= 10 else f"[{len(s) - 10} characters]"
+            return f'"{escaped}{postfix}"'
+
+        match self.value:
+            case AST() as ast:
+                repr = f"{ast.__class__.__name__} [{ast.range}]"
+            case [_, *_]:
+                repr = "[...]"
+            case str():
+                repr = escape(self.value)
+            case _:
+                repr = str(self.value)
+
+        return repr if self.label is None else f"{self.label}={repr}"
+
+    @property
+    def children(self) -> list["PrettyNode"]:
+        match self.value:
+            case AST() as ast:
+                return [
+                    PrettyNode(getattr(ast, f.name), f.name)
+                    for f in fields(ast)
+                    if f.name != "range"
+                ]
+            case [*elems] if (size := len(elems)) > 0:
+                return [PrettyNode(elems[i], f"[{i}]") for i in range(size)]
+            case _:
+                return []
 
 
 @dataclass
@@ -941,9 +961,9 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 Binary [0:0-0:7]
-                :-- op=+
-                :-- lhs=Str [0:0-0:3]
-                :   `-- raw=f
+                |-- op="+"
+                |-- lhs=Str [0:0-0:3]
+                |   `-- raw="f"
                 `-- rhs=Num [0:6-0:7]
                     `-- value=1.0
                 """
@@ -955,16 +975,16 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 Local [0:0-0:18]
-                :-- binds=[...]
-                :   `-- Bind [0:6-0:11]
-                :       :-- id=Id [0:6-0:7]
-                :       :   `-- name=x
-                :       `-- value=Num [0:10-0:11]
-                :           `-- value=1.0
+                |-- binds=[...]
+                |   `-- [0]=Bind [0:6-0:11]
+                |       |-- id=Id [0:6-0:7]
+                |       |   `-- name="x"
+                |       `-- value=Num [0:10-0:11]
+                |           `-- value=1.0
                 `-- body=Binary [0:13-0:18]
-                    :-- op=+
-                    :-- lhs=Id [0:13-0:14]
-                    :   `-- name=x
+                    |-- op="+"
+                    |-- lhs=Id [0:13-0:14]
+                    |   `-- name="x"
                     `-- rhs=Num [0:17-0:18]
                         `-- value=2.0
                 """
