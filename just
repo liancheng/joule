@@ -13,11 +13,11 @@
 import logging
 import unittest
 from contextlib import contextmanager
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, Any, ClassVar, Type, TypeVar, cast
+from typing import Annotated, Any, ClassVar, Optional, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -780,6 +780,10 @@ def position_before(lhs: PositionLike, rhs: PositionLike):
     )
 
 
+def range_contains(range: L.Range, pos: L.Position):
+    return position_before(range.start, pos) and position_before(pos, range.end)
+
+
 RangeLike = L.Range | T.Range | T.Node | Expr
 
 
@@ -813,6 +817,50 @@ def parse(source: str) -> T.Node:
     return get_parser("jsonnet").parse(source.encode("utf-8")).root_node
 
 
+@dataclass
+class Binding:
+    id: Id
+    value: Expr
+
+
+@dataclass
+class Scope:
+    bindings: list[Binding] = field(default_factory=list)
+    parent: Optional["Scope"] = None
+
+    def bind(self, id: Id, value: Expr):
+        self.bindings.insert(0, Binding(id, value))
+
+    def get(self, id: Id) -> Binding | None:
+        maybe_binding = next(
+            iter(b for b in self.bindings if b.id.name == id.name),
+            None,
+        )
+
+        if maybe_binding is None and self.parent is not None:
+            return self.parent.get(id)
+        else:
+            return maybe_binding
+
+    def nest(self) -> "Scope":
+        return Scope([], parent=self)
+
+
+@dataclass
+class HashableRange:
+    range: L.Range
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.range.start.line,
+                self.range.start.character,
+                self.range.end.line,
+                self.range.end.character,
+            )
+        )
+
+
 class Index(Visitor):
     def __init__(self, tree: Expr) -> None:
         self.root_symbol = L.DocumentSymbol(
@@ -823,9 +871,15 @@ class Index(Visitor):
         )
 
         self.breadcrumbs = [self.root_symbol]
+        self.scope = Scope()
+        self.def_index: dict[HashableRange, list[Id]] = {}
+        self.ref_index: dict[HashableRange, list[Id]] = {}
+
         self.visit(tree)
 
     def visit_bind(self, b: Bind):
+        self.scope.bind(b.id, b.value)
+
         match b.value:
             case Fn():
                 kind = L.SymbolKind.Function
@@ -840,7 +894,8 @@ class Index(Visitor):
         )
 
         with self.parent_symbol(symbol):
-            self.visit(b.value)
+            with self.nested_scope():
+                self.visit(b.value)
 
     def visit_param(self, p: Param):
         symbol = L.DocumentSymbol(
@@ -867,6 +922,16 @@ class Index(Visitor):
         with self.parent_symbol(symbol):
             pass
 
+    def visit_id(self, e: Id):
+        if binding := self.scope.get(e):
+            defs = self.def_index.get(HashableRange(e.range), [])
+            defs.append(binding.id)
+            self.def_index[HashableRange(e.range)] = defs
+
+            refs = self.ref_index.get(HashableRange(binding.id.range), [])
+            refs.append(e)
+            self.ref_index[HashableRange(binding.id.range)] = refs
+
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
         parent = self.breadcrumbs[-1]
@@ -883,6 +948,16 @@ class Index(Visitor):
             yield symbol
         finally:
             self.breadcrumbs.pop()
+
+    @contextmanager
+    def nested_scope(self):
+        parent = self.scope
+        self.scope = self.scope.nest()
+
+        try:
+            yield self.scope
+        finally:
+            self.scope = parent
 
 
 class JustLanguageServer(LanguageServer):
@@ -935,6 +1010,41 @@ def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
 def document_symbol(ls: JustLanguageServer, params: L.DocumentColorParams):
     uri = params.text_document.uri
     return ls.index(uri).root_symbol.children
+
+
+@server.feature(L.TEXT_DOCUMENT_DEFINITION)
+def definition(ls: JustLanguageServer, params: L.DefinitionParams):
+    uri = params.text_document.uri
+    index = ls.index(uri)
+    pos = params.position
+    defs = next(
+        iter(
+            defs
+            for key, defs in index.def_index.items()
+            if range_contains(key.range, pos)
+        ),
+        [],
+    )
+
+    return [L.Location(uri, id.range) for id in defs]
+
+
+@server.feature(L.TEXT_DOCUMENT_REFERENCES)
+def references(ls: JustLanguageServer, params: L.ReferenceParams):
+    uri = params.text_document.uri
+    index = ls.index(uri)
+    pos = params.position
+
+    refs = next(
+        iter(
+            refs
+            for key, refs in index.ref_index.items()
+            if range_contains(key.range, pos)
+        ),
+        [],
+    )
+
+    return [L.Location(uri, id.range) for id in refs]
 
 
 class TestDocument:
