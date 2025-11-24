@@ -38,17 +38,50 @@ logging.basicConfig(
 
 log = logging.root
 
-ExprType = TypeVar("ExprType")
+
+ASTType = TypeVar("ASTType")
 
 
 @dataclass
 class AST:
-    # TODO
-    #
-    # - Use `L.Location` instead of `L.Range` to include document URI and enable
-    #   cross-document references.
-    # - Record the original TS node to track byte offset.
-    range: L.Range
+    location: L.Location
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "AST":
+        global dispatch
+
+        dispatch = {
+            "anonymous_function": Fn.from_doc,
+            "array": Array.from_doc,
+            "assert": AssertExpr.from_doc,
+            "binary": Binary.from_doc,
+            "bind": Bind.from_doc,
+            "document": Document.from_doc,
+            "false": Bool.from_doc,
+            "forloop": ListComp.from_doc,
+            "forspec": ForSpec.from_doc,
+            "functioncall": Call.from_doc,
+            "id": Id.from_doc,
+            "ifspec": IfSpec.from_doc,
+            "import": Import.from_doc,
+            "importstr": Import.from_doc,
+            "local_bind": Local.from_doc,
+            "named_argument": Arg.from_doc,
+            "number": Num.from_doc,
+            "param": Param.from_doc,
+            "string": Str.from_doc,
+            "true": Bool.from_doc,
+        }
+
+        return dispatch[node.type](uri, node)
+
+    def to(self, expect_type: Type[ASTType]) -> ASTType:
+        if not isinstance(self, expect_type):
+            raise TypeError(
+                f"Expected {expect_type.__name__}, but got {type(self).__name__}"
+            )
+
+        return cast(ASTType, self)
 
     @property
     def pretty_tree(self) -> str:
@@ -93,8 +126,10 @@ class PrettyNode:
             return f'"{escaped}{postfix}"'
 
         match self.value:
+            case Document() as doc:
+                repr = f"{doc.__class__.__name__} [{doc.location}]"
             case AST() as ast:
-                repr = f"{ast.__class__.__name__} [{ast.range}]"
+                repr = f"{ast.__class__.__name__} [{ast.location.range}]"
             case [_, *_]:
                 repr = "[...]"
             case str():
@@ -111,7 +146,7 @@ class PrettyNode:
                 return [
                     PrettyNode(getattr(ast, f.name), f.name)
                     for f in fields(ast)
-                    if f.name != "range"
+                    if f.name != "location"
                 ]
             case [*elems] if (size := len(elems)) > 0:
                 return [PrettyNode(elems[i], f"[{i}]") for i in range(size)]
@@ -122,39 +157,13 @@ class PrettyNode:
 @dataclass
 class Expr(AST):
     @staticmethod
-    def from_tree(node: T.Node) -> "Expr":
-        global dispatch
-
-        dispatch = {
-            "anonymous_function": Fn.from_tree,
-            "array": Array.from_tree,
-            "assert": AssertExpr.from_tree,
-            "binary": Binary.from_tree,
-            "document": Document.from_tree,
-            "false": Bool.from_tree,
-            "forloop": ListComp.from_tree,
-            "functioncall": Call.from_tree,
-            "id": Id.from_tree,
-            "import": Import.from_tree,
-            "importstr": Import.from_tree,
-            "local_bind": Local.from_tree,
-            "number": Num.from_tree,
-            "string": Str.from_tree,
-            "true": Bool.from_tree,
-        }
-
-        return dispatch[node.type](node)
-
-    def to(self, expect_type: Type[ExprType]) -> ExprType:
-        if not isinstance(self, expect_type):
-            raise TypeError(
-                f"Expected {expect_type.__name__}, but got {type(self).__name__}"
-            )
-
-        return cast(ExprType, self)
+    def from_doc(uri: str, node: T.Node) -> "Expr":
+        return AST.from_doc(uri, node).to(Expr)
 
     def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
-        return Binary(merge_ranges(self, rhs), op, self, rhs)
+        return Binary(
+            L.Location(self.location.uri, merge_ranges(self, rhs)), op, self, rhs
+        )
 
     def __add__(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.Plus, rhs)
@@ -193,10 +202,10 @@ class Document(Expr):
     body: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Document":
+    def from_doc(uri: str, node: T.Node) -> "Document":
         assert node.type == "document"
         body, *_ = node.named_children
-        return Document(range_of(node), Expr.from_tree(body))
+        return Document(location_of(uri, node), Expr.from_doc(uri, body))
 
 
 @dataclass
@@ -204,20 +213,24 @@ class Id(Expr):
     name: str
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Id":
+    def from_doc(uri: str, node: T.Node) -> "Id":
         assert node.type == "id"
         assert node.text is not None
 
         return Id(
-            range=range_of(node),
+            location=location_of(uri, node),
             name=node.text.decode(),
         )
 
     def bind(self, value: Expr) -> "Bind":
-        return Bind(merge_ranges(self, value), self, value)
+        return Bind(
+            L.Location(self.location.uri, merge_ranges(self, value)), self, value
+        )
 
     def arg(self, value: Expr) -> "Arg":
-        return Arg(merge_ranges(self, value), value, self)
+        return Arg(
+            L.Location(self.location.uri, merge_ranges(self, value)), value, self
+        )
 
 
 @dataclass
@@ -225,12 +238,12 @@ class Num(Expr):
     value: float
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Num":
+    def from_doc(uri: str, node: T.Node) -> "Num":
         assert node.type == "number"
         assert node.text is not None
 
         return Num(
-            range=range_of(node),
+            location=location_of(uri, node),
             value=float(node.text.decode()),
         )
 
@@ -240,14 +253,14 @@ class Str(Expr):
     raw: str
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Str":
+    def from_doc(uri: str, node: T.Node) -> "Str":
         assert node.type == "string"
 
         _, content, _ = node.named_children
         assert content.text is not None
 
         return Str(
-            range=range_of(node),
+            location=location_of(uri, node),
             # The raw string content before escaping or indentations are handled.
             raw=content.text.decode(),
         )
@@ -258,12 +271,12 @@ class Bool(Expr):
     value: bool
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Bool":
+    def from_doc(uri: str, node: T.Node) -> "Bool":
         assert node.type in ["true", "false"]
         assert node.text is not None
 
         return Bool(
-            range=range_of(node),
+            location=location_of(uri, node),
             value=node.text.decode() == "true",
         )
 
@@ -273,11 +286,11 @@ class Array(Expr):
     values: list[Expr]
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Array":
+    def from_doc(uri: str, node: T.Node) -> "Array":
         assert node.type == "array"
         return Array(
-            range=range_of(node),
-            values=[Expr.from_tree(c) for c in node.named_children],
+            location=location_of(uri, node),
+            values=[Expr.from_doc(uri, c) for c in node.named_children],
         )
 
 
@@ -315,17 +328,17 @@ class Binary(Expr):
     rhs: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Binary":
+    def from_doc(uri: str, node: T.Node) -> "Binary":
         assert node.type == "binary"
 
         lhs, op, rhs = node.named_children
         assert op.text is not None
 
         return Binary(
-            range=range_of(node),
+            location=location_of(uri, node),
             op=Operator(op.text.decode("utf-8")),
-            lhs=Expr.from_tree(lhs),
-            rhs=Expr.from_tree(rhs),
+            lhs=Expr.from_doc(uri, lhs),
+            rhs=Expr.from_doc(uri, rhs),
         )
 
 
@@ -356,7 +369,7 @@ class Binary(Expr):
 # This complicates parsing values in local bindings and function bodies, because a bound
 # value and a function body can be either one node for a regular expression or two nodes
 # for an assertion expression.
-def parse_expr(nodes: list[T.Node]) -> Expr:
+def parse_expr(uri: str, nodes: list[T.Node]) -> Expr:
     assert 1 <= len(nodes) <= 2
 
     if len(nodes) == 2:
@@ -365,7 +378,7 @@ def parse_expr(nodes: list[T.Node]) -> Expr:
     else:
         [value] = nodes
 
-    return Expr.from_tree(value)
+    return Expr.from_doc(uri, value)
 
 
 @dataclass
@@ -374,16 +387,16 @@ class Bind(AST):
     value: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Bind":
+    def from_doc(uri: str, node: T.Node) -> "Bind":
         assert node.type == "bind"
         assert 2 <= len(node.named_children) <= 3
 
         if len(node.children_by_field_name("function")) == 0:
             id, *value_nodes = node.named_children
             return Bind(
-                range=range_of(node),
-                id=Id.from_tree(id),
-                value=parse_expr(value_nodes),
+                location=location_of(uri, node),
+                id=Id.from_doc(uri, id),
+                value=parse_expr(uri, value_nodes),
             )
         else:
             # Following `id`, here could be:
@@ -402,18 +415,18 @@ class Bind(AST):
             body_nodes = node.children_by_field_name("body")
 
             fn = Fn(
-                range=range_of(node),
+                location=location_of(uri, node),
                 params=[
-                    Param.from_tree(param)
+                    Param.from_doc(uri, param)
                     for params in maybe_params
                     for param in params.named_children
                 ],
-                body=parse_expr(body_nodes),
+                body=parse_expr(uri, body_nodes),
             )
 
             return Bind(
-                range=fn.range,
-                id=Id.from_tree(id),
+                location=fn.location,
+                id=Id.from_doc(uri, id),
                 value=fn,
             )
 
@@ -424,15 +437,15 @@ class Local(Expr):
     body: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Local":
+    def from_doc(uri: str, node: T.Node) -> "Local":
         assert node.type == "local_bind"
 
         _, *binds, expr = node.named_children
 
         return Local(
-            range=range_of(node),
-            binds=[Bind.from_tree(bind) for bind in binds],
-            body=Expr.from_tree(expr),
+            location=location_of(uri, node),
+            binds=[Bind.from_doc(uri, bind) for bind in binds],
+            body=Expr.from_doc(uri, expr),
         )
 
 
@@ -442,16 +455,18 @@ class Param(AST):
     value: Expr | None = None
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Param":
+    def from_doc(uri: str, node: T.Node) -> "Param":
         assert node.type == "param"
         assert 1 <= len(node.named_children) <= 2
 
-        id_node, *maybe_value = node.named_children
+        id, *maybe_value = node.named_children
 
         return Param(
-            range=range_of(node),
-            name=Id.from_tree(id_node),
-            value=next(iter(map(Expr.from_tree, maybe_value)), None),
+            location=location_of(uri, node),
+            name=Id.from_doc(uri, id),
+            value=next(
+                iter([Expr.from_doc(uri, value) for value in maybe_value]), None
+            ),
         )
 
 
@@ -461,20 +476,20 @@ class Fn(Expr):
     body: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Fn":
+    def from_doc(uri: str, node: T.Node) -> "Fn":
         assert node.type == "anonymous_function"
         assert 1 <= len(node.named_children) <= 2
 
         *maybe_params, body_node = node.named_children
 
         return Fn(
-            range=range_of(node),
+            location=location_of(uri, node),
             params=[
-                Param.from_tree(param)
+                Param.from_doc(uri, param)
                 for params in maybe_params
                 for param in params.named_children
             ],
-            body=Expr.from_tree(body_node),
+            body=Expr.from_doc(uri, body_node),
         )
 
 
@@ -484,20 +499,20 @@ class Arg(AST):
     name: Id | None = None
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Arg":
+    def from_doc(uri: str, node: T.Node) -> "Arg":
         if node.type == "named_argument":
             assert len(node.named_children) == 2
             name, value = node.named_children
 
             return Arg(
-                range=range_of(node),
-                value=Expr.from_tree(value),
-                name=Id.from_tree(name),
+                location=location_of(uri, node),
+                value=Expr.from_doc(uri, value),
+                name=Id.from_doc(uri, name),
             )
         else:
             return Arg(
-                range=range_of(node),
-                value=Expr.from_tree(node),
+                location=location_of(uri, node),
+                value=Expr.from_doc(uri, node),
             )
 
 
@@ -507,17 +522,19 @@ class Call(Expr):
     args: list[Arg]
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Call":
+    def from_doc(uri: str, node: T.Node) -> "Call":
         assert node.type == "functioncall"
         assert len(node.named_children) >= 1
 
         fn, *maybe_args = node.named_children
 
         return Call(
-            range=range_of(node),
-            fn=Expr.from_tree(fn),
+            location=location_of(uri, node),
+            fn=Expr.from_doc(uri, fn),
             args=[
-                Arg.from_tree(arg) for args in maybe_args for arg in args.named_children
+                Arg.from_doc(uri, arg)
+                for args in maybe_args
+                for arg in args.named_children
             ],
         )
 
@@ -528,16 +545,16 @@ class ForSpec(AST):
     expr: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "ForSpec":
+    def from_doc(uri: str, node: T.Node) -> "ForSpec":
         assert node.type == "forspec"
         assert len(node.named_children) == 2
 
         id, expr = node.named_children
 
         return ForSpec(
-            range_of(node),
-            Id.from_tree(id),
-            Expr.from_tree(expr),
+            location_of(uri, node),
+            Id.from_doc(uri, id),
+            Expr.from_doc(uri, expr),
         )
 
 
@@ -546,14 +563,12 @@ class IfSpec(AST):
     condition: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "IfSpec":
+    def from_doc(uri: str, node: T.Node) -> "IfSpec":
         assert node.type == "ifspec"
         assert len(node.named_children) == 1
 
-        return IfSpec(
-            range_of(node),
-            condition=next(map(Expr.from_tree, node.named_children)),
-        )
+        [child] = node.named_children
+        return IfSpec(location_of(uri, node), condition=Expr.from_doc(uri, child))
 
 
 @dataclass
@@ -563,20 +578,20 @@ class ListComp(Expr):
     comp_spec: list[ForSpec | IfSpec]
 
     @staticmethod
-    def from_tree(node: T.Node) -> "ListComp":
+    def from_doc(uri: str, node: T.Node) -> "ListComp":
         assert node.type == "forloop"
         assert len(node.named_children) >= 2
 
         expr, for_spec, *maybe_comp_spec = node.named_children
 
         return ListComp(
-            range=range_of(node),
-            expr=Expr.from_tree(expr),
-            for_spec=ForSpec.from_tree(for_spec),
+            location=location_of(uri, node),
+            expr=Expr.from_doc(uri, expr),
+            for_spec=ForSpec.from_doc(uri, for_spec),
             comp_spec=[
-                ForSpec.from_tree(spec)
+                ForSpec.from_doc(uri, spec)
                 if spec.type == "forspec"
-                else IfSpec.from_tree(spec)
+                else IfSpec.from_doc(uri, spec)
                 for comp_spec in maybe_comp_spec
                 for spec in comp_spec.named_children
             ],
@@ -589,15 +604,15 @@ class Import(Expr):
     path: Str
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Import":
+    def from_doc(uri: str, node: T.Node) -> "Import":
         assert node.type in ["import", "importstr"]
         assert len(node.named_children) == 1
 
         [path] = node.named_children
         return Import(
-            range_of(node),
+            location_of(uri, node),
             node.type,
-            Str.from_tree(path),
+            Str.from_doc(uri, path),
         )
 
 
@@ -607,15 +622,22 @@ class Assert(AST):
     message: Expr | None = None
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Assert":
+    def from_doc(uri: str, node: T.Node) -> "Assert":
         assert node.type == "assert"
         assert 1 <= len(node.named_children) <= 2
 
         condition, *maybe_message = node.named_children
+
+        match maybe_message:
+            case [child]:
+                message = Expr.from_doc(uri, child)
+            case _:
+                message = None
+
         return Assert(
-            range_of(node),
-            Expr.from_tree(condition),
-            next(map(Expr.from_tree, maybe_message), None),
+            location_of(uri, node),
+            condition=Expr.from_doc(uri, condition),
+            message=message,
         )
 
 
@@ -625,13 +647,13 @@ class AssertExpr(Expr):
     body: Expr
 
     @staticmethod
-    def from_tree(node: T.Node) -> "Expr":
+    def from_doc(uri: str, node: T.Node) -> "Expr":
         body = node.next_named_sibling
         assert body is not None
         return AssertExpr(
-            merge_ranges(node, body),
-            Assert.from_tree(node),
-            Expr.from_tree(body),
+            L.Location(uri, merge_ranges(node, body)),
+            Assert.from_doc(uri, node),
+            Expr.from_doc(uri, body),
         )
 
 
@@ -760,6 +782,10 @@ def range_of(node: T.Node) -> L.Range:
     )
 
 
+def location_of(uri: str, node: T.Node) -> L.Location:
+    return L.Location(uri, range_of(node))
+
+
 PositionLike = L.Position | T.Point
 
 
@@ -789,7 +815,7 @@ def range_contains(range: L.Range, pos: L.Position):
     return position_before(range.start, pos) and position_before(pos, range.end)
 
 
-RangeLike = L.Range | T.Range | T.Node | Expr
+RangeLike = L.Range | T.Range | T.Node | AST
 
 
 def merge_ranges(lhs: RangeLike, rhs: RangeLike) -> L.Range:
@@ -800,8 +826,8 @@ def merge_ranges(lhs: RangeLike, rhs: RangeLike) -> L.Range:
             start = position_of(r.start_point)
         case T.Node() as n:
             start = position_of(n.start_point)
-        case Expr() as e:
-            start = e.range.start
+        case AST() as a:
+            start = a.location.range.start
 
     match rhs:
         case L.Range() as r:
@@ -810,12 +836,39 @@ def merge_ranges(lhs: RangeLike, rhs: RangeLike) -> L.Range:
             end = position_of(r.end_point)
         case T.Node() as n:
             end = position_of(n.end_point)
-        case Expr() as e:
-            end = e.range.end
+        case AST() as a:
+            end = a.location.range.end
 
     assert position_before(start, end)
 
     return L.Range(start, end)
+
+
+LocationLike = L.Location | AST
+
+
+def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
+    match lhs:
+        case L.Location():
+            start = lhs
+        case AST():
+            start = lhs.location
+
+    match rhs:
+        case L.Location():
+            end = rhs
+        case AST():
+            end = rhs.location
+
+    assert start.uri == end.uri, dedent(
+        f"""\
+        Cannot merge two locations from different documents:
+        * {start.uri}
+        * {end.uri}
+        """
+    )
+
+    return L.Location(start.uri, merge_ranges(start.range, end.range))
 
 
 def parse(source: str) -> T.Node:
@@ -852,16 +905,17 @@ class Scope:
 
 
 @dataclass
-class HashableRange:
-    range: L.Range
+class HashableLocation:
+    location: L.Location
 
     def __hash__(self) -> int:
         return hash(
             (
-                self.range.start.line,
-                self.range.start.character,
-                self.range.end.line,
-                self.range.end.character,
+                self.location.uri,
+                self.location.range.start.line,
+                self.location.range.start.character,
+                self.location.range.end.line,
+                self.location.range.end.character,
             )
         )
 
@@ -871,14 +925,14 @@ class Index(Visitor):
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.Variable,
-            range=tree.range,
-            selection_range=tree.range,
+            range=tree.location.range,
+            selection_range=tree.location.range,
         )
 
         self.breadcrumbs = [self.root_symbol]
         self.scope = Scope()
-        self.def_index: dict[HashableRange, list[Id]] = {}
-        self.ref_index: dict[HashableRange, list[Id]] = {}
+        self.def_index: dict[HashableLocation, list[Id]] = {}
+        self.ref_index: dict[HashableLocation, list[Id]] = {}
 
         self.visit(tree)
 
@@ -894,8 +948,8 @@ class Index(Visitor):
         symbol = L.DocumentSymbol(
             name=b.id.name,
             kind=kind,
-            range=b.id.range,
-            selection_range=b.range,
+            range=b.id.location.range,
+            selection_range=b.location.range,
         )
 
         with self.parent_symbol(symbol):
@@ -906,8 +960,8 @@ class Index(Visitor):
         symbol = L.DocumentSymbol(
             name=p.name.name,
             kind=L.SymbolKind.Variable,
-            range=p.name.range,
-            selection_range=p.range,
+            range=p.name.location.range,
+            selection_range=p.location.range,
         )
 
         with self.parent_symbol(symbol):
@@ -920,8 +974,8 @@ class Index(Visitor):
         symbol = L.DocumentSymbol(
             name=s.id.name,
             kind=L.SymbolKind.Variable,
-            range=s.id.range,
-            selection_range=s.id.range,
+            range=s.id.location.range,
+            selection_range=s.id.location.range,
         )
 
         with self.parent_symbol(symbol):
@@ -932,13 +986,13 @@ class Index(Visitor):
             self.new_ref(e, binding)
 
     def new_ref(self, ref: Id, binding: Binding):
-        defs = self.def_index.get(HashableRange(ref.range), [])
+        defs = self.def_index.get(HashableLocation(ref.location), [])
         defs.append(binding.id)
-        self.def_index[HashableRange(ref.range)] = defs
+        self.def_index[HashableLocation(ref.location)] = defs
 
-        refs = self.ref_index.get(HashableRange(binding.id.range), [])
+        refs = self.ref_index.get(HashableLocation(binding.id.location), [])
         refs.append(ref)
-        self.ref_index[HashableRange(binding.id.range)] = refs
+        self.ref_index[HashableLocation(binding.id.location)] = refs
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -977,7 +1031,7 @@ class JustLanguageServer(LanguageServer):
         return parse(self.workspace.get_text_document(uri).source)
 
     def refresh_index(self, uri: str) -> Index:
-        index = Index(Expr.from_tree(self.document_root(uri)))
+        index = Index(Expr.from_doc(uri, self.document_root(uri)))
         self.docs[uri] = index
         return index
 
@@ -1025,9 +1079,9 @@ def definition(ls: JustLanguageServer, params: L.DefinitionParams):
     uri = params.text_document.uri
     return next(
         iter(
-            [L.Location(uri, id.range) for id in ids]
+            [id.location for id in ids]
             for key, ids in ls.index(uri).def_index.items()
-            if range_contains(key.range, params.position)
+            if range_contains(key.location.range, params.position)
         ),
         [],
     )
@@ -1038,9 +1092,9 @@ def references(ls: JustLanguageServer, params: L.ReferenceParams):
     uri = params.text_document.uri
     return next(
         iter(
-            [L.Location(uri, id.range) for id in ids]
+            [id.location for id in ids]
             for key, ids in ls.index(uri).ref_index.items()
-            if range_contains(key.range, params.position)
+            if range_contains(key.location.range, params.position)
         ),
         [],
     )
@@ -1048,8 +1102,9 @@ def references(ls: JustLanguageServer, params: L.ReferenceParams):
 
 class TestDocument:
     def __init__(self, source: str) -> None:
+        self.uri = "file:///tmp/test.jsonnet"
         self.lines = source.splitlines(keepends=False)
-        self.body = Document.from_tree(parse(source)).body
+        self.body = Document.from_doc(self.uri, parse(source)).body
 
     def start_of(self, needle: str, line=1, nth=1) -> L.Position:
         assert line >= 1 and nth >= 1
@@ -1072,17 +1127,17 @@ class TestDocument:
         pos.character += len(needle)
         return pos
 
-    def range_of(self, needle: str, line=1, nth=1) -> L.Range:
+    def location_of(self, needle: str, line=1, nth=1) -> L.Location:
         start = self.start_of(needle, line, nth)
         end = L.Position(start.line, start.character + len(needle))
-        return L.Range(start, end)
+        return L.Location(self.uri, L.Range(start, end))
 
     def id(self, name: str, line=1, nth=1) -> Id:
-        return Id(self.range_of(name, line, nth), name)
+        return Id(self.location_of(name, line, nth), name)
 
     def boolean(self, value: bool, line=1, nth=1) -> Bool:
         needle = "true" if value else "false"
-        range = self.range_of(needle, line, nth)
+        range = self.location_of(needle, line, nth)
         return Bool(range, value)
 
     def num(self, value: float | int, literal: str | None = None, line=1, nth=1) -> Num:
@@ -1093,20 +1148,20 @@ class TestDocument:
             case _:
                 assert literal is not None
 
-        return Num(self.range_of(literal, line, nth), value)
+        return Num(self.location_of(literal, line, nth), value)
 
     def str(self, value: str, literal: str, line=1, nth=1) -> Str:
-        return Str(self.range_of(literal, line, nth), value)
+        return Str(self.location_of(literal, line, nth), value)
 
     def param(
         self, name: str, line: int = 1, nth: int = 1, value: Expr | None = None
     ) -> Param:
         id = self.id(name, line, nth)
-        range = id.range if value is None else merge_ranges(id, value)
-        return Param(range, id, value)
+        location = id.location if value is None else merge_locations(id, value)
+        return Param(location, id, value)
 
     def arg(self, value: Expr) -> Arg:
-        return Arg(value.range, value)
+        return Arg(value.location, value)
 
 
 class TestAST(unittest.TestCase):
@@ -1187,7 +1242,7 @@ class TestAST(unittest.TestCase):
             t = TestDocument(literal)
             self.assertExprEqual(
                 t.body,
-                Str(t.body.range, expected),
+                Str(t.body.location, expected),
             )
 
     def test_local(self):
@@ -1196,7 +1251,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Local(
-                range=t.body.range,
+                location=t.body.location,
                 binds=[t.id("x").bind(t.num(1))],
                 body=t.id("x", nth=2),
             ),
@@ -1217,18 +1272,18 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Local(
-                range=t.body.range,
+                location=t.body.location,
                 binds=[
                     t.id("f1", line=2).bind(
                         Fn(
-                            range=t.range_of("f1(x) = x + 1", line=2),
+                            location=t.location_of("f1(x) = x + 1", line=2),
                             params=[t.param("x", line=2)],
                             body=t.id("x", line=2, nth=2) + t.num(1, line=2, nth=2),
                         )
                     ),
                     t.id("f2", line=3).bind(
                         Fn(
-                            range=t.range_of("f2(y, z) = y + z", line=3),
+                            location=t.location_of("f2(y, z) = y + z", line=3),
                             params=[
                                 t.param("y", line=3),
                                 t.param("z", line=3),
@@ -1238,12 +1293,12 @@ class TestAST(unittest.TestCase):
                     ),
                 ],
                 body=Call(
-                    range=t.range_of("f2(f1(3), z = 4)", line=4),
+                    location=t.location_of("f2(f1(3), z = 4)", line=4),
                     fn=t.id("f2", line=4),
                     args=[
                         t.arg(
                             Call(
-                                range=t.range_of("f1(3)", line=4),
+                                location=t.location_of("f1(3)", line=4),
                                 fn=t.id("f1", line=4),
                                 args=[t.arg(t.num(3, line=4))],
                             )
@@ -1267,7 +1322,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Local(
-                range=t.body.range,
+                location=t.body.location,
                 binds=[
                     t.id("x").bind(t.num(1)),
                     t.id("y").bind(t.num(2)),
@@ -1281,7 +1336,7 @@ class TestAST(unittest.TestCase):
 
         self.assertExprEqual(
             t.body,
-            Array(range=t.body.range, values=[]),
+            Array(location=t.body.location, values=[]),
         )
 
     def test_array(self):
@@ -1290,7 +1345,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Array(
-                range=t.body.range,
+                location=t.body.location,
                 values=[
                     t.num(1),
                     t.boolean(True),
@@ -1322,13 +1377,13 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             ListComp(
-                range=t.body.range,
+                location=t.body.location,
                 expr=t.id("x"),
                 for_spec=ForSpec(
-                    range=t.range_of("for x in [1, 2]"),
+                    location=t.location_of("for x in [1, 2]"),
                     id=t.id("x", nth=2),
                     expr=Array(
-                        range=t.range_of("[1, 2]"),
+                        location=t.location_of("[1, 2]"),
                         values=[
                             t.num(1),
                             t.num(2),
@@ -1337,7 +1392,7 @@ class TestAST(unittest.TestCase):
                 ),
                 comp_spec=[
                     IfSpec(
-                        range=t.range_of("if x > 1"),
+                        location=t.location_of("if x > 1"),
                         condition=t.id("x", nth=3) > t.num(1, nth=2),
                     ),
                 ],
@@ -1350,7 +1405,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Fn(
-                t.body.range,
+                t.body.location,
                 params=[
                     t.param("x"),
                     t.param("y", value=t.num(2)),
@@ -1364,7 +1419,7 @@ class TestAST(unittest.TestCase):
 
         self.assertExprEqual(
             t.body,
-            Fn(t.body.range, [], t.num(1)),
+            Fn(t.body.location, [], t.num(1)),
         )
 
     def test_import(self):
@@ -1373,7 +1428,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Import(
-                range=t.body.range,
+                location=t.body.location,
                 type="import",
                 path=t.str(
                     value="test.jsonnet",
@@ -1388,7 +1443,7 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Import(
-                range=t.body.range,
+                location=t.body.location,
                 type="importstr",
                 path=t.str(
                     value="test.jsonnet",
@@ -1403,9 +1458,9 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             AssertExpr(
-                range=t.body.range,
+                location=t.body.location,
                 assertion=Assert(
-                    range=t.range_of("assert true"),
+                    location=t.location_of("assert true"),
                     condition=t.boolean(True),
                     message=None,
                 ),
@@ -1419,9 +1474,9 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             AssertExpr(
-                range=t.body.range,
+                location=t.body.location,
                 assertion=Assert(
-                    range=t.range_of("assert true: 'never'"),
+                    location=t.location_of("assert true: 'never'"),
                     condition=t.boolean(True),
                     message=t.str("never", "'never'"),
                 ),
@@ -1435,13 +1490,13 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             Local(
-                range=t.body.range,
+                location=t.body.location,
                 binds=[
                     t.id("x").bind(
                         AssertExpr(
-                            range=t.range_of("assert true; false"),
+                            location=t.location_of("assert true; false"),
                             assertion=Assert(
-                                range=t.range_of("assert true"),
+                                location=t.location_of("assert true"),
                                 condition=t.boolean(True),
                             ),
                             body=t.boolean(False),
@@ -1459,15 +1514,15 @@ class TestAST(unittest.TestCase):
         self.assertExprEqual(
             t.body,
             AssertExpr(
-                range=t.body.range,
+                location=t.body.location,
                 assertion=Assert(
-                    range=t.range_of("assert true"),
+                    location=t.location_of("assert true"),
                     condition=t.boolean(True),
                 ),
                 body=AssertExpr(
-                    range=t.range_of("assert false; x"),
+                    location=t.location_of("assert false; x"),
                     assertion=Assert(
-                        range=t.range_of("assert false"),
+                        location=t.location_of("assert false"),
                         condition=t.boolean(False),
                     ),
                     body=t.id("x"),
@@ -1491,7 +1546,7 @@ def tree(
         ),
     ],
 ):
-    print(Expr.from_tree(parse(path.read_text())).pretty_tree)
+    print(Expr.from_doc(path.as_uri(), parse(path.read_text())).pretty_tree)
 
 
 @app.command()
