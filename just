@@ -11,6 +11,7 @@
 # ///
 
 import logging
+import sys
 import unittest
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
@@ -73,7 +74,9 @@ class AST:
             "true": Bool.from_doc,
         }
 
-        return dispatch[node.type](uri, node)
+        constructor = dispatch.get(node.type, Unknown.from_doc)
+
+        return constructor(uri, node)
 
     def to(self, expect_type: Type[ASTType]) -> ASTType:
         if not isinstance(self, expect_type):
@@ -85,20 +88,7 @@ class AST:
 
     @property
     def pretty_tree(self) -> str:
-        def grow(buf: list[str], nodes: list[PrettyNode], branches: str = ""):
-            for i in range(len(nodes)):
-                last = i == len(nodes) - 1
-                new_branch = ".   " if last else "|   "
-                fork = "`-- " if last else "|-- "
-
-                buf.append(f"{branches}{fork}{nodes[i]}")
-                grow(buf, nodes[i].children, branches + new_branch)
-
-        root = PrettyNode(self)
-        lines = [str(root)]
-        grow(lines, root.children)
-
-        return "\n".join(lines)
+        return PrettyNode(self).pretty_tree
 
 
 @dataclass
@@ -152,6 +142,22 @@ class PrettyNode:
                 return [PrettyNode(elems[i], f"[{i}]") for i in range(size)]
             case _:
                 return []
+
+    @property
+    def pretty_tree(self):
+        def grow(buf: list[str], nodes: list[PrettyNode], branches: str = ""):
+            for i in range(len(nodes)):
+                last = i == len(nodes) - 1
+                new_branch = ".   " if last else "|   "
+                fork = "`-- " if last else "|-- "
+
+                buf.append(f"{branches}{fork}{nodes[i]}")
+                grow(buf, nodes[i].children, branches + new_branch)
+
+        lines = [str(self)]
+        grow(lines, self.children)
+
+        return "\n".join(lines)
 
 
 @dataclass
@@ -452,7 +458,7 @@ class Local(Expr):
 @dataclass
 class Param(AST):
     name: Id
-    value: Expr | None = None
+    default: Expr | None = None
 
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Param":
@@ -464,7 +470,7 @@ class Param(AST):
         return Param(
             location=location_of(uri, node),
             name=Id.from_doc(uri, id),
-            value=next(
+            default=next(
                 iter([Expr.from_doc(uri, value) for value in maybe_value]), None
             ),
         )
@@ -657,6 +663,13 @@ class AssertExpr(Expr):
         )
 
 
+@dataclass
+class Unknown(Expr):
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "Expr":
+        return Unknown(location_of(uri, node))
+
+
 class Visitor:
     def visit(self, tree: Expr):
         match tree:
@@ -726,8 +739,8 @@ class Visitor:
 
     def visit_param(self, p: Param):
         self.visit_id(p.name)
-        if p.value is not None:
-            self.visit(p.value)
+        if p.default is not None:
+            self.visit(p.default)
 
     def visit_call(self, e: Call):
         self.visit(e.fn)
@@ -965,8 +978,8 @@ class Index(Visitor):
         )
 
         with self.parent_symbol(symbol):
-            if p.value is not None:
-                self.visit(p.value)
+            if p.default is not None:
+                self.visit(p.default)
 
     def visit_for_spec(self, s: ForSpec):
         self.visit(s.expr)
@@ -1154,11 +1167,11 @@ class TestDocument:
         return Str(self.location_of(literal, line, nth), value)
 
     def param(
-        self, name: str, line: int = 1, nth: int = 1, value: Expr | None = None
+        self, name: str, line: int = 1, nth: int = 1, default: Expr | None = None
     ) -> Param:
         id = self.id(name, line, nth)
-        location = id.location if value is None else merge_locations(id, value)
-        return Param(location, id, value)
+        location = id.location if default is None else merge_locations(id, default)
+        return Param(location, id, default)
 
     def arg(self, value: Expr) -> Arg:
         return Arg(value.location, value)
@@ -1408,7 +1421,7 @@ class TestAST(unittest.TestCase):
                 t.body.location,
                 params=[
                     t.param("x"),
-                    t.param("y", value=t.num(2)),
+                    t.param("y", default=t.num(2)),
                 ],
                 body=t.id("x", nth=2) + t.id("y", nth=2),
             ),
@@ -1542,11 +1555,23 @@ def tree(
         Path,
         typer.Argument(
             help="The Jsonnet file to print.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            writable=False,
             allow_dash=True,
         ),
     ],
 ):
-    print(Expr.from_doc(path.as_uri(), parse(path.read_text())).pretty_tree)
+    if path == Path("-"):
+        uri = "/dev/stdin"
+        source = sys.stdin.read()
+    else:
+        uri = path.absolute().as_uri()
+        source = path.read_text()
+
+    print(AST.from_doc(uri, parse(source)).pretty_tree)
 
 
 @app.command()
