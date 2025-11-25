@@ -43,6 +43,10 @@ log = logging.root
 ASTType = TypeVar("ASTType")
 
 
+def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
+    return [node for node in nodes if not node.is_extra]
+
+
 @dataclass
 class AST:
     location: L.Location
@@ -50,6 +54,9 @@ class AST:
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "AST":
         global dispatch
+
+        def skip_paren(uri: str, node: T.Node):
+            return AST.from_doc(uri, strip_comments(node.named_children)[0])
 
         dispatch = {
             "anonymous_function": Fn.from_doc,
@@ -70,6 +77,7 @@ class AST:
             "named_argument": Arg.from_doc,
             "number": Num.from_doc,
             "param": Param.from_doc,
+            "parenthesis": skip_paren,
             "string": Str.from_doc,
             "true": Bool.from_doc,
         }
@@ -167,9 +175,7 @@ class Expr(AST):
         return AST.from_doc(uri, node).to(Expr)
 
     def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
-        return Binary(
-            L.Location(self.location.uri, merge_ranges(self, rhs)), op, self, rhs
-        )
+        return Binary(merge_locations(self, rhs), op, self, rhs)
 
     def __add__(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.Plus, rhs)
@@ -210,7 +216,7 @@ class Document(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Document":
         assert node.type == "document"
-        body, *_ = node.named_children
+        body, *_ = strip_comments(node.named_children)
         return Document(location_of(uri, node), Expr.from_doc(uri, body))
 
 
@@ -222,21 +228,13 @@ class Id(Expr):
     def from_doc(uri: str, node: T.Node) -> "Id":
         assert node.type == "id"
         assert node.text is not None
-
-        return Id(
-            location=location_of(uri, node),
-            name=node.text.decode(),
-        )
+        return Id(location_of(uri, node), node.text.decode())
 
     def bind(self, value: Expr) -> "Bind":
-        return Bind(
-            L.Location(self.location.uri, merge_ranges(self, value)), self, value
-        )
+        return Bind(merge_locations(self, value), self, value)
 
     def arg(self, value: Expr) -> "Arg":
-        return Arg(
-            L.Location(self.location.uri, merge_ranges(self, value)), value, self
-        )
+        return Arg(merge_locations(self, value), value, self)
 
 
 @dataclass
@@ -247,11 +245,7 @@ class Num(Expr):
     def from_doc(uri: str, node: T.Node) -> "Num":
         assert node.type == "number"
         assert node.text is not None
-
-        return Num(
-            location=location_of(uri, node),
-            value=float(node.text.decode()),
-        )
+        return Num(location_of(uri, node), float(node.text.decode()))
 
 
 @dataclass
@@ -280,11 +274,7 @@ class Bool(Expr):
     def from_doc(uri: str, node: T.Node) -> "Bool":
         assert node.type in ["true", "false"]
         assert node.text is not None
-
-        return Bool(
-            location=location_of(uri, node),
-            value=node.text.decode() == "true",
-        )
+        return Bool(location_of(uri, node), node.text.decode() == "true")
 
 
 @dataclass
@@ -296,7 +286,10 @@ class Array(Expr):
         assert node.type == "array"
         return Array(
             location=location_of(uri, node),
-            values=[Expr.from_doc(uri, c) for c in node.named_children],
+            values=[
+                Expr.from_doc(uri, child)
+                for child in strip_comments(node.named_children)
+            ],
         )
 
 
@@ -337,7 +330,7 @@ class Binary(Expr):
     def from_doc(uri: str, node: T.Node) -> "Binary":
         assert node.type == "binary"
 
-        lhs, op, rhs = node.named_children
+        lhs, op, rhs = strip_comments(node.named_children)
         assert op.text is not None
 
         return Binary(
@@ -348,45 +341,6 @@ class Binary(Expr):
         )
 
 
-# Unfortunately, `tree-sitter-jsonnet` did a bad job in parsing assert expressions
-# (an expression following an assertion). Ideally, an `AssertExpr` should map to a
-# single tree-sitter node containing an assertion followed by an expression. E.g., the
-# given the following expression:
-#
-#   assert true: "never"; x
-#
-# it should be parsed into a single `<assert_expr>` node:
-#
-#   <assert_expr>     | assert true: "never"; x
-#       <assert>      | assert true: "never"
-#           <_expr>   |        true
-#           <string>  |              "never"
-#       <id>          |                       x
-#
-# However, `tree-sitter-jsonnet` explicitly hides the top node by prefixing the rule
-# with an underscore (`_assert_expr`), and therefore the parser only returns the two
-# child nodes:
-#
-#   <assert>          | assert true: "never"
-#       <_expr>       |        true
-#       <string>      |              "never"
-#   <id>              |                       x
-#
-# This complicates parsing values in local bindings and function bodies, because a bound
-# value and a function body can be either one node for a regular expression or two nodes
-# for an assertion expression.
-def parse_expr(uri: str, nodes: list[T.Node]) -> Expr:
-    assert 1 <= len(nodes) <= 2
-
-    if len(nodes) == 2:
-        value, _ = nodes
-        assert value.type == "assert"
-    else:
-        [value] = nodes
-
-    return Expr.from_doc(uri, value)
-
-
 @dataclass
 class Bind(AST):
     id: Id
@@ -395,14 +349,16 @@ class Bind(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Bind":
         assert node.type == "bind"
-        assert 2 <= len(node.named_children) <= 3
+
+        children = strip_comments(node.named_children)
+        assert 2 <= len(children) <= 3
 
         if len(node.children_by_field_name("function")) == 0:
-            id, *value_nodes = node.named_children
+            id, value, *_ = children
             return Bind(
                 location=location_of(uri, node),
                 id=Id.from_doc(uri, id),
-                value=parse_expr(uri, value_nodes),
+                value=Expr.from_doc(uri, value),
             )
         else:
             # Following `id`, here could be:
@@ -413,21 +369,21 @@ class Bind(AST):
             #  - 1 or 2 `body` nodes:
             #    - 2 nodes if the body is an assertion expression, or
             #    - 1 node for other regular expressions.
-            id, *_ = node.named_children
+            id, *_ = children
 
-            maybe_params = node.children_by_field_name("params")
+            maybe_params = strip_comments(node.children_by_field_name("params"))
             assert len(maybe_params) <= 1
 
-            body_nodes = node.children_by_field_name("body")
+            body, *_ = strip_comments(node.children_by_field_name("body"))
 
             fn = Fn(
                 location=location_of(uri, node),
                 params=[
                     Param.from_doc(uri, param)
                     for params in maybe_params
-                    for param in params.named_children
+                    for param in strip_comments(params.named_children)
                 ],
-                body=parse_expr(uri, body_nodes),
+                body=Expr.from_doc(uri, body),
             )
 
             return Bind(
@@ -446,7 +402,7 @@ class Local(Expr):
     def from_doc(uri: str, node: T.Node) -> "Local":
         assert node.type == "local_bind"
 
-        _, *binds, expr = node.named_children
+        _, *binds, expr = strip_comments(node.named_children)
 
         return Local(
             location=location_of(uri, node),
@@ -463,9 +419,11 @@ class Param(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Param":
         assert node.type == "param"
-        assert 1 <= len(node.named_children) <= 2
 
-        id, *maybe_value = node.named_children
+        children = strip_comments(node.named_children)
+        assert 1 <= len(children) <= 2
+
+        id, *maybe_value = children
 
         return Param(
             location=location_of(uri, node),
@@ -484,16 +442,18 @@ class Fn(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Fn":
         assert node.type == "anonymous_function"
-        assert 1 <= len(node.named_children) <= 2
 
-        *maybe_params, body_node = node.named_children
+        children = strip_comments(node.named_children)
+        assert 1 <= len(children) <= 2
+
+        *maybe_params, body_node = children
 
         return Fn(
             location=location_of(uri, node),
             params=[
                 Param.from_doc(uri, param)
                 for params in maybe_params
-                for param in params.named_children
+                for param in strip_comments(params.named_children)
             ],
             body=Expr.from_doc(uri, body_node),
         )
@@ -507,8 +467,7 @@ class Arg(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Arg":
         if node.type == "named_argument":
-            assert len(node.named_children) == 2
-            name, value = node.named_children
+            name, value = strip_comments(node.named_children)
 
             return Arg(
                 location=location_of(uri, node),
@@ -530,9 +489,11 @@ class Call(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Call":
         assert node.type == "functioncall"
-        assert len(node.named_children) >= 1
 
-        fn, *maybe_args = node.named_children
+        children = strip_comments(node.named_children)
+        assert len(children) >= 1
+
+        fn, *maybe_args = children
 
         return Call(
             location=location_of(uri, node),
@@ -540,7 +501,7 @@ class Call(Expr):
             args=[
                 Arg.from_doc(uri, arg)
                 for args in maybe_args
-                for arg in args.named_children
+                for arg in strip_comments(args.named_children)
             ],
         )
 
@@ -553,9 +514,7 @@ class ForSpec(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "ForSpec":
         assert node.type == "forspec"
-        assert len(node.named_children) == 2
-
-        id, expr = node.named_children
+        id, expr = strip_comments(node.named_children)
 
         return ForSpec(
             location_of(uri, node),
@@ -571,9 +530,7 @@ class IfSpec(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "IfSpec":
         assert node.type == "ifspec"
-        assert len(node.named_children) == 1
-
-        [child] = node.named_children
+        [child] = strip_comments(node.named_children)
         return IfSpec(location_of(uri, node), condition=Expr.from_doc(uri, child))
 
 
@@ -586,9 +543,11 @@ class ListComp(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "ListComp":
         assert node.type == "forloop"
-        assert len(node.named_children) >= 2
 
-        expr, for_spec, *maybe_comp_spec = node.named_children
+        children = strip_comments(node.named_children)
+        assert len(children) >= 2
+
+        expr, for_spec, *maybe_comp_spec = children
 
         return ListComp(
             location=location_of(uri, node),
@@ -599,7 +558,7 @@ class ListComp(Expr):
                 if spec.type == "forspec"
                 else IfSpec.from_doc(uri, spec)
                 for comp_spec in maybe_comp_spec
-                for spec in comp_spec.named_children
+                for spec in strip_comments(comp_spec.named_children)
             ],
         )
 
@@ -612,9 +571,8 @@ class Import(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Import":
         assert node.type in ["import", "importstr"]
-        assert len(node.named_children) == 1
 
-        [path] = node.named_children
+        [path] = strip_comments(node.named_children)
         return Import(
             location_of(uri, node),
             node.type,
@@ -630,9 +588,11 @@ class Assert(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Assert":
         assert node.type == "assert"
-        assert 1 <= len(node.named_children) <= 2
 
-        condition, *maybe_message = node.named_children
+        children = strip_comments(node.named_children)
+        assert 1 <= len(children) <= 2
+
+        condition, *maybe_message = children
 
         match maybe_message:
             case [child]:
@@ -654,7 +614,39 @@ class AssertExpr(Expr):
 
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Expr":
+        # Unfortunately, `tree-sitter-jsonnet` did a bad job in parsing assert
+        # expressions (an expression following an assertion). Ideally, an `AssertExpr`
+        # should map to a single tree-sitter node containing an assertion followed by an
+        # expression. E.g., the given the following expression:
+        #
+        #   assert true: "never"; x
+        #
+        # it should be parsed into a single `<assert_expr>` node:
+        #
+        #   <assert_expr>     | assert true: "never"; x
+        #       <assert>      | assert true: "never"
+        #           <_expr>   |        true
+        #           <string>  |              "never"
+        #       <id>          |                       x
+        #
+        # However, `tree-sitter-jsonnet` explicitly hides the top node by prefixing the
+        # rule with an underscore (`_assert_expr`), and therefore the parser only
+        # returns the two child nodes:
+        #
+        #   <assert>          | assert true: "never"
+        #       <_expr>       |        true
+        #       <string>      |              "never"
+        #   <id>              |                       x
+        #
+        # This complicates parsing values in local bindings and function bodies, because
+        # a bound value and a function body can be either one node for a regular
+        # expression or two nodes for an assertion expression.
+
+        # Finds the first non-comment sibling node, which holds the body expression.
         body = node.next_named_sibling
+        while body is not None and body.is_extra:
+            body = body.next_named_sibling
+
         assert body is not None
         return AssertExpr(
             L.Location(uri, merge_ranges(node, body)),
@@ -1178,20 +1170,19 @@ class TestDocument:
 
 
 class TestAST(unittest.TestCase):
-    def assertExprEqual(self, actual, expected):
-        self.assertMultiLineEqual(
-            actual.pretty_tree,
-            expected.pretty_tree,
-        )
+    def assertAstEqual(self, tree_or_source: AST | str, expected: AST | str):
+        match tree_or_source, expected:
+            case AST() as tree, str():
+                self.assertMultiLineEqual(tree.pretty_tree, expected.strip())
+            case AST() as tree, AST() if tree != expected:
+                self.assertAstEqual(tree, expected.pretty_tree)
+            case str() as source, AST():
+                self.assertAstEqual(TestDocument(source).body, expected.pretty_tree)
+            case str() as source, str():
+                self.assertAstEqual(TestDocument(source).body, expected)
 
     def test_pretty_tree(self):
-        def check(source: str, expected: str):
-            self.assertMultiLineEqual(
-                TestDocument(source).body.pretty_tree,
-                expected.strip(),
-            )
-
-        check(
+        self.assertAstEqual(
             "1",
             dedent(
                 """\
@@ -1201,7 +1192,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        check(
+        self.assertAstEqual(
             "'f' + 1",
             dedent(
                 """\
@@ -1215,7 +1206,23 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        check(
+        self.assertAstEqual(
+            "[1, 2, 3]",
+            dedent(
+                """\
+                Array [0:0-0:9]
+                `-- values=[...]
+                .   |-- [0]=Num [0:1-0:2]
+                .   |   `-- value=1.0
+                .   |-- [1]=Num [0:4-0:5]
+                .   |   `-- value=2.0
+                .   `-- [2]=Num [0:7-0:8]
+                .   .   `-- value=3.0
+                """,
+            ),
+        )
+
+        self.assertAstEqual(
             "local x = 1; x + 2",
             dedent(
                 """\
@@ -1239,7 +1246,7 @@ class TestAST(unittest.TestCase):
     def test_number(self):
         t = TestDocument("1")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             t.num(1),
         )
@@ -1253,15 +1260,32 @@ class TestAST(unittest.TestCase):
             ("|||\n  hello\n|||", "\n  hello\n"),
         ]:
             t = TestDocument(literal)
-            self.assertExprEqual(
+            self.assertAstEqual(
                 t.body,
                 Str(t.body.location, expected),
             )
 
+    def test_paren(self):
+        t = TestDocument("(1)")
+        self.assertAstEqual(t.body, t.num(1))
+
+        t = TestDocument("(assert true; 1)")
+        self.assertAstEqual(
+            t.body,
+            AssertExpr(
+                location=t.location_of("assert true; 1"),
+                assertion=Assert(
+                    location=t.location_of("assert true"),
+                    condition=t.boolean(True),
+                ),
+                body=t.num(1),
+            ),
+        )
+
     def test_local(self):
         t = TestDocument("local x = 1; x")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Local(
                 location=t.body.location,
@@ -1282,7 +1306,7 @@ class TestAST(unittest.TestCase):
             )
         )
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Local(
                 location=t.body.location,
@@ -1332,7 +1356,7 @@ class TestAST(unittest.TestCase):
             )
         )
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Local(
                 location=t.body.location,
@@ -1347,15 +1371,15 @@ class TestAST(unittest.TestCase):
     def test_empty_array(self):
         t = TestDocument("[]")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Array(location=t.body.location, values=[]),
         )
 
     def test_array(self):
-        t = TestDocument("[1, true, '3']")
+        t = TestDocument("[1, true, /* ! */ '3']")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Array(
                 location=t.body.location,
@@ -1369,9 +1393,9 @@ class TestAST(unittest.TestCase):
 
     def test_binary(self):
         for op in Operator:
-            t = TestDocument(f"a {op.value} b")
+            t = TestDocument(f"a /*!*/ {op.value} /*!*/ b")
 
-            self.assertExprEqual(
+            self.assertAstEqual(
                 t.body,
                 t.id("a").bin_op(op, t.id("b")),
             )
@@ -1379,15 +1403,15 @@ class TestAST(unittest.TestCase):
     def test_binary_precedences(self):
         t = TestDocument("a + b * c")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
-            t.id("a") + t.id("b") * t.id("c"),
+            t.id("a") + (t.id("b") * t.id("c")),
         )
 
     def test_list_comp(self):
         t = TestDocument("[x for x in [1, 2] if x > 1]")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             ListComp(
                 location=t.body.location,
@@ -1415,7 +1439,7 @@ class TestAST(unittest.TestCase):
     def test_fn(self):
         t = TestDocument("function(x, y = 2) x + y")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Fn(
                 t.body.location,
@@ -1430,7 +1454,7 @@ class TestAST(unittest.TestCase):
     def test_fn_no_params(self):
         t = TestDocument("function() 1")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Fn(t.body.location, [], t.num(1)),
         )
@@ -1438,7 +1462,7 @@ class TestAST(unittest.TestCase):
     def test_import(self):
         t = TestDocument("import 'test.jsonnet'")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Import(
                 location=t.body.location,
@@ -1453,7 +1477,7 @@ class TestAST(unittest.TestCase):
     def test_importstr(self):
         t = TestDocument("importstr 'test.jsonnet'")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Import(
                 location=t.body.location,
@@ -1468,7 +1492,7 @@ class TestAST(unittest.TestCase):
     def test_assert_expr_without_message(self):
         t = TestDocument("assert true; false")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             AssertExpr(
                 location=t.body.location,
@@ -1482,9 +1506,9 @@ class TestAST(unittest.TestCase):
         )
 
     def test_assert_expr_with_message(self):
-        t = TestDocument("assert true: 'never'; false")
+        t = TestDocument("assert true: 'never'; /*!*/ false")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             AssertExpr(
                 location=t.body.location,
@@ -1500,7 +1524,7 @@ class TestAST(unittest.TestCase):
     def test_assert_expr_in_bind(self):
         t = TestDocument("local x = assert true; false; x")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             Local(
                 location=t.body.location,
@@ -1524,7 +1548,7 @@ class TestAST(unittest.TestCase):
         # Assertions are right associated.
         t = TestDocument("assert true; assert false; x")
 
-        self.assertExprEqual(
+        self.assertAstEqual(
             t.body,
             AssertExpr(
                 location=t.body.location,
