@@ -14,7 +14,7 @@ import logging
 import sys
 import unittest
 from contextlib import contextmanager
-from dataclasses import dataclass, field, fields
+import dataclasses as D
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
@@ -49,7 +49,7 @@ def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
     return [node for node in nodes if not node.type == "comment"]
 
 
-@dataclass
+@D.dataclass
 class AST:
     location: L.Location
 
@@ -63,7 +63,7 @@ class AST:
         def dispatch_object(uri: str, node: T.Node):
             match strip_comments(node.named_children):
                 case head, *_ if head.type == "objforloop":
-                    return ObjComp.from_doc(uri, node)
+                    return ObjComp.from_doc(uri, head)
                 case _:
                     return Object.from_doc(uri, node)
 
@@ -75,7 +75,7 @@ class AST:
             "bind": Bind.from_doc,
             "document": Document.from_doc,
             "false": Bool.from_doc,
-            "fieldname": FieldName.from_doc,
+            "fieldname": FieldKey.from_doc,
             "field": Field.from_doc,
             "forloop": ListComp.from_doc,
             "forspec": ForSpec.from_doc,
@@ -111,7 +111,7 @@ class AST:
         return PrettyNode(self).pretty_tree
 
 
-@dataclass
+@D.dataclass
 class PrettyNode:
     """A class for pretty-printed AST nodes.
 
@@ -155,7 +155,7 @@ class PrettyNode:
             case AST() as ast:
                 return [
                     PrettyNode(getattr(ast, f.name), f.name)
-                    for f in fields(ast)
+                    for f in D.fields(ast)
                     if f.name != "location"
                 ]
             case [*elems] if (size := len(elems)) > 0:
@@ -180,7 +180,7 @@ class PrettyNode:
         return "\n".join(lines)
 
 
-@dataclass
+@D.dataclass
 class Expr(AST):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Expr":
@@ -221,7 +221,7 @@ class Expr(AST):
         return self.bin_op(Operator.NotEq, rhs)
 
 
-@dataclass
+@D.dataclass
 class Document(Expr):
     body: Expr
 
@@ -232,7 +232,7 @@ class Document(Expr):
         return Document(location_of(uri, node), Expr.from_doc(uri, body))
 
 
-@dataclass
+@D.dataclass
 class Id(Expr):
     name: str
 
@@ -249,7 +249,7 @@ class Id(Expr):
         return Arg(merge_locations(self, value), value, self)
 
 
-@dataclass
+@D.dataclass
 class Num(Expr):
     value: float
 
@@ -260,7 +260,7 @@ class Num(Expr):
         return Num(location_of(uri, node), float(node.text.decode()))
 
 
-@dataclass
+@D.dataclass
 class Str(Expr):
     raw: str
 
@@ -278,7 +278,7 @@ class Str(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Bool(Expr):
     value: bool
 
@@ -289,7 +289,7 @@ class Bool(Expr):
         return Bool(location_of(uri, node), node.text.decode() == "true")
 
 
-@dataclass
+@D.dataclass
 class Array(Expr):
     values: list[Expr]
 
@@ -332,7 +332,7 @@ class Operator(StrEnum):
     Or = "||"
 
 
-@dataclass
+@D.dataclass
 class Binary(Expr):
     op: Operator
     lhs: Expr
@@ -353,7 +353,7 @@ class Binary(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Bind(AST):
     id: Id
     value: Expr
@@ -405,7 +405,7 @@ class Bind(AST):
             )
 
 
-@dataclass
+@D.dataclass
 class Local(Expr):
     binds: list[Bind]
     body: Expr
@@ -423,7 +423,7 @@ class Local(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Param(AST):
     name: Id
     default: Expr | None = None
@@ -446,7 +446,7 @@ class Param(AST):
         )
 
 
-@dataclass
+@D.dataclass
 class Fn(Expr):
     params: list[Param]
     body: Expr
@@ -471,7 +471,7 @@ class Fn(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Arg(AST):
     value: Expr
     name: Id | None = None
@@ -493,7 +493,7 @@ class Arg(AST):
             )
 
 
-@dataclass
+@D.dataclass
 class Call(Expr):
     fn: Expr
     args: list[Arg]
@@ -518,7 +518,7 @@ class Call(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class ForSpec(AST):
     id: Id
     expr: Expr
@@ -535,7 +535,7 @@ class ForSpec(AST):
         )
 
 
-@dataclass
+@D.dataclass
 class IfSpec(AST):
     condition: Expr
 
@@ -546,7 +546,7 @@ class IfSpec(AST):
         return IfSpec(location_of(uri, node), condition=Expr.from_doc(uri, child))
 
 
-@dataclass
+@D.dataclass
 class ListComp(Expr):
     expr: Expr
     for_spec: ForSpec
@@ -575,7 +575,7 @@ class ListComp(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Import(Expr):
     type: str
     path: Str
@@ -592,7 +592,7 @@ class Import(Expr):
         )
 
 
-@dataclass
+@D.dataclass
 class Assert(AST):
     condition: Expr
     message: Expr | None = None
@@ -619,7 +619,7 @@ class Assert(AST):
         )
 
 
-@dataclass
+@D.dataclass
 class AssertExpr(Expr):
     assertion: Assert
     body: Expr
@@ -667,10 +667,10 @@ class AssertExpr(Expr):
         )
 
 
-@dataclass
-class FieldName(AST):
+@D.dataclass
+class FieldKey(AST):
     @staticmethod
-    def from_doc(uri: str, node: T.Node) -> "FieldName":
+    def from_doc(uri: str, node: T.Node) -> "FieldKey":
         assert node.type == "fieldname"
 
         location = location_of(uri, node)
@@ -679,20 +679,20 @@ class FieldName(AST):
 
         if head.text.decode() == "[":
             e, *_ = tail
-            return Dynamic(location, Expr.from_doc(uri, e))
+            return DynamicKey(location, Expr.from_doc(uri, e))
         elif head.type == "id":
-            return Fixed(location, Id.from_doc(uri, head))
+            return FixedKey(location, Id.from_doc(uri, head))
         else:
-            return Fixed(location, Str.from_doc(uri, head))
+            return FixedKey(location, Str.from_doc(uri, head))
 
 
-@dataclass
-class Fixed(FieldName):
+@D.dataclass
+class FixedKey(FieldKey):
     name: Id | Str
 
 
-@dataclass
-class Dynamic(FieldName):
+@D.dataclass
+class DynamicKey(FieldKey):
     expr: Expr
 
 
@@ -702,9 +702,9 @@ class Visibility(StrEnum):
     Forced = ":::"
 
 
-@dataclass
+@D.dataclass
 class Field(AST):
-    key: FieldName
+    key: FieldKey
     value: Expr
     visibility: Visibility = Visibility.Default
     inherited: bool = False
@@ -723,7 +723,7 @@ class Field(AST):
                     assert vis.text is not None
                     return Field(
                         location=location_of(uri, node),
-                        key=FieldName.from_doc(uri, key),
+                        key=FieldKey.from_doc(uri, key),
                         value=Expr.from_doc(uri, value),
                         visibility=Visibility(vis.text.decode()),
                         inherited=True,
@@ -733,7 +733,7 @@ class Field(AST):
                     value, *_ = rest
                     return Field(
                         location=location_of(uri, node),
-                        key=FieldName.from_doc(uri, key),
+                        key=FieldKey.from_doc(uri, key),
                         value=Expr.from_doc(uri, value),
                         visibility=Visibility(vis.text.decode()),
                         inherited=False,
@@ -743,7 +743,7 @@ class Field(AST):
             assert vis.text is not None
             return Field(
                 location=location_of(uri, node),
-                key=FieldName.from_doc(uri, key),
+                key=FieldKey.from_doc(uri, key),
                 value=Fn(
                     location_of(uri, node),
                     params=[
@@ -756,11 +756,11 @@ class Field(AST):
             )
 
 
-@dataclass
+@D.dataclass
 class Object(Expr):
-    binds: list[Bind] = field(default_factory=list)
-    assertions: list[Assert] = field(default_factory=list)
-    fields: list[Field] = field(default_factory=list)
+    binds: list[Bind] = D.field(default_factory=list)
+    assertions: list[Assert] = D.field(default_factory=list)
+    fields: list[Field] = D.field(default_factory=list)
 
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Object":
@@ -772,9 +772,7 @@ class Object(Expr):
 
         for member in strip_comments(node.named_children):
             assert member.type == "member"
-
             head, *_ = strip_comments(member.named_children)
-
             match head.type:
                 case "objlocal":
                     _, bind, *_ = strip_comments(head.named_children)
@@ -787,16 +785,34 @@ class Object(Expr):
         return Object(location_of(uri, node), binds, assertions, fields)
 
 
-@dataclass
+@D.dataclass
 class ObjComp(Expr):
     binds: list[Bind]
-    key: Expr
-    value: Expr
+    field: Field
     for_spec: ForSpec
-    comp_spec: list[ForSpec | IfSpec]
+    comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "ObjComp":
+        assert node.type == "objforloop"
+        field, for_spec, *maybe_comp_spec = node.named_children
+
+        return ObjComp(
+            location=location_of(uri, node),
+            binds=[],
+            field=Field.from_doc(uri, field),
+            for_spec=ForSpec.from_doc(uri, for_spec),
+            comp_spec=[
+                ForSpec.from_doc(uri, spec)
+                if spec.type == "forspec"
+                else IfSpec.from_doc(uri, spec)
+                for comp_spec in maybe_comp_spec
+                for spec in strip_comments(comp_spec.named_children)
+            ],
+        )
 
 
-@dataclass
+@D.dataclass
 class Unknown(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Expr":
@@ -1021,15 +1037,15 @@ def parse(source: str) -> T.Node:
     return get_parser("jsonnet").parse(source.encode()).root_node
 
 
-@dataclass
+@D.dataclass
 class Binding:
     id: Id
     value: Expr
 
 
-@dataclass
+@D.dataclass
 class Scope:
-    bindings: list[Binding] = field(default_factory=list)
+    bindings: list[Binding] = D.field(default_factory=list)
     parent: Optional["Scope"] = None
 
     def bind(self, id: Id, value: Expr):
@@ -1050,7 +1066,7 @@ class Scope:
         return Scope([], parent=self)
 
 
-@dataclass
+@D.dataclass
 class HashableLocation:
     location: L.Location
 
@@ -1732,20 +1748,11 @@ class TestAST(unittest.TestCase):
             (object
               (member
                 (field
-                  (fieldname) @field_name
-                  "+"? @inherited
-                  [":" "::" ":::"] @visibility
-                  (_) @field_value) @field)*) @object
+                  (fieldname) @field_key
+                  (_)*) @field)) @object
 
             (object
-              (member
-                (field
-                  function: (fieldname) @field_name
-                  "("
-                  (params)? @params
-                  ")"
-                  [":" "::" ":::"] @visibility
-                  (_) @function_body) @field)*) @object
+              (objforloop)) @object
             """
         ),
     )
@@ -1754,8 +1761,8 @@ class TestAST(unittest.TestCase):
         t = TestDocument("local x = 'f'; { [x]: 1 }")
 
         self.assertAstEqual(
-            t.query_one(self.object_query, "field_name"),
-            Dynamic(
+            t.query_one(self.object_query, "field_key"),
+            DynamicKey(
                 t.location_of("[x]"),
                 t.id("x", nth=2),
             ),
@@ -1764,8 +1771,8 @@ class TestAST(unittest.TestCase):
         t = TestDocument("{ x: 1 }")
 
         self.assertAstEqual(
-            t.query_one(self.object_query, "field_name"),
-            Fixed(
+            t.query_one(self.object_query, "field_key"),
+            FixedKey(
                 t.location_of("x"),
                 t.id("x"),
             ),
@@ -1774,8 +1781,8 @@ class TestAST(unittest.TestCase):
         t = TestDocument("{ 'x': 1 }")
 
         self.assertAstEqual(
-            t.query_one(self.object_query, "field_name"),
-            Fixed(
+            t.query_one(self.object_query, "field_key"),
+            FixedKey(
                 t.location_of("'x'"),
                 t.str("x", literal="'x'"),
             ),
@@ -1788,7 +1795,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x: 1"),
-                key=Fixed(t.location_of("x"), t.id("x")),
+                key=FixedKey(t.location_of("x"), t.id("x")),
                 value=t.num(1),
             ),
         )
@@ -1799,7 +1806,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x+::: 1"),
-                key=Fixed(t.location_of("x"), t.id("x")),
+                key=FixedKey(t.location_of("x"), t.id("x")),
                 value=t.num(1),
                 visibility=Visibility.Forced,
                 inherited=True,
@@ -1812,7 +1819,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("f(p1, p2 = 0):: p1 + p2"),
-                key=Fixed(t.location_of("f"), t.id("f")),
+                key=FixedKey(t.location_of("f"), t.id("f")),
                 value=Fn(
                     t.location_of("f(p1, p2 = 0):: p1 + p2"),
                     params=[
@@ -1822,6 +1829,39 @@ class TestAST(unittest.TestCase):
                     body=t.id("p1", nth=2) + t.id("p2", nth=2),
                 ),
                 visibility=Visibility.Hidden,
+            ),
+        )
+
+    def test_obj_comp(self):
+        t = TestDocument("{ ['f' + x]: 0 for x in [1, 2] if x > 1 }")
+
+        self.assertAstEqual(
+            t.query_one(self.object_query, "object"),
+            ObjComp(
+                location=t.body.location,
+                binds=[],
+                field=Field(
+                    location=t.location_of("['f' + x]: 0"),
+                    key=DynamicKey(
+                        t.location_of("['f' + x]"),
+                        t.str("f", literal="'f'") + t.id("x"),
+                    ),
+                    value=t.num(0),
+                ),
+                for_spec=ForSpec(
+                    location=t.location_of("for x in [1, 2]"),
+                    id=t.id("x", nth=2),
+                    expr=Array(
+                        location=t.location_of("[1, 2]"),
+                        values=[t.num(1), t.num(2)],
+                    ),
+                ),
+                comp_spec=[
+                    IfSpec(
+                        location=t.location_of("if x > 1"),
+                        condition=t.id("x", nth=3) > t.num(1, nth=2),
+                    )
+                ],
             ),
         )
 
