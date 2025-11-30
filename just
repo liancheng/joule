@@ -14,7 +14,6 @@ import dataclasses as D
 import logging
 import sys
 import unittest
-from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -122,11 +121,9 @@ def escape(s: str) -> str:
     return f'"{escaped}{postfix}"'
 
 
-class PrettyTree(ABC):
-    @abstractmethod
+class PrettyTree:
     def text(self) -> str: ...
 
-    @abstractmethod
     def children(self) -> list["PrettyTree"]: ...
 
     def __repr__(self):
