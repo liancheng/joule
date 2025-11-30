@@ -1328,7 +1328,7 @@ def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
     ls.refresh_index(params.text_document.uri)
 
 
-@server.feature(L.NOTEBOOK_DOCUMENT_DID_CHANGE)
+@server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
     ls.refresh_index(params.text_document.uri)
 
