@@ -74,8 +74,10 @@ class AST:
             "assert": AssertExpr.from_doc,
             "binary": Binary.from_doc,
             "bind": Bind.from_doc,
+            "conditional": If.from_doc,
             "document": Document.from_doc,
             "false": Bool.from_doc,
+            "fieldaccess": FieldAccess.from_doc,
             "fieldname": FieldKey.from_doc,
             "field": Field.from_doc,
             "forloop": ListComp.from_doc,
@@ -85,6 +87,7 @@ class AST:
             "ifspec": IfSpec.from_doc,
             "import": Import.from_doc,
             "importstr": Import.from_doc,
+            "indexing": Index.from_doc,
             "local_bind": Local.from_doc,
             "named_argument": Arg.from_doc,
             "number": Num.from_doc,
@@ -1074,6 +1077,75 @@ class Binding:
 
 
 @D.dataclass
+class FieldAccess(Expr):
+    expr: Expr
+    field: Id
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "FieldAccess":
+        assert node.type == "fieldaccess"
+        expr, field = strip_comments(node.named_children)
+        return FieldAccess(
+            location=location_of(uri, node),
+            expr=Expr.from_doc(uri, expr),
+            field=Id.from_doc(uri, field),
+        )
+
+
+@D.dataclass
+class If(Expr):
+    condition: Expr
+    consequence: Expr
+    alternative: Expr
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "If":
+        assert node.type == "conditional"
+        condition, consequence, alternative = strip_comments(node.named_children)
+        return If(
+            location=location_of(uri, node),
+            condition=Expr.from_doc(uri, condition),
+            consequence=Expr.from_doc(uri, consequence),
+            alternative=Expr.from_doc(uri, alternative),
+        )
+
+
+@D.dataclass
+class Index(Expr):
+    array: Expr
+    begin: Expr
+    end: Expr | None = None
+    step: Expr | None = None
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "Index":
+        assert node.type == "indexing"
+        expr, begin, *rest = strip_comments(node.named_children)
+        match rest:
+            case [end, step]:
+                return Index(
+                    location=location_of(uri, node),
+                    array=Expr.from_doc(uri, expr),
+                    begin=Expr.from_doc(uri, begin),
+                    end=Expr.from_doc(uri, end),
+                    step=Expr.from_doc(uri, step),
+                )
+            case [end]:
+                return Index(
+                    location=location_of(uri, node),
+                    array=Expr.from_doc(uri, expr),
+                    begin=Expr.from_doc(uri, begin),
+                    end=Expr.from_doc(uri, end),
+                )
+            case _:
+                return Index(
+                    location=location_of(uri, node),
+                    array=Expr.from_doc(uri, expr),
+                    begin=Expr.from_doc(uri, begin),
+                )
+
+
+@D.dataclass
 class Scope:
     bindings: list[Binding] = D.field(default_factory=list)
     parent: Optional["Scope"] = None
@@ -1112,7 +1184,7 @@ class HashableLocation:
         )
 
 
-class Index(Visitor):
+class DocumentIndex(Visitor):
     def __init__(self, tree: Expr) -> None:
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
@@ -1218,17 +1290,17 @@ class Index(Visitor):
 class JustLanguageServer(LanguageServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.docs: dict[str, Index] = {}
+        self.docs: dict[str, DocumentIndex] = {}
 
     def document_root(self, uri: str) -> T.Node:
         return parse(self.workspace.get_text_document(uri).source)
 
-    def refresh_index(self, uri: str) -> Index:
-        index = Index(Expr.from_doc(uri, self.document_root(uri)))
+    def refresh_index(self, uri: str) -> DocumentIndex:
+        index = DocumentIndex(Expr.from_doc(uri, self.document_root(uri)))
         self.docs[uri] = index
         return index
 
-    def index(self, uri: str) -> Index:
+    def index(self, uri: str) -> DocumentIndex:
         if uri not in self.docs:
             self.refresh_index(uri)
         return self.docs[uri]
