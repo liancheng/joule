@@ -14,11 +14,12 @@ import dataclasses as D
 import logging
 import sys
 import unittest
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, Any, ClassVar, Optional, Type, TypeVar, cast
+from typing import Annotated, Any, Optional, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -107,28 +108,47 @@ class AST:
         return cast(ASTType, self)
 
 
+ESCAPE_TABLE: dict[int, str] = str.maketrans(
+    {"\n": r"\n", "\t": r"\t", "\r": r"\r", '"': r"\""}
+)
+
+
 def escape(s: str) -> str:
-    escaped = s[0:20].translate(PrettyTree.ESCAPE_TABLE)
+    escaped = s[0:20].translate(ESCAPE_TABLE)
     postfix = "" if len(s) <= 10 else f"[{len(s) - 10} characters]"
     return f'"{escaped}{postfix}"'
 
 
+class PrettyTree(ABC):
+    @abstractmethod
+    def text(self) -> str: ...
+
+    @abstractmethod
+    def children(self) -> list["PrettyTree"]: ...
+
+    def __repr__(self):
+        def grow(buf: list[str], nodes: list[PrettyTree], branches: str = ""):
+            for i in range(len(nodes)):
+                last_child = i == len(nodes) - 1
+                new_branch = ".   " if last_child else "|   "
+                fork = "`-- " if last_child else "|-- "
+
+                buf.append(f"{branches}{fork}{nodes[i].text()}")
+                grow(buf, nodes[i].children(), branches + new_branch)
+
+        lines = [self.text()]
+        grow(lines, self.children())
+
+        return "\n".join(lines)
+
+
 @D.dataclass
-class PrettyTree:
+class PrettyAST(PrettyTree):
     value: Any
     label: str | None = None
 
-    ESCAPE_TABLE: ClassVar[dict[int, str]] = str.maketrans(
-        {"\n": r"\n", "\t": r"\t", "\r": r"\r", '"': r"\""}
-    )
-
-    @property
-    def text(self):
+    def text(self) -> str:
         match self.value:
-            case T.Node() as node if not node.is_named and node.text:
-                repr = f"{escape(node.text.decode())} [{range_of(node)}]"
-            case T.Node() as node if node.text:
-                repr = f"{node.type} [{range_of(node)}]"
             case Document() as doc:
                 repr = f"{doc.__class__.__name__} [{doc.location}]"
             case AST() as ast:
@@ -142,43 +162,52 @@ class PrettyTree:
 
         return repr if self.label is None else f"{self.label}={repr}"
 
-    @property
     def children(self) -> list["PrettyTree"]:
         match self.value:
-            case T.Node() as node:
-                return [
-                    PrettyTree(node.child(i), node.field_name_for_child(i))
-                    for i in range(len(node.children))
-                ]
             case AST() as ast:
                 return [
-                    PrettyTree(getattr(ast, f.name), f.name)
+                    PrettyAST(getattr(ast, f.name), f.name)
                     for f in D.fields(ast)
                     if f.name != "location"
                 ]
             case [*elems] if (size := len(elems)) > 0:
-                return [PrettyTree(elems[i], f"[{i}]") for i in range(size)]
+                return [PrettyAST(elems[i], f"[{i}]") for i in range(size)]
             case _:
                 return []
 
     def __repr__(self):
-        def grow(buf: list[str], nodes: list[PrettyTree], branches: str = ""):
-            for i in range(len(nodes)):
-                last_child = i == len(nodes) - 1
-                new_branch = ".   " if last_child else "|   "
-                fork = "`-- " if last_child else "|-- "
+        return super().__repr__()
 
-                buf.append(f"{branches}{fork}{nodes[i].text}")
-                grow(buf, nodes[i].children, branches + new_branch)
 
-        lines = [self.text]
-        grow(lines, self.children)
+@D.dataclass
+class PrettyTS(PrettyTree):
+    node: T.Node
+    label: str | None = None
 
-        return "\n".join(lines)
+    def text(self) -> str:
+        if not self.node.is_named and self.node.text:
+            repr = f"{escape(self.node.text.decode())} [{range_of(self.node)}]"
+        else:
+            repr = f"{self.node.type} [{range_of(self.node)}]"
+
+        return repr if self.label is None else f"{self.label}={repr}"
+
+    def children(self) -> list["PrettyTree"]:
+        return [
+            PrettyTS(self.node.children[i], self.node.field_name_for_child(i))
+            for i in range(len(self.node.children))
+        ]
+
+    def __repr__(self):
+        return super().__repr__()
 
 
 def pretty_tree(tree: AST | T.Node) -> str:
-    return str(PrettyTree(tree))
+    match tree:
+        case AST():
+            return str(PrettyAST(tree))
+        case T.Node():
+            return str(PrettyTS(tree))
 
 
 @D.dataclass
