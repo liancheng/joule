@@ -1237,6 +1237,8 @@ class DocumentIndex(Visitor):
         # The variable scope for tracking definitions and references.
         self.scope = Scope()
 
+        self.inlay_hints: list[L.InlayHint] = []
+
         self.visit(tree)
 
     @property
@@ -1336,12 +1338,24 @@ class DocumentIndex(Visitor):
         uri = self.tree.location.uri
 
         ref_range = HashableRange(ref.location.range)
-        defs = self.server.ref_to_defs[uri][ref_range]
-        defs.append(binding.id)
+        self.server.ref_to_defs[uri][ref_range].append(binding.id)
+        self.inlay_hints.append(
+            L.InlayHint(
+                position=ref_range.range.end,
+                label="󰁝",
+                kind=L.InlayHintKind.Parameter,
+            )
+        )
 
         def_range = HashableRange(binding.id.location.range)
-        refs = self.server.def_to_refs[uri][def_range]
-        refs.append(ref)
+        self.server.def_to_refs[uri][def_range].append(ref)
+        self.inlay_hints.append(
+            L.InlayHint(
+                position=def_range.range.end,
+                label="󰁅",
+                kind=L.InlayHintKind.Parameter,
+            )
+        )
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -1467,6 +1481,12 @@ def definition(ls: JustLanguageServer, params: L.DefinitionParams):
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JustLanguageServer, params: L.ReferenceParams):
     return ls.references(params.text_document.uri, params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
+def inlay_hint(ls: JustLanguageServer, params: L.InlayHintParams):
+    index = ls.index(params.text_document.uri)
+    return index.inlay_hints
 
 
 class TestDocument:
