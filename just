@@ -153,7 +153,7 @@ class PrettyAST(PrettyTree):
                 repr = f"{doc.__class__.__name__} [{doc.location}]"
             case AST() as ast:
                 repr = f"{ast.__class__.__name__} [{ast.location.range}]"
-            case [_, *_]:
+            case _, *_:
                 repr = "[...]"
             case str():
                 repr = escape(self.value)
@@ -843,6 +843,40 @@ class ObjComp(Expr):
 
 
 @D.dataclass
+class FieldAccess(Expr):
+    expr: Expr
+    field: Id
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "FieldAccess":
+        assert node.type == "fieldaccess"
+        expr, field = strip_comments(node.named_children)
+        return FieldAccess(
+            location=location_of(uri, node),
+            expr=Expr.from_doc(uri, expr),
+            field=Id.from_doc(uri, field),
+        )
+
+
+@D.dataclass
+class If(Expr):
+    condition: Expr
+    consequence: Expr
+    alternative: Expr
+
+    @staticmethod
+    def from_doc(uri: str, node: T.Node) -> "If":
+        assert node.type == "conditional"
+        condition, consequence, alternative = strip_comments(node.named_children)
+        return If(
+            location=location_of(uri, node),
+            condition=Expr.from_doc(uri, condition),
+            consequence=Expr.from_doc(uri, consequence),
+            alternative=Expr.from_doc(uri, alternative),
+        )
+
+
+@D.dataclass
 class Unknown(Expr):
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Expr":
@@ -878,6 +912,8 @@ class Visitor:
                 self.visit_import(e)
             case AssertExpr() as e:
                 self.visit_assert_expr(e)
+            case If() as e:
+                self.visit_if(e)
 
     def visit_document(self, e: Document):
         self.visit(e.body)
@@ -961,6 +997,28 @@ class Visitor:
         self.visit(a.condition)
         if a.message is not None:
             self.visit(a.message)
+
+    def visit_if(self, e: If):
+        self.visit(e.condition)
+        self.visit(e.consequence)
+        self.visit(e.alternative)
+
+    def visit_object(self, e: Object):
+        for f in e.fields:
+            match f.key:
+                case FixedKey() as key:
+                    self.visit(key.name)
+                case DynamicKey() as key:
+                    self.visit(key.expr)
+
+        for b in e.binds:
+            self.visit_bind(b)
+
+        for a in e.assertions:
+            self.visit_assert(a)
+
+        for f in e.fields:
+            self.visit(f.value)
 
 
 def position_of(point: T.Point) -> L.Position:
@@ -1071,40 +1129,6 @@ def parse(source: str) -> T.Node:
 class Binding:
     id: Id
     value: Expr
-
-
-@D.dataclass
-class FieldAccess(Expr):
-    expr: Expr
-    field: Id
-
-    @staticmethod
-    def from_doc(uri: str, node: T.Node) -> "FieldAccess":
-        assert node.type == "fieldaccess"
-        expr, field = strip_comments(node.named_children)
-        return FieldAccess(
-            location=location_of(uri, node),
-            expr=Expr.from_doc(uri, expr),
-            field=Id.from_doc(uri, field),
-        )
-
-
-@D.dataclass
-class If(Expr):
-    condition: Expr
-    consequence: Expr
-    alternative: Expr
-
-    @staticmethod
-    def from_doc(uri: str, node: T.Node) -> "If":
-        assert node.type == "conditional"
-        condition, consequence, alternative = strip_comments(node.named_children)
-        return If(
-            location=location_of(uri, node),
-            condition=Expr.from_doc(uri, condition),
-            consequence=Expr.from_doc(uri, consequence),
-            alternative=Expr.from_doc(uri, alternative),
-        )
 
 
 @D.dataclass
@@ -1250,7 +1274,7 @@ class DocumentIndex(Visitor):
             name=s.id.name,
             kind=L.SymbolKind.Variable,
             range=s.id.location.range,
-            selection_range=s.id.location.range,
+            selection_range=s.location.range,
         )
 
         with self.parent_symbol(symbol):
