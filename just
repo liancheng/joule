@@ -1062,35 +1062,6 @@ def location_of(uri: str, node: T.Node) -> L.Location:
     return L.Location(uri, range_of(node))
 
 
-PositionLike = L.Position | T.Point
-
-
-def position_before(lhs: PositionLike, rhs: PositionLike):
-    match lhs:
-        case L.Position() as p:
-            lhs_line = p.line
-            lhs_character = p.character
-        case T.Point() as p:
-            lhs_line = p.row
-            lhs_character = p.column
-
-    match rhs:
-        case L.Position() as p:
-            rhs_line = p.line
-            rhs_character = p.character
-        case T.Point() as p:
-            rhs_line = p.row
-            rhs_character = p.column
-
-    return (
-        lhs_line < rhs_line or lhs_line == rhs_line and lhs_character <= rhs_character
-    )
-
-
-def range_contains(range: L.Range, pos: L.Position):
-    return position_before(range.start, pos) and position_before(pos, range.end)
-
-
 RangeLike = L.Range | T.Range | T.Node | AST
 
 
@@ -1115,7 +1086,7 @@ def merge_ranges(lhs: RangeLike, rhs: RangeLike) -> L.Range:
         case AST() as a:
             end = a.location.range.end
 
-    assert position_before(start, end)
+    assert start <= end
 
     return L.Range(start, end)
 
@@ -1124,27 +1095,21 @@ LocationLike = L.Location | AST
 
 
 def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
-    match lhs:
-        case L.Location():
-            start = lhs
-        case AST():
-            start = lhs.location
+    if isinstance(lhs, AST):
+        lhs = lhs.location
 
-    match rhs:
-        case L.Location():
-            end = rhs
-        case AST():
-            end = rhs.location
+    if isinstance(rhs, AST):
+        rhs = rhs.location
 
-    assert start.uri == end.uri, dedent(
+    assert lhs.uri == rhs.uri, dedent(
         f"""\
         Cannot merge two locations from different documents:
-        * {start.uri}
-        * {end.uri}
+        * {lhs.uri}
+        * {rhs.uri}
         """
     )
 
-    return L.Location(start.uri, merge_ranges(start.range, end.range))
+    return L.Location(lhs.uri, merge_ranges(lhs.range, rhs.range))
 
 
 def parse(source: str) -> T.Node:
@@ -1441,7 +1406,7 @@ class JustLanguageServer(LanguageServer):
             iter(
                 [id.location for id in ids]
                 for key, ids in lookup[uri].items()
-                if range_contains(key.range, pos)
+                if key.range.start <= pos <= key.range.end
             ),
             [],
         )
