@@ -14,6 +14,7 @@ import dataclasses as D
 import logging
 import sys
 import unittest
+from collections import defaultdict
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -123,9 +124,15 @@ def escape(s: str, size: int = 50) -> str:
 
 
 class PrettyTree:
-    def text(self) -> str: ...
+    """An abstract class for pretty-printing tree-like structures."""
 
-    def children(self) -> list["PrettyTree"]: ...
+    def node_text(self) -> str:
+        """Returns a single-line string representing a tree node."""
+        ...
+
+    def children(self) -> list["PrettyTree"]:
+        """Returns a list of child nodes."""
+        ...
 
     def __repr__(self):
         def grow(buf: list[str], nodes: list[PrettyTree], branches: str = ""):
@@ -134,10 +141,10 @@ class PrettyTree:
                 new_branch = ".   " if last_child else "|   "
                 fork = "`-- " if last_child else "|-- "
 
-                buf.append(f"{branches}{fork}{nodes[i].text()}")
+                buf.append(f"{branches}{fork}{nodes[i].node_text()}")
                 grow(buf, nodes[i].children(), branches + new_branch)
 
-        lines = [self.text()]
+        lines = [self.node_text()]
         grow(lines, self.children())
 
         return "\n".join(lines)
@@ -145,22 +152,31 @@ class PrettyTree:
 
 @D.dataclass
 class PrettyAST(PrettyTree):
+    """A class for pretty-printing a Jsonnet AST."""
+
     value: Any
     label: str | None = None
 
-    def text(self) -> str:
+    def node_text(self) -> str:
         match self.value:
             case Document() as doc:
+                # For the top-level `Document` node, prints the full location with URI.
                 repr = f"{doc.__class__.__name__} [{doc.location}]"
             case AST() as ast:
+                # For all other nodes, only prints the range.
                 repr = f"{ast.__class__.__name__} [{ast.location.range}]"
             case _, *_:
+                # For lists, print a placeholder as all the elements are printed
+                # separately as child nodes.
                 repr = "[...]"
             case str():
+                # Escapes (and truncates) strings, which can potentially be multi-line.
                 repr = escape(self.value)
             case _:
+                # Falls back to `__str__` for everything else.
                 repr = str(self.value)
 
+        # Prepends the label, if any.
         return repr if self.label is None else f"{self.label}={repr}"
 
     def children(self) -> list["PrettyTree"]:
@@ -171,8 +187,8 @@ class PrettyAST(PrettyTree):
                     for f in D.fields(ast)
                     if f.name != "location"
                 ]
-            case [*elems] if (size := len(elems)) > 0:
-                return [PrettyAST(elems[i], f"[{i}]") for i in range(size)]
+            case list() as array if (size := len(array)) > 0:
+                return [PrettyAST(array[i], f"[{i}]") for i in range(size)]
             case _:
                 return []
 
@@ -181,11 +197,13 @@ class PrettyAST(PrettyTree):
 
 
 @D.dataclass
-class PrettyTS(PrettyTree):
+class PrettyCST(PrettyTree):
+    """A class for pretty-printing a tree-sitter CST."""
+
     node: T.Node
     label: str | None = None
 
-    def text(self) -> str:
+    def node_text(self) -> str:
         if not self.node.is_named and self.node.text:
             repr = f"{escape(self.node.text.decode())} [{range_of(self.node)}]"
         else:
@@ -195,7 +213,7 @@ class PrettyTS(PrettyTree):
 
     def children(self) -> list["PrettyTree"]:
         return [
-            PrettyTS(self.node.children[i], self.node.field_name_for_child(i))
+            PrettyCST(self.node.children[i], self.node.field_name_for_child(i))
             for i in range(len(self.node.children))
         ]
 
@@ -208,7 +226,7 @@ def pretty_tree(tree: AST | T.Node) -> str:
         case AST():
             return str(PrettyAST(tree))
         case T.Node():
-            return str(PrettyTS(tree))
+            return str(PrettyCST(tree))
 
 
 @D.dataclass
@@ -456,7 +474,7 @@ class Local(Expr):
 
 @D.dataclass
 class Param(AST):
-    name: Id
+    id: Id
     default: Expr | None = None
 
     @staticmethod
@@ -470,7 +488,7 @@ class Param(AST):
 
         return Param(
             location=location_of(uri, node),
-            name=Id.from_doc(uri, id),
+            id=Id.from_doc(uri, id),
             default=next(
                 iter([Expr.from_doc(uri, value) for value in maybe_value]), None
             ),
@@ -505,7 +523,7 @@ class Fn(Expr):
 @D.dataclass
 class Arg(AST):
     value: Expr
-    name: Id | None = None
+    id: Id | None = None
 
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Arg":
@@ -515,7 +533,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_doc(uri, value),
-                name=Id.from_doc(uri, name),
+                id=Id.from_doc(uri, name),
             )
         else:
             return Arg(
@@ -719,7 +737,7 @@ class FieldKey(AST):
 
 @D.dataclass
 class FixedKey(FieldKey):
-    name: Id | Str
+    id: Id | Str
 
 
 @D.dataclass
@@ -954,7 +972,7 @@ class Visitor:
         self.visit(e.body)
 
     def visit_param(self, p: Param):
-        self.visit_id(p.name)
+        self.visit_id(p.id)
         if p.default is not None:
             self.visit(p.default)
 
@@ -964,8 +982,8 @@ class Visitor:
             self.visit_arg(a)
 
     def visit_arg(self, a: Arg):
-        if a.name is not None:
-            self.visit(a.name)
+        if a.id is not None:
+            self.visit(a.id)
         self.visit(a.value)
 
     def visit_list_comp(self, e: ListComp):
@@ -1008,7 +1026,7 @@ class Visitor:
         for f in e.fields:
             match f.key:
                 case FixedKey() as key:
-                    self.visit(key.name)
+                    self.visit(key.id)
                 case DynamicKey() as key:
                     self.visit(key.expr)
 
@@ -1129,7 +1147,7 @@ def parse(source: str) -> T.Node:
 @D.dataclass
 class Binding:
     id: Id
-    value: Expr
+    value: Expr | None = None
 
 
 @D.dataclass
@@ -1172,36 +1190,30 @@ class Scope:
     bindings: list[Binding] = D.field(default_factory=list)
     parent: Optional["Scope"] = None
 
-    def bind(self, id: Id, value: Expr):
+    def bind(self, id: Id, value: Expr | None = None):
         self.bindings.insert(0, Binding(id, value))
 
     def get(self, id: Id) -> Binding | None:
-        maybe_binding = next(
+        return next(
             iter(b for b in self.bindings if b.id.name == id.name),
-            None,
+            None if self.parent is None else self.parent.get(id),
         )
-
-        if maybe_binding is None and self.parent is not None:
-            return self.parent.get(id)
-        else:
-            return maybe_binding
 
     def nest(self) -> "Scope":
         return Scope([], parent=self)
 
 
 @D.dataclass
-class HashableLocation:
-    location: L.Location
+class HashableRange:
+    range: L.Range
 
     def __hash__(self) -> int:
         return hash(
             (
-                self.location.uri,
-                self.location.range.start.line,
-                self.location.range.start.character,
-                self.location.range.end.line,
-                self.location.range.end.character,
+                self.range.start.line,
+                self.range.start.character,
+                self.range.end.line,
+                self.range.end.character,
             )
         )
 
@@ -1209,6 +1221,7 @@ class HashableLocation:
 class DocumentIndex(Visitor):
     def __init__(self, server: "JustLanguageServer", tree: Expr) -> None:
         self.server = server
+        self.tree = tree
 
         # A dummy root document symbol acting as the parent of all top-level symbols.
         self.root_symbol = L.DocumentSymbol(
@@ -1221,12 +1234,36 @@ class DocumentIndex(Visitor):
         # For tracking the currently active document symbol during the tree traversal.
         self.breadcrumbs = [self.root_symbol]
 
-        # For tracking definitions and references.
+        # The variable scope for tracking definitions and references.
         self.scope = Scope()
-        self.ref_to_defs: dict[HashableLocation, list[Id]] = {}
-        self.def_to_refs: dict[HashableLocation, list[Id]] = {}
 
         self.visit(tree)
+
+    @property
+    def document_symbols(self):
+        return self.root_symbol.children
+
+    def new_symbol(
+        self,
+        name: str,
+        kind: L.SymbolKind,
+        location: L.Location,
+        selection_range: L.Range | None = None,
+    ) -> tuple[L.WorkspaceSymbol, L.DocumentSymbol]:
+        doc_symbol = L.DocumentSymbol(
+            name=name,
+            kind=kind,
+            range=location.range,
+            selection_range=selection_range or location.range,
+        )
+
+        ws_symbol = L.WorkspaceSymbol(
+            location=location,
+            name=name,
+            kind=kind,
+        )
+
+        return ws_symbol, doc_symbol
 
     def visit_bind(self, b: Bind):
         self.scope.bind(b.id, b.value)
@@ -1237,35 +1274,45 @@ class DocumentIndex(Visitor):
             case _:
                 kind = L.SymbolKind.Variable
 
-        self.server.workspace_symbols.append(
-            L.WorkspaceSymbol(
-                location=b.location,
-                name=b.id.name,
-                kind=kind,
-            )
-        )
-
-        doc_symbol = L.DocumentSymbol(
+        ws_symbol, doc_symbol = self.new_symbol(
             name=b.id.name,
             kind=kind,
-            range=b.id.location.range,
+            location=b.id.location,
             selection_range=b.location.range,
         )
+
+        self.server.workspace_symbols.append(ws_symbol)
 
         with self.parent_symbol(doc_symbol):
             with self.nested_scope():
                 self.visit(b.value)
 
+    def visit_fn(self, e: Fn):
+        # TODO Handle parameter binding and symbol generation properly.
+        #
+        # * A parameter is visible to the default values of all parameters in the same
+        #   parameter list.
+        #
+        #   This requires binding all parameters before traversing parameter default
+        #   value expressions.
+        #
+        # * A document symbol generated from the default value of a parameter should
+        #   live under the document symbol of that parameter.
+        #
+        # The above two constraints requires us to handle parameter list processing in
+        # `visit_fn` instead of `visit_param`.
+        super().visit_fn(e)
+
     def visit_param(self, p: Param):
         symbol = L.DocumentSymbol(
-            name=p.name.name,
+            name=p.id.name,
             kind=L.SymbolKind.Variable,
-            range=p.name.location.range,
+            range=p.id.location.range,
             selection_range=p.location.range,
         )
 
-        with self.parent_symbol(symbol):
-            if p.default is not None:
+        if p.default is not None:
+            with self.parent_symbol(symbol):
                 self.visit(p.default)
 
     def visit_for_spec(self, s: ForSpec):
@@ -1282,17 +1329,19 @@ class DocumentIndex(Visitor):
             pass
 
     def visit_id(self, e: Id):
-        if binding := self.scope.get(e):
+        if (binding := self.scope.get(e)) is not None:
             self.new_ref(e, binding)
 
     def new_ref(self, ref: Id, binding: Binding):
-        defs = self.ref_to_defs.get(HashableLocation(ref.location), [])
-        defs.append(binding.id)
-        self.ref_to_defs[HashableLocation(ref.location)] = defs
+        uri = self.tree.location.uri
 
-        refs = self.def_to_refs.get(HashableLocation(binding.id.location), [])
+        ref_range = HashableRange(ref.location.range)
+        defs = self.server.ref_to_defs[uri][ref_range]
+        defs.append(binding.id)
+
+        def_range = HashableRange(binding.id.location.range)
+        refs = self.server.def_to_refs[uri][def_range]
         refs.append(ref)
-        self.def_to_refs[HashableLocation(binding.id.location)] = refs
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -1322,6 +1371,11 @@ class DocumentIndex(Visitor):
             self.scope = parent
 
 
+# A `URi -> Range -> list[Location]` two-level mapping dictionary type for tracking
+# definitions and references.
+PositionToRanges = dict[str, dict[HashableRange, list[Id]]]
+
+
 class JustLanguageServer(LanguageServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1329,6 +1383,29 @@ class JustLanguageServer(LanguageServer):
 
         # TODO Use a suffix tree to make it scalable.
         self.workspace_symbols: list[L.WorkspaceSymbol] = []
+
+        # For go-to-definition and find-references
+        self.ref_to_defs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
+        self.def_to_refs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
+
+    def position_to_locations(
+        self, uri: str, pos: L.Position, lookup: PositionToRanges
+    ) -> list[L.Location]:
+        # TODO More efficient position-to-location search.
+        return next(
+            iter(
+                [id.location for id in ids]
+                for key, ids in lookup[uri].items()
+                if range_contains(key.range, pos)
+            ),
+            [],
+        )
+
+    def definitions(self, uri: str, position: L.Position) -> list[L.Location]:
+        return self.position_to_locations(uri, position, self.ref_to_defs)
+
+    def references(self, uri: str, position: L.Position) -> list[L.Location]:
+        return self.position_to_locations(uri, position, self.def_to_refs)
 
     def document_root(self, uri: str) -> T.Node:
         return parse(self.workspace.get_text_document(uri).source)
@@ -1368,6 +1445,7 @@ def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
+    # TODO Patch the AST incrementally.
     ls.refresh_index(params.text_document.uri)
 
 
@@ -1378,34 +1456,17 @@ def workspace_symbol(ls: JustLanguageServer, params: L.WorkspaceSymbolParams):
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(ls: JustLanguageServer, params: L.DocumentColorParams):
-    uri = params.text_document.uri
-    return ls.index(uri).root_symbol.children
+    return ls.index(params.text_document.uri).document_symbols
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
 def definition(ls: JustLanguageServer, params: L.DefinitionParams):
-    uri = params.text_document.uri
-    return next(
-        iter(
-            [id.location for id in ids]
-            for key, ids in ls.index(uri).ref_to_defs.items()
-            if range_contains(key.location.range, params.position)
-        ),
-        [],
-    )
+    return ls.definitions(params.text_document.uri, params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JustLanguageServer, params: L.ReferenceParams):
-    uri = params.text_document.uri
-    return next(
-        iter(
-            [id.location for id in ids]
-            for key, ids in ls.index(uri).def_to_refs.items()
-            if range_contains(key.location.range, params.position)
-        ),
-        [],
-    )
+    return ls.references(params.text_document.uri, params.position)
 
 
 class TestDocument:
