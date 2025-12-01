@@ -933,6 +933,8 @@ class Visitor:
                 self.visit_assert_expr(e)
             case If() as e:
                 self.visit_if(e)
+            case Object() as e:
+                self.visit_object(e)
 
     def visit_document(self, e: Document):
         self.visit(e.body)
@@ -1030,6 +1032,8 @@ class Visitor:
                 case DynamicKey() as key:
                     self.visit(key.expr)
 
+            self.visit_field(f)
+
         for b in e.binds:
             self.visit_bind(b)
 
@@ -1038,6 +1042,9 @@ class Visitor:
 
         for f in e.fields:
             self.visit(f.value)
+
+    def visit_field(self, f: Field):
+        del f
 
 
 def position_of(point: T.Point) -> L.Position:
@@ -1334,28 +1341,49 @@ class DocumentIndex(Visitor):
         if (binding := self.scope.get(e)) is not None:
             self.new_ref(e, binding)
 
+    def visit_field(self, f: Field):
+        label_parts = []
+
+        match f.visibility:
+            case Visibility.Hidden:
+                label_parts.append("hidden")
+            case Visibility.Forced:
+                label_parts.append("forced visible")
+
+        if f.inherited:
+            label_parts.append("inherited")
+
+        if len(label_parts) > 0:
+            self.inlay_hints.append(
+                L.InlayHint(
+                    position=f.key.location.range.end,
+                    label=", ".join(label_parts),
+                    kind=L.InlayHintKind.Parameter,
+                    padding_left=True,
+                    padding_right=True,
+                )
+            )
+
     def new_ref(self, ref: Id, binding: Binding):
         uri = self.tree.location.uri
 
-        ref_range = HashableRange(ref.location.range)
-        self.server.ref_to_defs[uri][ref_range].append(binding.id)
-        self.inlay_hints.append(
-            L.InlayHint(
-                position=ref_range.range.end,
-                label="󰁝",
-                kind=L.InlayHintKind.Parameter,
+        def new_def_ref_hint(pos: L.Position, label: str):
+            self.inlay_hints.append(
+                L.InlayHint(
+                    position=pos,
+                    label=label,
+                    kind=L.InlayHintKind.Parameter,
+                )
             )
-        )
 
-        def_range = HashableRange(binding.id.location.range)
-        self.server.def_to_refs[uri][def_range].append(ref)
-        self.inlay_hints.append(
-            L.InlayHint(
-                position=def_range.range.end,
-                label="󰁅",
-                kind=L.InlayHintKind.Parameter,
-            )
-        )
+        ref_range = ref.location.range
+        def_range = binding.id.location.range
+
+        self.server.ref_to_defs[uri][HashableRange(ref_range)].append(binding.id)
+        self.server.def_to_refs[uri][HashableRange(def_range)].append(ref)
+
+        new_def_ref_hint(ref_range.end, "󰁝")
+        new_def_ref_hint(def_range.end, "󰁅")
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
