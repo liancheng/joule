@@ -1404,16 +1404,15 @@ PositionToRanges = dict[str, dict[HashableRange, list[Id]]]
 
 
 class JustLanguageServer(LanguageServer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.docs: dict[str, DocumentIndex] = {}
+    # Indexed documents
+    docs: dict[str, DocumentIndex] = {}
 
-        # TODO Use a suffix tree to make it scalable.
-        self.workspace_symbols: list[L.WorkspaceSymbol] = []
+    # TODO Use a suffix tree to make it scalable.
+    workspace_symbols: list[L.WorkspaceSymbol] = []
 
-        # For go-to-definition and find-references
-        self.ref_to_defs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
-        self.def_to_refs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
+    # For go-to-definition and find-references
+    ref_to_defs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
+    def_to_refs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
 
     def position_to_locations(
         self, uri: str, pos: L.Position, lookup: PositionToRanges
@@ -1434,11 +1433,9 @@ class JustLanguageServer(LanguageServer):
     def references(self, uri: str, position: L.Position) -> list[L.Location]:
         return self.position_to_locations(uri, position, self.def_to_refs)
 
-    def document_root(self, uri: str) -> T.Node:
-        return parse(self.workspace.get_text_document(uri).source)
-
     def refresh_index(self, uri: str) -> DocumentIndex:
-        index = DocumentIndex(self, Expr.from_doc(uri, self.document_root(uri)))
+        root = parse(self.workspace.get_text_document(uri).source)
+        index = DocumentIndex(self, Expr.from_doc(uri, root))
         self.docs[uri] = index
         return index
 
@@ -1455,8 +1452,12 @@ server = JustLanguageServer("just", "v0.1")
 def initialize(_: L.InitializeParams):
     return L.InitializeResult(
         capabilities=L.ServerCapabilities(
+            definition_provider=True,
             document_symbol_provider=True,
+            inlay_hint_provider=True,
+            references_provider=True,
             text_document_sync=L.TextDocumentSyncKind.Full,
+            workspace_symbol_provider=True,
         ),
         server_info=L.ServerInfo(
             name="just",
@@ -1498,8 +1499,7 @@ def references(ls: JustLanguageServer, params: L.ReferenceParams):
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
 def inlay_hint(ls: JustLanguageServer, params: L.InlayHintParams):
-    index = ls.index(params.text_document.uri)
-    return list(index.inlay_hints.values())
+    return list(ls.index(params.text_document.uri).inlay_hints.values())
 
 
 class TestDocument:
