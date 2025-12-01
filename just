@@ -1182,7 +1182,10 @@ class HashableLocation:
 
 
 class DocumentIndex(Visitor):
-    def __init__(self, tree: Expr) -> None:
+    def __init__(self, server: "JustLanguageServer", tree: Expr) -> None:
+        self.server = server
+
+        # A dummy root document symbol acting as the parent of all top-level symbols.
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.Variable,
@@ -1190,9 +1193,11 @@ class DocumentIndex(Visitor):
             selection_range=tree.location.range,
         )
 
+        # For tracking the currently active document symbol during the tree traversal.
         self.breadcrumbs = [self.root_symbol]
-        self.scope = Scope()
 
+        # For tracking definitions and references.
+        self.scope = Scope()
         self.ref_to_defs: dict[HashableLocation, list[Id]] = {}
         self.def_to_refs: dict[HashableLocation, list[Id]] = {}
 
@@ -1207,14 +1212,22 @@ class DocumentIndex(Visitor):
             case _:
                 kind = L.SymbolKind.Variable
 
-        symbol = L.DocumentSymbol(
+        self.server.workspace_symbols.append(
+            L.WorkspaceSymbol(
+                location=b.location,
+                name=b.id.name,
+                kind=kind,
+            )
+        )
+
+        doc_symbol = L.DocumentSymbol(
             name=b.id.name,
             kind=kind,
             range=b.id.location.range,
             selection_range=b.location.range,
         )
 
-        with self.parent_symbol(symbol):
+        with self.parent_symbol(doc_symbol):
             with self.nested_scope():
                 self.visit(b.value)
 
@@ -1289,11 +1302,14 @@ class JustLanguageServer(LanguageServer):
         super().__init__(*args, **kwargs)
         self.docs: dict[str, DocumentIndex] = {}
 
+        # TODO Use a suffix tree to make it scalable.
+        self.workspace_symbols: list[L.WorkspaceSymbol] = []
+
     def document_root(self, uri: str) -> T.Node:
         return parse(self.workspace.get_text_document(uri).source)
 
     def refresh_index(self, uri: str) -> DocumentIndex:
-        index = DocumentIndex(Expr.from_doc(uri, self.document_root(uri)))
+        index = DocumentIndex(self, Expr.from_doc(uri, self.document_root(uri)))
         self.docs[uri] = index
         return index
 
@@ -1328,6 +1344,11 @@ def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
     ls.refresh_index(params.text_document.uri)
+
+
+@server.feature(L.WORKSPACE_SYMBOL)
+def workspace_symbol(ls: JustLanguageServer, params: L.WorkspaceSymbolParams):
+    return [symbol for symbol in ls.workspace_symbols if params.query in symbol.name]
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
