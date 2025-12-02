@@ -42,6 +42,7 @@ logging.basicConfig(
 log = logging.root
 
 LANG_JSONNET = get_language("jsonnet")
+JSONNET_TS_PARSER = get_parser("jsonnet")
 
 
 ASTType = TypeVar("ASTType")
@@ -1164,8 +1165,8 @@ def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
     return L.Location(lhs.uri, merge_ranges(lhs.range, rhs.range))
 
 
-def parse(source: str) -> T.Node:
-    return get_parser("jsonnet").parse(source.encode()).root_node
+def parse_jsonnet(source: str) -> T.Node:
+    return JSONNET_TS_PARSER.parse(source.encode()).root_node
 
 
 @D.dataclass
@@ -1439,6 +1440,12 @@ class JustLanguageServer(LanguageServer):
         return self.position_to_locations(uri, position, self.def_to_refs)
 
     def refresh_index(self, uri: str):
+        try:
+            doc = parse_jsonnet(self.workspace.get_text_document(uri).source)
+            tree = Expr.from_doc(uri, doc)
+        except Exception:
+            return
+
         if uri in self.ref_to_defs:
             del self.ref_to_defs[uri]
 
@@ -1448,8 +1455,7 @@ class JustLanguageServer(LanguageServer):
         if uri in self.workspace_symbols:
             del self.workspace_symbols[uri]
 
-        root = parse(self.workspace.get_text_document(uri).source)
-        self.docs[uri] = DocumentIndex(self, Expr.from_doc(uri, root))
+        self.docs[uri] = DocumentIndex(self, tree)
 
     def index(self, uri: str) -> DocumentIndex:
         if uri not in self.docs:
@@ -1523,7 +1529,7 @@ class TestDocument:
     def __init__(self, source: str) -> None:
         self.uri = "file:///tmp/test.jsonnet"
         self.lines = source.splitlines(keepends=False)
-        self.root = parse(source)
+        self.root = parse_jsonnet(source)
         self.body = Document.from_doc(self.uri, self.root).body
 
     def query_one(self, query: T.Query, capture: str) -> AST:
@@ -2159,7 +2165,7 @@ def tree(
         uri = path.absolute().as_uri()
         source = path.read_text()
 
-    cst = parse(source)
+    cst = parse_jsonnet(source)
     ast = AST.from_doc(uri, cst)
     Console(markup=False).print(pretty_tree(cst if tree_sitter else ast))
 
