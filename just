@@ -1283,26 +1283,21 @@ class DocumentIndex(Visitor):
                 self.visit(b.value)
 
     def visit_fn(self, e: Fn):
-        # TODO Handle parameter binding and symbol generation properly.
+        # NOTE: In a Jsonnet function, any parameter's default value expression can
+        # reference any other peer parameters, e.g.:
         #
-        # * A parameter is visible to the default values of all parameters in the same
-        #   parameter list.
+        #   local f(x = y, y, x = z) =
+        #       x + y + z;
+        #   f(y = 2)
         #
-        #   This requires binding all parameters before traversing parameter default
-        #   value expressions.
-        #
-        # * A document symbol generated from the default value of a parameter should
-        #   live under the document symbol of that parameter.
-        #
-        # The above two constraints requires us to handle parameter list processing in
+        # This requires all parameters to be bound before traversing any parameter
+        # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-
         with self.nested_scope():
-            param_doc_symbols = []
-
             for p in e.params:
                 self.scope.bind(p.id, p.default)
 
+            for p in e.params:
                 ws_symbol, doc_symbol = self.new_symbol(
                     p.id.name,
                     L.SymbolKind.Variable,
@@ -1311,11 +1306,9 @@ class DocumentIndex(Visitor):
                 )
 
                 self.server.workspace_symbols[self.uri].append(ws_symbol)
-                param_doc_symbols.append(doc_symbol)
 
-            for p, symbol in zip(e.params, param_doc_symbols):
                 if p.default is not None:
-                    with self.parent_symbol(symbol):
+                    with self.parent_symbol(doc_symbol):
                         self.visit(p.default)
 
             self.visit(e.body)
@@ -1406,7 +1399,7 @@ class DocumentIndex(Visitor):
             self.scope = parent
 
 
-# A `URi -> Range -> list[Location]` two-level mapping dictionary type for tracking
+# A `URI -> Range -> list[Location]` two-level mapping dictionary type for tracking
 # definitions and references.
 PositionToRanges = dict[str, dict[HashableRange, list[Id]]]
 
@@ -1417,7 +1410,7 @@ class JustLanguageServer(LanguageServer):
         # Indexed documents
         self.docs: dict[str, DocumentIndex] = {}
 
-        # TODO Use a suffix tree to make it scalable.
+        # TODO: Use a suffix tree to make it scalable.
         self.workspace_symbols: dict[str, list[L.WorkspaceSymbol]] = defaultdict(
             list[L.WorkspaceSymbol]
         )
@@ -1429,7 +1422,7 @@ class JustLanguageServer(LanguageServer):
     def position_to_locations(
         self, uri: str, pos: L.Position, lookup: PositionToRanges
     ) -> list[L.Location]:
-        # TODO More efficient position-to-location search.
+        # TODO: More efficient position-to-location search.
         return next(
             iter(
                 [id.location for id in ids]
@@ -1492,7 +1485,7 @@ def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
-    # TODO Patch the AST incrementally.
+    # TODO: Patch the AST incrementally.
     ls.refresh_index(params.text_document.uri)
 
 
