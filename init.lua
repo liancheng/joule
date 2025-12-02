@@ -4,3 +4,4 @@ vim.lsp.config["just"] = {
 }
 
 vim.lsp.enable("just", true)
+vim.lsp.inlay_hint.enable(true)
