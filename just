@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script --offline
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
@@ -1262,6 +1262,55 @@ class DocumentIndex(Visitor):
 
         return ws_symbol, doc_symbol
 
+    def new_ref(self, ref: Id, binding: Binding):
+        def new_def_ref_hint(pos: L.Position, label: str):
+            key = HashablePosition(pos)
+            self.inlay_hints[key] = L.InlayHint(
+                position=pos,
+                label=label,
+                kind=L.InlayHintKind.Parameter,
+            )
+
+        ref_location = ref.location
+        def_location = binding.id.location
+
+        defs = self.server.ref_to_defs[HashableLocation(ref_location)]
+        refs = self.server.def_to_refs[HashableLocation(def_location)]
+
+        defs.append(def_location)
+        refs.append(ref_location)
+
+        # Shows the # of references.
+        new_def_ref_hint(def_location.range.end, f"󰁅{len(refs)}")
+        new_def_ref_hint(ref_location.range.end, "󰁝")
+
+    @contextmanager
+    def parent_symbol(self, symbol: L.DocumentSymbol):
+        parent = self.breadcrumbs[-1]
+
+        match parent.children:
+            case list():
+                parent.children.append(symbol)
+            case None:
+                parent.children = [symbol]
+
+        self.breadcrumbs.append(symbol)
+
+        try:
+            yield symbol
+        finally:
+            self.breadcrumbs.pop()
+
+    @contextmanager
+    def nested_scope(self):
+        parent = self.scope
+        self.scope = self.scope.nest()
+
+        try:
+            yield self.scope
+        finally:
+            self.scope = parent
+
     def visit_bind(self, b: Bind):
         self.scope.bind(b.id, b.value)
 
@@ -1354,51 +1403,13 @@ class DocumentIndex(Visitor):
                 padding_right=True,
             )
 
-    def new_ref(self, ref: Id, binding: Binding):
-        def new_def_ref_hint(pos: L.Position, label: str):
-            key = HashablePosition(pos)
-            if key not in self.inlay_hints:
-                self.inlay_hints[key] = L.InlayHint(
-                    position=pos,
-                    label=label,
-                    kind=L.InlayHintKind.Parameter,
-                )
-
-        ref_location = ref.location
-        def_location = binding.id.location
-
-        self.server.ref_to_defs[HashableLocation(ref_location)].append(def_location)
-        self.server.def_to_refs[HashableLocation(def_location)].append(ref_location)
-
-        new_def_ref_hint(ref_location.range.end, "󰁝")
-        new_def_ref_hint(def_location.range.end, "󰁅")
-
-    @contextmanager
-    def parent_symbol(self, symbol: L.DocumentSymbol):
-        parent = self.breadcrumbs[-1]
-
-        match parent.children:
-            case list():
-                parent.children.append(symbol)
-            case None:
-                parent.children = [symbol]
-
-        self.breadcrumbs.append(symbol)
-
-        try:
-            yield symbol
-        finally:
-            self.breadcrumbs.pop()
-
-    @contextmanager
-    def nested_scope(self):
-        parent = self.scope
-        self.scope = self.scope.nest()
-
-        try:
-            yield self.scope
-        finally:
-            self.scope = parent
+    def visit_import(self, e: Import):
+        pos = e.path.location.range.end
+        self.inlay_hints[HashablePosition(pos)] = L.InlayHint(
+            position=pos,
+            label="",
+            kind=L.InlayHintKind.Parameter,
+        )
 
 
 LocationMap = dict[HashableLocation, list[L.Location]]
@@ -1419,14 +1430,14 @@ class JustLanguageServer(LanguageServer):
         self.ref_to_defs: LocationMap = defaultdict(list[L.Location])
         self.def_to_refs: LocationMap = defaultdict(list[L.Location])
 
-    def position_to_locations(
-        self, uri: str, pos: L.Position, lookup: LocationMap
+    def lookup_locations(
+        self, uri: str, pos: L.Position, map: LocationMap
     ) -> list[L.Location]:
         # TODO: More efficient position-to-location search.
         return next(
             iter(
                 locations
-                for key, locations in lookup.items()
+                for key, locations in map.items()
                 if uri == key.location.uri
                 and key.location.range.start <= pos <= key.location.range.end
             ),
@@ -1434,10 +1445,10 @@ class JustLanguageServer(LanguageServer):
         )
 
     def definitions(self, uri: str, position: L.Position) -> list[L.Location]:
-        return self.position_to_locations(uri, position, self.ref_to_defs)
+        return self.lookup_locations(uri, position, self.ref_to_defs)
 
     def references(self, uri: str, position: L.Position) -> list[L.Location]:
-        return self.position_to_locations(uri, position, self.def_to_refs)
+        return self.lookup_locations(uri, position, self.def_to_refs)
 
     def refresh_index(self, uri: str):
         try:
@@ -1446,21 +1457,27 @@ class JustLanguageServer(LanguageServer):
         except Exception:
             return
 
-        self.remove_doc(uri)
+        self.cleanup(uri)
         self.docs[uri] = DocumentIndex(self, tree)
 
-    def remove_doc(self, uri: str):
-        self.ref_to_defs = {
-            key: value
-            for key, value in self.ref_to_defs.items()
-            if key.location.uri == uri
-        }
+    def cleanup_location_map(self, uri: str, map: LocationMap) -> LocationMap:
+        map = defaultdict(
+            list[L.Location],
+            {
+                key: value
+                for key, value in self.ref_to_defs.items()
+                if key.location.uri != uri
+            },
+        )
 
-        self.def_to_refs = {
-            key: value
-            for key, value in self.def_to_refs.items()
-            if key.location.uri == uri
-        }
+        for key, locations in map.items():
+            map[key] = [loc for loc in locations if loc.uri != uri]
+
+        return map
+
+    def cleanup(self, uri: str):
+        self.ref_to_defs = self.cleanup_location_map(uri, self.ref_to_defs)
+        self.def_to_refs = self.cleanup_location_map(uri, self.def_to_refs)
 
         if uri in self.workspace_symbols:
             del self.workspace_symbols[uri]
