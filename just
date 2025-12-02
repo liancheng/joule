@@ -1202,16 +1202,17 @@ class HashablePosition:
 
 
 @D.dataclass(frozen=True)
-class HashableRange:
-    range: L.Range
+class HashableLocation:
+    location: L.Location
 
     def __hash__(self) -> int:
         return hash(
             (
-                self.range.start.line,
-                self.range.start.character,
-                self.range.end.line,
-                self.range.end.character,
+                self.location.uri,
+                self.location.range.start.line,
+                self.location.range.start.character,
+                self.location.range.end.line,
+                self.location.range.end.character,
             )
         )
 
@@ -1363,14 +1364,14 @@ class DocumentIndex(Visitor):
                     kind=L.InlayHintKind.Parameter,
                 )
 
-        ref_range = ref.location.range
-        def_range = binding.id.location.range
+        ref_location = ref.location
+        def_location = binding.id.location
 
-        self.server.ref_to_defs[self.uri][HashableRange(ref_range)].append(binding.id)
-        self.server.def_to_refs[self.uri][HashableRange(def_range)].append(ref)
+        self.server.ref_to_defs[HashableLocation(ref_location)].append(def_location)
+        self.server.def_to_refs[HashableLocation(def_location)].append(ref_location)
 
-        new_def_ref_hint(ref_range.end, "󰁝")
-        new_def_ref_hint(def_range.end, "󰁅")
+        new_def_ref_hint(ref_location.range.end, "󰁝")
+        new_def_ref_hint(def_location.range.end, "󰁅")
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -1400,9 +1401,7 @@ class DocumentIndex(Visitor):
             self.scope = parent
 
 
-# A `URI -> Range -> list[Location]` two-level mapping dictionary type for tracking
-# definitions and references.
-PositionToRanges = dict[str, dict[HashableRange, list[Id]]]
+LocationMap = dict[HashableLocation, list[L.Location]]
 
 
 class JustLanguageServer(LanguageServer):
@@ -1417,18 +1416,19 @@ class JustLanguageServer(LanguageServer):
         )
 
         # For go-to-definition and find-references
-        self.ref_to_defs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
-        self.def_to_refs: PositionToRanges = defaultdict(lambda: defaultdict(list[Id]))
+        self.ref_to_defs: LocationMap = defaultdict(list[L.Location])
+        self.def_to_refs: LocationMap = defaultdict(list[L.Location])
 
     def position_to_locations(
-        self, uri: str, pos: L.Position, lookup: PositionToRanges
+        self, uri: str, pos: L.Position, lookup: LocationMap
     ) -> list[L.Location]:
         # TODO: More efficient position-to-location search.
         return next(
             iter(
-                [id.location for id in ids]
-                for key, ids in lookup[uri].items()
-                if key.range.start <= pos <= key.range.end
+                locations
+                for key, locations in lookup.items()
+                if uri == key.location.uri
+                and key.location.range.start <= pos <= key.location.range.end
             ),
             [],
         )
@@ -1446,16 +1446,27 @@ class JustLanguageServer(LanguageServer):
         except Exception:
             return
 
-        if uri in self.ref_to_defs:
-            del self.ref_to_defs[uri]
+        self.remove_doc(uri)
+        self.docs[uri] = DocumentIndex(self, tree)
 
-        if uri in self.def_to_refs:
-            del self.def_to_refs[uri]
+    def remove_doc(self, uri: str):
+        self.ref_to_defs = {
+            key: value
+            for key, value in self.ref_to_defs.items()
+            if key.location.uri == uri
+        }
+
+        self.def_to_refs = {
+            key: value
+            for key, value in self.def_to_refs.items()
+            if key.location.uri == uri
+        }
 
         if uri in self.workspace_symbols:
             del self.workspace_symbols[uri]
 
-        self.docs[uri] = DocumentIndex(self, tree)
+        if uri in self.docs:
+            del self.docs[uri]
 
     def index(self, uri: str) -> DocumentIndex:
         if uri not in self.docs:
