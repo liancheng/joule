@@ -17,6 +17,7 @@ import unittest
 from collections import defaultdict
 from contextlib import contextmanager
 from enum import StrEnum
+from functools import singledispatchmethod
 from pathlib import Path
 from textwrap import dedent
 from typing import Annotated, Any, Iterable, Type, TypeVar, cast
@@ -1249,8 +1250,8 @@ class HashableLocation:
 
 
 class DocumentIndex(Visitor):
-    def __init__(self, server: "JustLanguageServer", tree: Expr) -> None:
-        self.server = server
+    def __init__(self, workspace_index: "WorkspaceIndex", tree: Expr) -> None:
+        self.workspace_index = workspace_index
         self.tree = tree
         self.inlay_hints: dict[HashablePosition, L.InlayHint] = {}
         self.current_scope: Scope = Scope()
@@ -1295,8 +1296,10 @@ class DocumentIndex(Visitor):
 
         return ws_symbol, doc_symbol
 
-    def new_ref(self, ref: Id, binding: Binding):
-        def new_def_ref_hint(pos: L.Position, label: str):
+    def add_reference(self, ref: Id, binding: Binding):
+        _, refs = self.workspace_index.add_reference(ref, binding)
+
+        def add_hint(pos: L.Position, label: str):
             key = HashablePosition(pos)
             self.inlay_hints[key] = L.InlayHint(
                 position=pos,
@@ -1304,18 +1307,9 @@ class DocumentIndex(Visitor):
                 kind=L.InlayHintKind.Parameter,
             )
 
-        ref_location = ref.location
-        def_location = binding.location
-
-        defs = self.server.ref_to_defs[HashableLocation(ref_location)]
-        refs = self.server.def_to_refs[HashableLocation(def_location)]
-
-        defs.append(def_location)
-        refs.append(ref_location)
-
         # Shows the # of references.
-        new_def_ref_hint(def_location.range.end, f"󰁅{len(refs)}")
-        new_def_ref_hint(ref_location.range.end, "󰁝")
+        add_hint(binding.location.range.end, f"󰁅{len(refs)}")
+        add_hint(ref.location.range.end, "󰁝")
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -1401,7 +1395,7 @@ class DocumentIndex(Visitor):
             selection_range=b.location.range,
         )
 
-        self.server.workspace_symbols[self.uri].append(ws_symbol)
+        self.workspace_index.workspace_symbols[self.uri].append(ws_symbol)
 
         with self.parent_symbol(doc_symbol):
             with self.nested_scope():
@@ -1430,7 +1424,7 @@ class DocumentIndex(Visitor):
                     p.location.range,
                 )
 
-                self.server.workspace_symbols[self.uri].append(ws_symbol)
+                self.workspace_index.workspace_symbols[self.uri].append(ws_symbol)
 
                 if p.default is not None:
                     with self.parent_symbol(doc_symbol):
@@ -1453,7 +1447,7 @@ class DocumentIndex(Visitor):
 
     def visit_id(self, e: Id):
         if e.is_variable and (binding := self.current_scope.get(e)) is not None:
-            self.new_ref(e, binding)
+            self.add_reference(e, binding)
 
     def visit_field(self, e: Object, f: Field):
         assert e.self_scope is not None
@@ -1504,7 +1498,7 @@ class DocumentIndex(Visitor):
 
         for scope in maybe(self.find_object_scope(e.obj, self.current_scope)):
             for binding in maybe(scope.get(e.field)):
-                self.new_ref(e.field, binding)
+                self.add_reference(e.field, binding)
 
     def visit_binary(self, e: Binary):
         self.visit(e.lhs)
@@ -1520,9 +1514,8 @@ class DocumentIndex(Visitor):
 LocationMap = dict[HashableLocation, list[L.Location]]
 
 
-class JustLanguageServer(LanguageServer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class WorkspaceIndex:
+    def __init__(self):
         # Indexed documents
         self.docs: dict[str, DocumentIndex] = {}
 
@@ -1549,16 +1542,30 @@ class JustLanguageServer(LanguageServer):
             [],
         )
 
+    def add_reference(
+        self, ref: Id, binding: Binding
+    ) -> tuple[list[L.Location], list[L.Location]]:
+        ref_location = ref.location
+        def_location = binding.location
+
+        defs = self.ref_to_defs[HashableLocation(ref_location)]
+        refs = self.def_to_refs[HashableLocation(def_location)]
+
+        defs.append(def_location)
+        refs.append(ref_location)
+
+        return defs, refs
+
     def definitions(self, uri: str, position: L.Position) -> list[L.Location]:
         return self.find_related_locations(uri, position, self.ref_to_defs)
 
     def references(self, uri: str, position: L.Position) -> list[L.Location]:
         return self.find_related_locations(uri, position, self.def_to_refs)
 
-    def refresh_index(self, uri: str):
+    def refresh_index(self, uri: str, source: str):
         try:
-            doc = parse_jsonnet(self.workspace.get_text_document(uri).source)
-            tree = Expr.from_doc(uri, doc)
+            cst = parse_jsonnet(source)
+            tree = Expr.from_doc(uri, cst)
         except Exception:
             return
 
@@ -1590,10 +1597,16 @@ class JustLanguageServer(LanguageServer):
         if uri in self.docs:
             del self.docs[uri]
 
-    def index(self, uri: str) -> DocumentIndex:
+    def doc_index(self, uri: str, source: str) -> DocumentIndex:
         if uri not in self.docs:
-            self.refresh_index(uri)
+            self.refresh_index(uri, source)
         return self.docs[uri]
+
+
+class JustLanguageServer(LanguageServer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.workspace_index = WorkspaceIndex()
 
 
 server = JustLanguageServer("just", "v0.1")
@@ -1619,20 +1632,22 @@ def initialize(_: L.InitializeParams):
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
-    ls.refresh_index(params.text_document.uri)
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    ls.workspace_index.refresh_index(doc.uri, doc.source)
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
     # TODO: Patch the AST incrementally.
-    ls.refresh_index(params.text_document.uri)
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    ls.workspace_index.refresh_index(doc.uri, doc.source)
 
 
 @server.feature(L.WORKSPACE_SYMBOL)
 def workspace_symbol(ls: JustLanguageServer, params: L.WorkspaceSymbolParams):
     return [
         symbol
-        for symbols in ls.workspace_symbols.values()
+        for symbols in ls.workspace_index.workspace_symbols.values()
         for symbol in symbols
         if params.query in symbol.name
     ]
@@ -1640,27 +1655,76 @@ def workspace_symbol(ls: JustLanguageServer, params: L.WorkspaceSymbolParams):
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(ls: JustLanguageServer, params: L.DocumentColorParams):
-    return ls.index(params.text_document.uri).document_symbols
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    return ls.workspace_index.doc_index(doc.uri, doc.source).document_symbols
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
 def definition(ls: JustLanguageServer, params: L.DefinitionParams):
-    return ls.definitions(params.text_document.uri, params.position)
+    return ls.workspace_index.definitions(params.text_document.uri, params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JustLanguageServer, params: L.ReferenceParams):
-    return ls.references(params.text_document.uri, params.position)
+    return ls.workspace_index.references(params.text_document.uri, params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
 def inlay_hint(ls: JustLanguageServer, params: L.InlayHintParams):
-    return list(ls.index(params.text_document.uri).inlay_hints.values())
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    doc_index = ls.workspace_index.doc_index(doc.uri, doc.source)
+    return list(doc_index.inlay_hints.values())
+
+
+@app.command()
+def serve():
+    server.start_io()
+
+
+@app.command()
+def tree(
+    path: Annotated[
+        Path,
+        typer.Argument(
+            help="The Jsonnet file to print.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            writable=False,
+            allow_dash=True,
+        ),
+    ],
+    tree_sitter: Annotated[
+        bool,
+        typer.Option(
+            "-t",
+            "--tree-sitter",
+            help="Print the tree-sitter tree.",
+        ),
+    ] = False,
+):
+    if path == Path("-"):
+        uri = "/dev/stdin"
+        source = sys.stdin.read()
+    else:
+        uri = path.absolute().as_uri()
+        source = path.read_text()
+
+    cst = parse_jsonnet(source)
+    ast = AST.from_doc(uri, cst)
+    Console(markup=False).print(pretty_tree(cst if tree_sitter else ast))
+
+
+@app.command()
+def test():
+    unittest.main(argv=["--locals"], verbosity=1)
 
 
 class TestDocument:
-    def __init__(self, source: str) -> None:
-        self.uri = "file:///tmp/test.jsonnet"
+    def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+        self.uri = uri
+        self.source = source
         self.lines = source.splitlines(keepends=False)
         self.root = parse_jsonnet(source)
         self.body = Document.from_doc(self.uri, self.root).body
@@ -2283,49 +2347,60 @@ class TestAST(unittest.TestCase):
         )
 
 
-@app.command()
-def serve():
-    server.start_io()
+class TestWorkspace:
+    @singledispatchmethod
+    def __init__(self, docs: list[TestDocument]) -> None:
+        self.workspace_index = WorkspaceIndex()
+        for doc in docs:
+            self.workspace_index.doc_index(doc.uri, doc.source)
+
+    @__init__.register(TestDocument)
+    def _(self, doc) -> None:
+        self.__init__([doc])
 
 
-@app.command()
-def tree(
-    path: Annotated[
-        Path,
-        typer.Argument(
-            help="The Jsonnet file to print.",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            writable=False,
-            allow_dash=True,
-        ),
-    ],
-    tree_sitter: Annotated[
-        bool,
-        typer.Option(
-            "-t",
-            "--tree-sitter",
-            help="Print the tree-sitter tree.",
-        ),
-    ] = False,
-):
-    if path == Path("-"):
-        uri = "/dev/stdin"
-        source = sys.stdin.read()
-    else:
-        uri = path.absolute().as_uri()
-        source = path.read_text()
+class TestDefRef(unittest.TestCase):
+    def test_local_bind(self):
+        t = TestDocument("local x = 1; x")
+        w = TestWorkspace(t)
 
-    cst = parse_jsonnet(source)
-    ast = AST.from_doc(uri, cst)
-    Console(markup=False).print(pretty_tree(cst if tree_sitter else ast))
+        self.assertSequenceEqual(
+            w.workspace_index.definitions(t.uri, t.start_of("x", nth=2)),
+            [t.location_of("x")],
+        )
 
+        self.assertSequenceEqual(
+            w.workspace_index.references(t.uri, t.start_of("x")),
+            [t.location_of("x", nth=2)],
+        )
 
-@app.command()
-def test():
-    unittest.main(argv=["--locals"], verbosity=1)
+    def test_field(self):
+        t = TestDocument("{ f: 1 }.f")
+        w = TestWorkspace(t)
+
+        self.assertSequenceEqual(
+            w.workspace_index.definitions(t.uri, t.start_of("f", nth=2)),
+            [t.location_of("f")],
+        )
+
+        self.assertSequenceEqual(
+            w.workspace_index.references(t.uri, t.start_of("f")),
+            [t.location_of("f", nth=2)],
+        )
+
+    def test_nested_field(self):
+        t = TestDocument("{ f: { g: 1 } }.f.g")
+        w = TestWorkspace(t)
+
+        self.assertSequenceEqual(
+            w.workspace_index.definitions(t.uri, t.start_of("g", nth=2)),
+            [t.location_of("g")],
+        )
+
+        self.assertSequenceEqual(
+            w.workspace_index.references(t.uri, t.start_of("g")),
+            [t.location_of("g", nth=2)],
+        )
 
 
 if __name__ == "__main__":
