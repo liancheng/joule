@@ -63,7 +63,7 @@ def maybe[U](v: U | None) -> tuple[U] | tuple[()]:
             return (u,)
 
 
-def optional[U](i: Iterable[U]) -> U | None:
+def head_or_none[U](i: Iterable[U]) -> U | None:
     return next(iter(i), None)
 
 
@@ -521,13 +521,10 @@ class Param(AST):
         assert 1 <= len(children) <= 2
 
         id, *maybe_value = children
-
         return Param(
             location=location_of(uri, node),
             id=Id.from_doc(uri, id),
-            default=next(
-                iter([Expr.from_doc(uri, value) for value in maybe_value]), None
-            ),
+            default=head_or_none(Expr.from_doc(uri, value) for value in maybe_value),
         )
 
 
@@ -544,7 +541,6 @@ class Fn(Expr):
         assert 1 <= len(children) <= 2
 
         *maybe_params, body_node = children
-
         return Fn(
             location=location_of(uri, node),
             params=[
@@ -645,7 +641,6 @@ class ListComp(Expr):
         assert len(children) >= 2
 
         expr, for_spec, *maybe_comp_spec = children
-
         return ListComp(
             location=location_of(uri, node),
             expr=Expr.from_doc(uri, expr),
@@ -692,7 +687,7 @@ class Assert(AST):
         condition, *maybe_message = children
 
         match maybe_message:
-            case [child]:
+            case child, *_:
                 message = Expr.from_doc(uri, child)
             case _:
                 message = None
@@ -903,7 +898,7 @@ class ObjComp(Expr):
 
 @D.dataclass
 class FieldAccess(Expr):
-    expr: Expr
+    obj: Expr
     field: Id
 
     @staticmethod
@@ -912,7 +907,7 @@ class FieldAccess(Expr):
         expr, field = strip_comments(node.named_children)
         return FieldAccess(
             location=location_of(uri, node),
-            expr=Expr.from_doc(uri, expr),
+            obj=Expr.from_doc(uri, expr),
             field=Id.from_doc(uri, field).non_variable,
         )
 
@@ -1120,7 +1115,7 @@ class Visitor:
         del e, f
 
     def visit_field_access(self, e: FieldAccess):
-        self.visit(e.expr)
+        self.visit(e.obj)
         self.visit(e.field)
 
     def visit_slice(self, e: Slice):
@@ -1258,7 +1253,9 @@ class DocumentIndex(Visitor):
         self.server = server
         self.tree = tree
         self.inlay_hints: dict[HashablePosition, L.InlayHint] = {}
-        self.scope = Scope()
+        self.current_scope: Scope = Scope()
+        self.current_self: Scope | None = None
+        self.current_super: Scope | None = None
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.File,
@@ -1339,29 +1336,46 @@ class DocumentIndex(Visitor):
 
     @contextmanager
     def nested_scope(self):
-        parent = self.scope
-        self.scope = self.scope.nest()
-
+        prev = self.current_scope
+        self.current_scope = self.current_scope.nest()
         try:
-            yield self.scope
+            yield self.current_scope
         finally:
-            self.scope = parent
+            self.current_scope = prev
+
+    @contextmanager
+    def super_scope(self, scope: Scope | None):
+        prev = self.current_super
+        self.current_super = scope
+        try:
+            yield self.current_super
+        finally:
+            self.current_super = prev
+
+    @contextmanager
+    def self_scope(self, scope: Scope | None):
+        prev = self.current_self
+        self.current_self = scope
+        try:
+            yield self.current_self
+        finally:
+            self.current_self = prev
 
     def find_object_scope(self, e: Expr, scope: Scope) -> Scope | None:
         match e:
             case Object() as obj if obj.self_scope is not None:
                 return obj.self_scope
             case Id() as id:
-                return optional(
+                return head_or_none(
                     scope
                     for binding in maybe(scope.get(id))
                     for value in maybe(binding.value)
                     for scope in maybe(self.find_object_scope(value, binding.scope))
                 )
             case FieldAccess() as f:
-                return optional(
+                return head_or_none(
                     scope
-                    for parent_scope in maybe(self.find_object_scope(f.expr, scope))
+                    for parent_scope in maybe(self.find_object_scope(f.obj, scope))
                     for binding in maybe(parent_scope.get(f.field))
                     for value in maybe(binding.value)
                     for scope in maybe(self.find_object_scope(value, binding.scope))
@@ -1372,7 +1386,7 @@ class DocumentIndex(Visitor):
                 return None
 
     def visit_bind(self, b: Bind):
-        self.scope.bind(b.id.name, b.id.location, b.value)
+        self.current_scope.bind(b.id.name, b.id.location, b.value)
 
         match b.value:
             case Fn():
@@ -1406,7 +1420,7 @@ class DocumentIndex(Visitor):
         # `visit_fn` instead of `visit_param`.
         with self.nested_scope():
             for p in e.params:
-                self.scope.bind(p.id.name, p.id.location, p.default)
+                self.current_scope.bind(p.id.name, p.id.location, p.default)
 
             for p in e.params:
                 ws_symbol, doc_symbol = self.new_symbol(
@@ -1438,7 +1452,7 @@ class DocumentIndex(Visitor):
             pass
 
     def visit_id(self, e: Id):
-        if e.is_variable and (binding := self.scope.get(e)) is not None:
+        if e.is_variable and (binding := self.current_scope.get(e)) is not None:
             self.new_ref(e, binding)
 
     def visit_field(self, e: Object, f: Field):
@@ -1481,26 +1495,26 @@ class DocumentIndex(Visitor):
         )
 
     def visit_object(self, e: Object):
-        if e.self_scope is None:
-            e.self_scope = Scope()
-        return super().visit_object(e)
+        e.self_scope = Scope(parent=self.current_super)
+        with self.self_scope(e.self_scope):
+            super().visit_object(e)
 
     def visit_field_access(self, e: FieldAccess):
-        self.visit(e.expr)
+        self.visit(e.obj)
 
-        for scope in maybe(self.find_object_scope(e.expr, self.scope)):
+        for scope in maybe(self.find_object_scope(e.obj, self.current_scope)):
             for binding in maybe(scope.get(e.field)):
                 self.new_ref(e.field, binding)
 
     def visit_binary(self, e: Binary):
-        super().visit_binary(e)
+        self.visit(e.lhs)
 
-        match e:
-            case Binary(_, Operator.Plus, lhs, Object() as rhs):
-                if rhs.self_scope is not None:
-                    lhs_scope = self.find_object_scope(lhs, self.scope)
-                    rhs.super_scope = lhs_scope
-                    rhs.self_scope.parent = lhs_scope
+        if e.is_object_composition and isinstance(e.rhs, Object):
+            lhs_scope = self.find_object_scope(e.lhs, self.current_scope)
+            with self.super_scope(lhs_scope):
+                self.visit(e.rhs)
+        else:
+            self.visit(e.rhs)
 
 
 LocationMap = dict[HashableLocation, list[L.Location]]
