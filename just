@@ -27,6 +27,7 @@ import tree_sitter as T
 import typer
 from pygls.lsp.server import LanguageServer
 from rich.console import Console
+from rich.text import Text
 from tree_sitter_language_pack import get_language, get_parser
 
 app = typer.Typer(
@@ -154,13 +155,13 @@ class PrettyTree:
 
     def __repr__(self):
         def grow(buf: list[str], nodes: list[PrettyTree], branches: str = ""):
-            for i in range(len(nodes)):
+            for i, node in enumerate(nodes):
                 last_child = i == len(nodes) - 1
                 new_branch = ".   " if last_child else "|   "
                 fork = "`-- " if last_child else "|-- "
 
-                buf.append(f"{branches}{fork}{nodes[i].node_text()}")
-                grow(buf, nodes[i].children(), branches + new_branch)
+                buf.append(f"{branches}{fork}{node.node_text()}")
+                grow(buf, node.children(), branches + new_branch)
 
         lines = [self.node_text()]
         grow(lines, self.children())
@@ -231,8 +232,8 @@ class PrettyCST(PrettyTree):
 
     def children(self) -> list["PrettyTree"]:
         return [
-            PrettyCST(self.node.children[i], self.node.field_name_for_child(i))
-            for i in range(len(self.node.children))
+            PrettyCST(child, self.node.field_name_for_child(i))
+            for i, child in enumerate(self.node.children)
         ]
 
     def __repr__(self):
@@ -1745,13 +1746,20 @@ class TestDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
         self.source = source
-        self.lines = source.splitlines(keepends=False)
+        self.lines = source.splitlines(keepends=True)
         self.root = parse_jsonnet(source)
         self.body = Document.from_doc(self.uri, self.root).body
+
+        self.line_offsets = [0]
+        for line in self.lines[:-1]:
+            self.line_offsets.append(len(line) + self.line_offsets[-1])
 
     def query_one(self, query: T.Query, capture: str) -> AST:
         [node] = T.QueryCursor(query).captures(self.root).get(capture, [])
         return AST.from_doc(self.uri, node)
+
+    def offset_of(self, pos: L.Position) -> int:
+        return self.line_offsets[pos.line] + pos.character
 
     def start_of(self, needle: str, line=1, nth=1) -> L.Position:
         assert line >= 1 and nth >= 1
@@ -2370,6 +2378,7 @@ class TestAST(unittest.TestCase):
 class TestWorkspace:
     @singledispatchmethod
     def __init__(self, docs: list[TestDocument]) -> None:
+        self.docs = {doc.uri: doc for doc in docs}
         self.workspace_index = WorkspaceIndex()
         for doc in docs:
             assert doc.uri not in self.workspace_index.docs
@@ -2380,61 +2389,124 @@ class TestWorkspace:
         self.__init__([doc])
 
 
-class TestDefRef(unittest.TestCase):
-    def test_local_bind(self):
-        t = TestDocument("local x = 1; x")
-        w = TestWorkspace(t)
+def side_by_side(lhs: Text, rhs: Text) -> Text:
+    max_width = max(map(len, lhs.plain.splitlines()))
+    return Text("\n").join(
+        [
+            Text().join(
+                [
+                    lhs_line,
+                    Text(" " * (max_width - len(lhs_line))),
+                    Text(" | "),
+                    rhs_line,
+                ]
+            )
+            for lhs_line, rhs_line in zip(lhs.split(), rhs.split())
+        ]
+    )
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("x", nth=2)),
-            [t.location_of("x")],
+
+class TestDefRef(unittest.TestCase):
+    def assertLocationsEqual(
+        self,
+        doc: TestDocument,
+        obtained: list[L.Location],
+        expected: list[L.Location],
+    ):
+        console = Console()
+
+        expected_vis = Text(doc.source, style="default")
+        obtained_vis = Text(doc.source, style="default")
+
+        for location in expected:
+            expected_vis.stylize(
+                "black on green",
+                doc.offset_of(location.range.start),
+                doc.offset_of(location.range.end),
+            )
+
+        for location in obtained:
+            obtained_vis.stylize(
+                "black on red",
+                doc.offset_of(location.range.start),
+                doc.offset_of(location.range.end),
+            )
+
+        with console.capture() as capture:
+            console.print()
+            console.print(
+                side_by_side(
+                    Text.styled("Expected\n", "black on yellow") + expected_vis,
+                    Text.styled("Obtained\n", "black on yellow") + obtained_vis,
+                )
+            )
+
+        self.assertSequenceEqual(obtained, expected, msg=capture.get())
+
+    def checkDefRefs(
+        self,
+        workspace: TestWorkspace,
+        def_location: L.Location,
+        ref_locations: list[L.Location],
+    ):
+        doc = workspace.docs[def_location.uri]
+
+        self.assertLocationsEqual(
+            doc,
+            workspace.workspace_index.references(
+                def_location.uri,
+                def_location.range.start,
+            ),
+            ref_locations,
         )
 
-        self.assertSequenceEqual(
-            w.workspace_index.references(t.uri, t.start_of("x")),
-            [t.location_of("x", nth=2)],
+        for location in ref_locations:
+            self.assertLocationsEqual(
+                doc,
+                workspace.workspace_index.definitions(
+                    location.uri,
+                    location.range.start,
+                ),
+                [def_location],
+            )
+
+    def test_local_bind(self):
+        t = TestDocument("local x = 1; x + x")
+
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("x"),
+            ref_locations=[
+                t.location_of("x", nth=2),
+                t.location_of("x", nth=3),
+            ],
         )
 
     def test_field(self):
         t = TestDocument("{ f: 1 }.f")
-        w = TestWorkspace(t)
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("f", nth=2)),
-            [t.location_of("f")],
-        )
-
-        self.assertSequenceEqual(
-            w.workspace_index.references(t.uri, t.start_of("f")),
-            [t.location_of("f", nth=2)],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("f"),
+            ref_locations=[t.location_of("f", nth=2)],
         )
 
     def test_nested_field(self):
         t = TestDocument("{ f: { g: 1 } }.f.g")
-        w = TestWorkspace(t)
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("g", nth=2)),
-            [t.location_of("g")],
-        )
-
-        self.assertSequenceEqual(
-            w.workspace_index.references(t.uri, t.start_of("g")),
-            [t.location_of("g", nth=2)],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("g"),
+            ref_locations=[t.location_of("g", nth=2)],
         )
 
     def test_obj_obj_composition(self):
         t = TestDocument("({ f: 1 } { f: 2 }).f")
-        w = TestWorkspace(t)
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("f", nth=3)),
-            [t.location_of("f", nth=2)],
-        )
-
-        self.assertSequenceEqual(
-            w.workspace_index.references(t.uri, t.start_of("f", nth=2)),
-            [t.location_of("f", nth=3)],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("f", nth=2),
+            ref_locations=[t.location_of("f", nth=3)],
         )
 
     def test_var_obj_composition(self):
@@ -2446,21 +2518,17 @@ class TestDefRef(unittest.TestCase):
                 """
             )
         )
-        w = TestWorkspace(t)
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("f", line=1)),
-            [],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("f"),
+            ref_locations=[],
         )
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("f", line=2, nth=2)),
-            [t.location_of("f", line=2)],
-        )
-
-        self.assertSequenceEqual(
-            w.workspace_index.references(t.uri, t.start_of("f", line=2)),
-            [t.location_of("f", line=2, nth=2)],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("f", line=2),
+            ref_locations=[t.location_of("f", line=2, nth=2)],
         )
 
     @unittest.skip("Feature not implemented")
@@ -2474,11 +2542,11 @@ class TestDefRef(unittest.TestCase):
                 """
             )
         )
-        w = TestWorkspace(t)
 
-        self.assertSequenceEqual(
-            w.workspace_index.definitions(t.uri, t.start_of("f", line=3)),
-            [t.location_of("f", line=2)],
+        self.checkDefRefs(
+            TestWorkspace(t),
+            def_location=t.location_of("f", line=2),
+            ref_locations=[t.location_of("f", line=3)],
         )
 
 
