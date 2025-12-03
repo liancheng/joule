@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, Any, Optional, Type, TypeVar, cast
+from typing import Annotated, Any, Iterable, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -50,6 +50,21 @@ ASTType = TypeVar("ASTType")
 
 def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
     return [node for node in nodes if not node.type == "comment"]
+
+
+U = TypeVar("U")
+
+
+def maybe[U](v: U | None) -> tuple[U] | tuple[()]:
+    match v:
+        case None:
+            return ()
+        case _ as u:
+            return (u,)
+
+
+def optional[U](i: Iterable[U]) -> U | None:
+    return next(iter(i), None)
 
 
 @D.dataclass
@@ -87,6 +102,7 @@ class AST:
             "functioncall": Call.from_doc,
             "id": Id.from_doc,
             "ifspec": IfSpec.from_doc,
+            "implicit_plus": Binary.from_doc,
             "import": Import.from_doc,
             "importstr": Import.from_doc,
             "indexing": Slice.from_doc,
@@ -395,17 +411,31 @@ class Binary(Expr):
 
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Binary":
-        assert node.type == "binary"
+        assert node.type in ["binary", "implicit_plus"]
 
-        lhs, op, rhs = strip_comments(node.named_children)
-        assert op.text is not None
+        match node.type:
+            case "binary":
+                lhs, op, rhs, *_ = strip_comments(node.named_children)
+                assert op.text is not None
+                operator = Operator(op.text.decode())
+            case _:
+                lhs, rhs, *_ = strip_comments(node.named_children)
+                operator = Operator.Plus
 
         return Binary(
             location=location_of(uri, node),
-            op=Operator(op.text.decode()),
+            op=operator,
             lhs=Expr.from_doc(uri, lhs),
             rhs=Expr.from_doc(uri, rhs),
         )
+
+    @property
+    def is_object_composition(self) -> bool:
+        match self:
+            case Binary(_, Operator.Plus, _, Object()):
+                return True
+            case _:
+                return False
 
 
 @D.dataclass
@@ -817,6 +847,10 @@ class Object(Expr):
     assertions: list[Assert] = D.field(default_factory=list)
     fields: list[Field] = D.field(default_factory=list)
 
+    def __post_init__(self):
+        self.self_scope: Scope | None = None
+        self.super_scope: Scope | None = None
+
     @staticmethod
     def from_doc(uri: str, node: T.Node) -> "Object":
         assert node.type == "object"
@@ -1071,7 +1105,7 @@ class Visitor:
                 case DynamicKey() as key:
                     self.visit(key.expr)
 
-            self.visit_field(f)
+            self.visit_field(e, f)
 
         for b in e.binds:
             self.visit_bind(b)
@@ -1082,8 +1116,8 @@ class Visitor:
         for f in e.fields:
             self.visit(f.value)
 
-    def visit_field(self, f: Field):
-        del f
+    def visit_field(self, e: Object, f: Field):
+        del e, f
 
     def visit_field_access(self, e: FieldAccess):
         self.visit(e.expr)
@@ -1171,21 +1205,23 @@ def parse_jsonnet(source: str) -> T.Node:
 
 @D.dataclass
 class Binding:
-    id: Id
+    scope: "Scope"
+    name: str
+    location: L.Location
     value: Expr | None = None
 
 
 @D.dataclass
 class Scope:
     bindings: list[Binding] = D.field(default_factory=list)
-    parent: Optional["Scope"] = None
+    parent: "Scope | None" = None
 
-    def bind(self, id: Id, value: Expr | None = None):
-        self.bindings.insert(0, Binding(id, value))
+    def bind(self, name: str, location: L.Location, value: Expr | None = None):
+        self.bindings.insert(0, Binding(self, name, location, value))
 
     def get(self, id: Id) -> Binding | None:
         return next(
-            iter(b for b in self.bindings if b.id.name == id.name),
+            iter(b for b in self.bindings if b.name == id.name),
             None if self.parent is None else self.parent.get(id),
         )
 
@@ -1272,7 +1308,7 @@ class DocumentIndex(Visitor):
             )
 
         ref_location = ref.location
-        def_location = binding.id.location
+        def_location = binding.location
 
         defs = self.server.ref_to_defs[HashableLocation(ref_location)]
         refs = self.server.def_to_refs[HashableLocation(def_location)]
@@ -1311,8 +1347,32 @@ class DocumentIndex(Visitor):
         finally:
             self.scope = parent
 
+    def find_object_scope(self, e: Expr, scope: Scope) -> Scope | None:
+        match e:
+            case Object() as obj if obj.self_scope is not None:
+                return obj.self_scope
+            case Id() as id:
+                return optional(
+                    scope
+                    for binding in maybe(scope.get(id))
+                    for value in maybe(binding.value)
+                    for scope in maybe(self.find_object_scope(value, binding.scope))
+                )
+            case FieldAccess() as f:
+                return optional(
+                    scope
+                    for parent_scope in maybe(self.find_object_scope(f.expr, scope))
+                    for binding in maybe(parent_scope.get(f.field))
+                    for value in maybe(binding.value)
+                    for scope in maybe(self.find_object_scope(value, binding.scope))
+                )
+            case Binary(_, _, _, Object() as rhs) as b if b.is_object_composition:
+                return rhs.self_scope
+            case _:
+                return None
+
     def visit_bind(self, b: Bind):
-        self.scope.bind(b.id, b.value)
+        self.scope.bind(b.id.name, b.id.location, b.value)
 
         match b.value:
             case Fn():
@@ -1346,7 +1406,7 @@ class DocumentIndex(Visitor):
         # `visit_fn` instead of `visit_param`.
         with self.nested_scope():
             for p in e.params:
-                self.scope.bind(p.id, p.default)
+                self.scope.bind(p.id.name, p.id.location, p.default)
 
             for p in e.params:
                 ws_symbol, doc_symbol = self.new_symbol(
@@ -1381,7 +1441,16 @@ class DocumentIndex(Visitor):
         if e.is_variable and (binding := self.scope.get(e)) is not None:
             self.new_ref(e, binding)
 
-    def visit_field(self, f: Field):
+    def visit_field(self, e: Object, f: Field):
+        assert e.self_scope is not None
+
+        match f.key:
+            case FixedKey(_, Id(location, name)):
+                e.self_scope.bind(name, location, f.value)
+            case FixedKey(_, Str(location, raw)):
+                e.self_scope.bind(raw, location, f.value)
+
+        # Adds an optional inlay hint for visibility and inheritance.
         label_parts = []
 
         match f.visibility:
@@ -1411,6 +1480,28 @@ class DocumentIndex(Visitor):
             kind=L.InlayHintKind.Parameter,
         )
 
+    def visit_object(self, e: Object):
+        if e.self_scope is None:
+            e.self_scope = Scope()
+        return super().visit_object(e)
+
+    def visit_field_access(self, e: FieldAccess):
+        self.visit(e.expr)
+
+        for scope in maybe(self.find_object_scope(e.expr, self.scope)):
+            for binding in maybe(scope.get(e.field)):
+                self.new_ref(e.field, binding)
+
+    def visit_binary(self, e: Binary):
+        super().visit_binary(e)
+
+        match e:
+            case Binary(_, Operator.Plus, lhs, Object() as rhs):
+                if rhs.self_scope is not None:
+                    lhs_scope = self.find_object_scope(lhs, self.scope)
+                    rhs.super_scope = lhs_scope
+                    rhs.self_scope.parent = lhs_scope
+
 
 LocationMap = dict[HashableLocation, list[L.Location]]
 
@@ -1430,7 +1521,7 @@ class JustLanguageServer(LanguageServer):
         self.ref_to_defs: LocationMap = defaultdict(list[L.Location])
         self.def_to_refs: LocationMap = defaultdict(list[L.Location])
 
-    def lookup_locations(
+    def find_related_locations(
         self, uri: str, pos: L.Position, map: LocationMap
     ) -> list[L.Location]:
         # TODO: More efficient position-to-location search.
@@ -1445,10 +1536,10 @@ class JustLanguageServer(LanguageServer):
         )
 
     def definitions(self, uri: str, position: L.Position) -> list[L.Location]:
-        return self.lookup_locations(uri, position, self.ref_to_defs)
+        return self.find_related_locations(uri, position, self.ref_to_defs)
 
     def references(self, uri: str, position: L.Position) -> list[L.Location]:
-        return self.lookup_locations(uri, position, self.def_to_refs)
+        return self.find_related_locations(uri, position, self.def_to_refs)
 
     def refresh_index(self, uri: str):
         try:
@@ -1859,12 +1950,32 @@ class TestAST(unittest.TestCase):
                 t.id("a").bin_op(op, t.id("b")),
             )
 
+    def test_implicit_plus(self):
+        t = TestDocument("a {}")
+
+        self.assertAstEqual(
+            t.body,
+            t.id("a") + Object(t.location_of("{}")),
+        )
+
     def test_binary_precedences(self):
         t = TestDocument("a + b * c")
 
         self.assertAstEqual(
             t.body,
             t.id("a") + (t.id("b") * t.id("c")),
+        )
+
+        t = TestDocument("(a + b) * c")
+
+        self.assertAstEqual(
+            t.body,
+            Binary(
+                t.body.location,
+                op=Operator.Multiply,
+                lhs=t.id("a") + t.id("b"),
+                rhs=t.id("c"),
+            ),
         )
 
     def test_list_comp(self):
