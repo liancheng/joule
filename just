@@ -1809,6 +1809,38 @@ class TestDocument:
     def arg(self, value: Expr) -> Arg:
         return Arg(value.location, value)
 
+    def render_locations(
+        self,
+        locations: list[L.Location],
+        style: str,
+    ):
+        text = Text(self.source, "default")
+
+        for location in locations:
+            text.stylize(
+                style,
+                self.offset_of(location.range.start),
+                self.offset_of(location.range.end),
+            )
+
+        lines = self.source.splitlines()
+        n_lines = len(lines)
+        max_width = max(map(len, lines))
+        line_no_width = len(str(n_lines))
+        ruler = Text.styled(("''''|" * (max_width // 5 + 1))[:max_width], "grey50")
+        ruler.pad_left(line_no_width + 2)
+
+        rendered = [ruler]
+
+        for i, line in enumerate(text.split()):
+            line_no = Text.styled(f"{i + 1:>{line_no_width}}: ", "grey50")
+            rendered.append(line_no + line)
+
+        if n_lines > 5:
+            rendered.append(ruler)
+
+        return Text("\n").join(rendered)
+
 
 class TestAST(unittest.TestCase):
     def __init__(self, methodName: str = "runTest") -> None:
@@ -2381,27 +2413,23 @@ class TestWorkspace:
 
 
 def side_by_side(lhs: Text, rhs: Text) -> Text:
-    lines = lhs.plain.splitlines()
-    max_width = max(map(len, lines))
-    n_rows = len(lines)
-    line_no_width = len(str(n_rows))
+    lhs_lines = lhs.split()
+    rhs_lines = rhs.split()
+
+    empty = Text.styled("", "default")
+    shorter = lhs_lines if len(lhs_lines) < len(rhs_lines) else rhs_lines
+    shorter.extend([empty] * abs(len(lhs_lines) - len(rhs_lines)))
+
+    max_width = max(map(len, lhs.plain.splitlines()))
     sep = Text.styled(" | ", "grey50")
 
-    ruler = Text.styled(("....:" * (max_width // 5 + 1))[:max_width], "grey50")
-    ruler = ruler + sep + ruler
-    ruler.pad_left(line_no_width + 2)
-
-    rendered = [ruler]
-
-    for lhs_line, rhs_line, n in zip(lhs.split(), rhs.split(), range(1, n_rows + 1)):
-        lhs_padding = " " * (max_width - len(lhs_line))
-        line_no = Text.styled(f"{n:>{line_no_width}}: ", "grey50")
-        rendered.append(line_no + lhs_line + lhs_padding + sep + rhs_line)
-
-    if n_rows > 3:
-        rendered.append(ruler)
-
-    return Text("\n").join(rendered)
+    return Text("\n").join(
+        [
+            lhs_line + padding + sep + rhs_line
+            for lhs_line, rhs_line in zip(lhs_lines, rhs_lines)
+            if (padding := " " * (max_width - len(lhs_line))) is not None
+        ]
+    )
 
 
 class TestDefRef(unittest.TestCase):
@@ -2413,26 +2441,18 @@ class TestDefRef(unittest.TestCase):
     ):
         console = Console()
 
-        expected_vis = Text(doc.source, style="default")
-        obtained_vis = Text(doc.source, style="default")
-
-        for location in expected:
-            expected_vis.stylize(
-                "black on green",
-                doc.offset_of(location.range.start),
-                doc.offset_of(location.range.end),
-            )
-
-        for location in obtained:
-            obtained_vis.stylize(
-                "black on red",
-                doc.offset_of(location.range.start),
-                doc.offset_of(location.range.end),
-            )
+        def header(title: str) -> Text:
+            return Text.styled(title + "\n", "black on yellow")
 
         with console.capture() as capture:
             console.print()
-            console.print(side_by_side(expected_vis, obtained_vis))
+            console.print(
+                side_by_side(
+                    header("Obtained") + doc.render_locations(obtained, "black on red"),
+                    header("Expected")
+                    + doc.render_locations(expected, "black on green"),
+                )
+            )
 
         self.assertSequenceEqual(obtained, expected, msg=capture.get())
 
@@ -2530,15 +2550,16 @@ class TestDefRef(unittest.TestCase):
                 """\
                 local o1 = { f: 1 };
                 local o2 = { f: 2 };
-                (o1 + o2).f
+                local o3 = { f: 3 };
+                (o1 + o2 + o3).f
                 """
             )
         )
 
         self.checkDefRefs(
             TestWorkspace(t),
-            def_location=t.location_of("f", line=2),
-            ref_locations=[t.location_of("f", line=2)],
+            def_location=t.location_of("f", line=3),
+            ref_locations=[t.location_of("f", line=4)],
         )
 
 
