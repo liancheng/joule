@@ -17,7 +17,6 @@ import unittest
 from collections import defaultdict
 from contextlib import contextmanager
 from enum import StrEnum
-from functools import singledispatchmethod
 from pathlib import Path
 from textwrap import dedent
 from typing import Annotated, Any, Iterable, Type, TypeVar, cast
@@ -1508,7 +1507,7 @@ LocationMap = dict[HashableLocation, list[L.Location]]
 
 class WorkspaceIndex:
     def __init__(self, root_uri: str):
-        self.root_uri = Path(root_uri)
+        self.root_uri = root_uri
 
         # Indexed documents
         self.docs: dict[str, DocumentIndex] = {}
@@ -1618,8 +1617,11 @@ class WorkspaceIndex:
 
 
 class JustLanguageServer(LanguageServer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def set_workspace_root(self, root_path: str, root_uri: str):
-        self.workspace.add_folder(L.WorkspaceFolder(name=root_path, uri=root_uri))
+        self.workspace.add_folder(L.WorkspaceFolder(root_path, root_uri))
         self.workspace_index = WorkspaceIndex(root_uri)
 
 
@@ -1630,8 +1632,12 @@ server = JustLanguageServer("just", "v0.1")
 def initialize(ls: JustLanguageServer, params: L.InitializeParams):
     for root_path in maybe(params.root_path):
         for root_uri in maybe(params.root_uri):
-            log.info("Workspace root: %s, %s", root_path, root_uri)
-            ls.set_workspace_root(root_path, root_uri)
+            log.info("Discovered workspace root: %s, %s", root_path, root_uri)
+
+            root = Path(root_uri).absolute()
+            assert root.as_posix() == Path(root_path).absolute().as_posix()
+
+            ls.set_workspace_root(root.as_posix(), root.as_uri())
 
     return L.InitializeResult(
         capabilities=L.ServerCapabilities(
@@ -1651,8 +1657,15 @@ def initialize(ls: JustLanguageServer, params: L.InitializeParams):
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: JustLanguageServer, params: L.DidOpenTextDocumentParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    ls.workspace_index.sync(doc.uri, doc.source)
+    doc = params.text_document
+
+    # If the workspace root is not yet discovered, set the root as the parent folder of
+    # the first document opened.
+    if len(ls.workspace.folders) == 0:
+        root = Path(doc.uri).absolute().parent
+        ls.set_workspace_root(root.as_posix(), root.as_uri())
+
+    ls.workspace_index.sync(doc.uri, doc.text)
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
@@ -1818,18 +1831,14 @@ class TestDocument:
     def arg(self, value: Expr) -> Arg:
         return Arg(value.location, value)
 
-    def highlight(
-        self,
-        locations: list[L.Location],
-        style: str,
-    ):
+    def highlight(self, ranges: list[L.Range], style: str):
         text = Text(self.source, "default")
 
-        for location in locations:
+        for range in ranges:
             text.stylize(
                 style,
-                self.offset_of(location.range.start),
-                self.offset_of(location.range.end),
+                self.offset_of(range.start),
+                self.offset_of(range.end),
             )
 
         lines = self.source.splitlines()
@@ -2408,18 +2417,17 @@ class TestAST(unittest.TestCase):
 
 
 class TestWorkspace:
-    @singledispatchmethod
-    def __init__(self, docs: list[TestDocument], root_uri: str) -> None:
+    def __init__(self, root_uri: str, docs: list[TestDocument]) -> None:
         self.docs = {doc.uri: doc for doc in docs}
         self.workspace_index = WorkspaceIndex(root_uri)
         for doc in docs:
             assert doc.uri not in self.workspace_index.docs
             self.workspace_index.sync(doc.uri, doc.source, strict_on_error=True)
 
-    @__init__.register(TestDocument)
-    def _(self, doc: TestDocument) -> None:
+    @staticmethod
+    def single_doc(doc: TestDocument) -> "TestWorkspace":
         root_uri = Path(doc.uri).absolute().parent.as_uri()
-        self.__init__([doc], root_uri)
+        return TestWorkspace(root_uri, [doc])
 
 
 def side_by_side(lhs: Text, rhs: Text) -> Text:
@@ -2456,15 +2464,18 @@ class TestDefRef(unittest.TestCase):
             return Text.styled(title + "\n", "black on yellow")
 
         with console.capture() as capture:
-            message = side_by_side(
-                header("Obtained") + doc.highlight(obtained, "black on red"),
-                header("Expected") + doc.highlight(expected, "black on green"),
-            )
-
             console.print("\n")
 
             if clue is not None:
                 console.print(clue)
+
+            obtained_ranges = [loc.range for loc in obtained]
+            expected_ranges = [loc.range for loc in expected]
+
+            message = side_by_side(
+                header("Obtained") + doc.highlight(obtained_ranges, "black on red"),
+                header("Expected") + doc.highlight(expected_ranges, "black on green"),
+            )
 
             console.print(message)
 
@@ -2481,7 +2492,7 @@ class TestDefRef(unittest.TestCase):
         clue = Text("\n").join(
             [
                 Text("Checking symbol reference(s):"),
-                doc.highlight([def_location], "black on yellow"),
+                doc.highlight([def_location.range], "black on yellow"),
                 Text(""),
             ]
         )
@@ -2500,7 +2511,7 @@ class TestDefRef(unittest.TestCase):
             clue = Text("\n").join(
                 [
                     Text("Checking symbol definition:"),
-                    doc.highlight([location], "black on yellow"),
+                    doc.highlight([location.range], "black on yellow"),
                     Text(""),
                 ]
             )
@@ -2519,7 +2530,7 @@ class TestDefRef(unittest.TestCase):
         t = TestDocument("local x = 1; x + x")
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("x"),
             ref_locations=[
                 t.location_of("x", nth=2),
@@ -2531,7 +2542,7 @@ class TestDefRef(unittest.TestCase):
         t = TestDocument("{ f: 1 }.f")
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f"),
             ref_locations=[t.location_of("f", nth=2)],
         )
@@ -2540,7 +2551,7 @@ class TestDefRef(unittest.TestCase):
         t = TestDocument("{ f: { g: 1 } }.f.g")
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("g"),
             ref_locations=[t.location_of("g", nth=2)],
         )
@@ -2549,7 +2560,7 @@ class TestDefRef(unittest.TestCase):
         t = TestDocument("({ f: 1 } { f: 2 }).f")
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f", nth=2),
             ref_locations=[t.location_of("f", nth=3)],
         )
@@ -2565,7 +2576,7 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f", line=2),
             ref_locations=[t.location_of("f", line=2, nth=2)],
         )
@@ -2581,7 +2592,7 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.checkDefRefs(
-            TestWorkspace(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f"),
             ref_locations=[t.location_of("f", line=2, nth=2)],
         )
@@ -2592,16 +2603,16 @@ class TestDefRef(unittest.TestCase):
                 """\
                 local o1 = { f: 1 };
                 local o2 = { f: 2 };
-                local o3 = { f: 3 };
-                (o1 + o2 + o3).f
+                local o3 = { f: { g: 3 } };
+                (o1 + o2 + o3).f.g
                 """
             )
         )
 
         self.checkDefRefs(
-            TestWorkspace(t),
-            def_location=t.location_of("f", line=3),
-            ref_locations=[t.location_of("f", line=4)],
+            TestWorkspace.single_doc(t),
+            def_location=t.location_of("g", line=3),
+            ref_locations=[t.location_of("g", line=4)],
         )
 
 
