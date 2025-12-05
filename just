@@ -1930,33 +1930,50 @@ class TestDocument:
         return Arg(value.location, value)
 
     def highlight(self, ranges: list[L.Range], style: str):
-        text = Text(self.source, "default")
+        styled = Text.styled
+        rendered_lines = []
 
-        for range in ranges:
-            text.stylize(
+        uri_line = styled(self.uri, "grey50")
+        rendered_lines.append(uri_line)
+
+        # Renders the ranges.
+        rendered_source = styled(self.source, "default")
+        for r in ranges:
+            rendered_source.stylize(
                 style,
-                self.offset_of(range.start),
-                self.offset_of(range.end),
+                start=self.offset_of(r.start),
+                end=self.offset_of(r.end),
             )
 
-        lines = self.source.splitlines()
-        n_lines = len(lines)
-        max_width = max(map(len, lines))
-        line_no_width = len(str(n_lines))
-        ruler = Text.styled(("|''''" * (max_width // 5 + 1))[: max_width + 1], "grey50")
-        ruler.pad_left(line_no_width + 1)
+        raw_lines = self.source.splitlines()
+        width = max(map(len, raw_lines))
+        height = len(raw_lines)
+        gutter_width = len(str(height))
 
-        rendered_lines = [
-            Text.styled(self.uri, "grey50"),
-            ruler,
-        ]
+        def render_ruler(width: int, left_padding: int) -> list[Text]:
+            every_5_chars = range(0, width // 5 * 5 + 1, 5)
+            segments = [f"{i:>5}" for i in every_5_chars]
 
-        for i, line in enumerate(text.split()):
-            line_no = Text.styled(f"{i + 1:>{line_no_width}} |", "grey50")
+            line1 = styled("".join(segments)[4:], "grey50")
+            line2 = styled(("|''''" * (width // 5 + 1))[: width + 1], "grey50")
+
+            line1.pad_left(left_padding)
+            line2.pad_left(left_padding)
+
+            return [line1, line2]
+
+        # Renders a top horizontal ruler.
+        ruler_lines = render_ruler(width, gutter_width + 1)
+        rendered_lines.extend(ruler_lines)
+
+        # Renders source lines with line numbers.
+        for i, line in enumerate(rendered_source.split()):
+            line_no = styled(f"{i + 1:>{gutter_width}} |", "grey50")
             rendered_lines.append(line_no + line)
 
-        if n_lines > 5:
-            rendered_lines.append(ruler)
+        # Renders a bottom horizontal ruler for long files.
+        if height > 5:
+            rendered_lines.extend(ruler_lines)
 
         return Text("\n").join(rendered_lines)
 
