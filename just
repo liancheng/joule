@@ -1665,7 +1665,7 @@ class WorkspaceIndex:
         # The latter is desired when used in editors to avoid glitches.
 
         if strict_on_error:
-            self.cleanup(uri)
+            self.invalidate_doc(uri)
 
         try:
             cst = parse_jsonnet(source)
@@ -1677,7 +1677,7 @@ class WorkspaceIndex:
                 return
 
         if not strict_on_error:
-            self.cleanup(uri)
+            self.invalidate_doc(uri)
 
         self.docs[uri] = DocumentIndex(self, tree)
 
@@ -1696,7 +1696,7 @@ class WorkspaceIndex:
 
         return map
 
-    def cleanup(self, uri: str):
+    def invalidate_doc(self, uri: str):
         self.ref_to_defs = self.cleanup_location_map(uri, self.ref_to_defs)
         self.def_to_refs = self.cleanup_location_map(uri, self.def_to_refs)
 
@@ -2571,16 +2571,12 @@ def side_by_side(lhs: Text, rhs: Text) -> Text:
 class TestDefRef(unittest.TestCase):
     def assertLocationsEqual(
         self,
-        docs: TestDocument | Iterable[TestDocument],
+        workspace: TestWorkspace,
         obtained: list[L.Location],
         expected: list[L.Location],
         clue: Text | None = None,
     ):
-        match docs:
-            case TestDocument() as doc:
-                docs = [doc]
-            case _:
-                docs = list(docs)
+        docs = workspace.docs.values()
 
         def sort_key(loc: L.Location):
             return (loc.uri, loc.range.start, loc.range.end)
@@ -2637,7 +2633,7 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.assertLocationsEqual(
-            workspace.docs.values(),
+            workspace,
             workspace.index.references(
                 def_location.uri,
                 def_location.range.start,
@@ -2658,7 +2654,7 @@ class TestDefRef(unittest.TestCase):
             )
 
             self.assertLocationsEqual(
-                workspace.docs.values(),
+                workspace,
                 workspace.index.definitions(
                     location.uri,
                     location.range.start,
