@@ -17,6 +17,7 @@ import unittest
 from collections import defaultdict
 from contextlib import contextmanager
 from enum import StrEnum
+from itertools import groupby
 from pathlib import Path
 from textwrap import dedent
 from typing import Annotated, Any, Iterable, Type, TypeVar, cast
@@ -1862,9 +1863,12 @@ class TestDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
         self.source = source
-        self.lines = source.splitlines(keepends=True)
         self.root = parse_jsonnet(source)
         self.body = Document.from_doc(self.uri, self.root).body
+
+        self.lines = source.splitlines(keepends=True)
+        if self.lines[-1].endswith("\n"):
+            self.lines.append("")
 
         # Computes the character offset of the first character in each line, used for
         # converting line-character positions to offsets.
@@ -2569,6 +2573,44 @@ class TestWorkspace:
         root_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
         return TestWorkspace(root_uri, [doc])
 
+    def dump_references(self):
+        rendered = []
+
+        for key, ref_locations in self.index.def_to_refs.items():
+            def_location = key.location
+            def_doc = self.docs[def_location.uri]
+            lhs = [Text.styled("Definition", "black on yellow")]
+            lhs.append(def_doc.highlight([def_location.range], "black on blue"))
+
+            rhs = [Text.styled("Reference(s)", "black on yellow")]
+            for uri, group in groupby(ref_locations, key=lambda loc: loc.uri):
+                ref_doc = self.docs[uri]
+                ref_ranges = [loc.range for loc in group]
+                rhs.append(ref_doc.highlight(ref_ranges, "black on blue"))
+
+            rendered.append(side_by_side(Text("\n").join(lhs), Text("\n").join(rhs)))
+
+        return Text("\n\n").join(rendered)
+
+    def dump_definitions(self):
+        rendered = []
+
+        for key, ref_locations in self.index.ref_to_defs.items():
+            ref_location = key.location
+            ref_doc = self.docs[ref_location.uri]
+            lhs = [Text.styled("Reference", "black on yellow")]
+            lhs.append(ref_doc.highlight([ref_location.range], "black on green"))
+
+            rhs = [Text.styled("Definition(s)", "black on yellow")]
+            for uri, group in groupby(ref_locations, key=lambda loc: loc.uri):
+                def_doc = self.docs[uri]
+                def_ranges = [loc.range for loc in group]
+                rhs.append(def_doc.highlight(def_ranges, "black on green"))
+
+            rendered.append(side_by_side(Text("\n").join(lhs), Text("\n").join(rhs)))
+
+        return Text("\n\n").join(rendered)
+
 
 def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     if isinstance(lhs, str):
@@ -2657,6 +2699,9 @@ class TestDefRef(unittest.TestCase):
                 Text("Checking symbol reference(s):"),
                 def_doc.highlight([def_location.range], "black on yellow"),
                 Text(""),
+                Text("Definitions and references:"),
+                workspace.dump_references(),
+                Text(""),
             ]
         )
 
@@ -2678,6 +2723,7 @@ class TestDefRef(unittest.TestCase):
                     Text("Checking symbol definition:"),
                     ref_doc.highlight([location.range], "black on yellow"),
                     Text(""),
+                    workspace.dump_definitions(),
                 ]
             )
 
@@ -2782,11 +2828,7 @@ class TestDefRef(unittest.TestCase):
 
     def test_import(self):
         t1 = TestDocument(
-            dedent(
-                """\
-                { f: 1 }
-                """
-            ),
+            "{ f: 1 }",
             uri="file:///test/t1.jsonnet",
         )
 
