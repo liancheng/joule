@@ -94,9 +94,10 @@ class AST:
             "conditional": If.from_cst,
             "document": Document.from_cst,
             "false": Bool.from_cst,
+            "field": Field.from_cst,
+            "fieldaccess_super": FieldAccess.from_cst,
             "fieldaccess": FieldAccess.from_cst,
             "fieldname": FieldKey.from_cst,
-            "field": Field.from_cst,
             "forloop": ListComp.from_cst,
             "forspec": ForSpec.from_cst,
             "functioncall": Call.from_cst,
@@ -112,7 +113,9 @@ class AST:
             "object": dispatch_object,
             "param": Param.from_cst,
             "parenthesis": skip_paren,
+            "self": Self.from_cst,
             "string": Str.from_cst,
+            "super": Super.from_cst,
             "true": Bool.from_cst,
         }
 
@@ -971,7 +974,7 @@ class FieldAccess(Expr):
 
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "FieldAccess":
-        assert node.type == "fieldaccess"
+        assert node.type in ["fieldaccess", "fieldaccess_super"]
         expr, field = strip_comments(node.named_children)
         return FieldAccess(
             location=location_of(uri, node),
@@ -1175,7 +1178,7 @@ class Visitor:
                 case DynamicKey() as key:
                     self.visit(key.expr)
 
-            self.visit_field(e, f)
+            self.visit_field_key(e, f)
 
         for b in e.binds:
             self.visit_bind(b)
@@ -1184,9 +1187,12 @@ class Visitor:
             self.visit_assert(a)
 
         for f in e.fields:
-            self.visit(f.value)
+            self.visit_field_value(e, f)
 
-    def visit_field(self, e: Object, f: Field):
+    def visit_field_key(self, e: Object, f: Field):
+        del e, f
+
+    def visit_field_value(self, e: Object, f: Field):
         del e, f
 
     def visit_field_access(self, e: FieldAccess):
@@ -1420,7 +1426,7 @@ class DocumentIndex(Visitor):
 
         self.add_hint(
             L.InlayHint(
-                position=ref.location.range.end,
+                position=ref.location.range.start,
                 label="󰁝",
                 kind=L.InlayHintKind.Parameter,
             )
@@ -1429,7 +1435,7 @@ class DocumentIndex(Visitor):
         # Shows the # of references.
         self.add_hint(
             L.InlayHint(
-                position=binding.location.range.end,
+                position=binding.location.range.start,
                 label=f"󰁅{len(refs)}",
                 kind=L.InlayHintKind.Parameter,
             )
@@ -1593,7 +1599,7 @@ class DocumentIndex(Visitor):
         if e.is_variable and (binding := self.current_scope.get(e)) is not None:
             self.add_id_reference(e, binding)
 
-    def visit_field(self, e: Object, f: Field):
+    def visit_field_key(self, e: Object, f: Field):
         assert e.self_scope is not None
 
         f.enclosing_self_scope = e.self_scope
@@ -1626,6 +1632,10 @@ class DocumentIndex(Visitor):
                     padding_right=True,
                 )
             )
+
+    def visit_field_value(self, e: Object, f: Field):
+        del e
+        self.visit(f.value)
 
     def resolve_importee_path(self, raw_path: str) -> Path:
         root = Path.from_uri(self.workspace_index.root_uri)
@@ -1664,7 +1674,9 @@ class DocumentIndex(Visitor):
             self.workspace_index.add_reference(e.path.location, index.tree.location)
 
     def visit_object(self, e: Object):
-        e.self_scope = Scope(parent=self.current_super)
+        e.self_scope = Scope()
+        e.super_scope = self.current_super
+
         with self.self_scope(e.self_scope):
             super().visit_object(e)
 
@@ -3001,6 +3013,90 @@ class TestDefRef(unittest.TestCase):
             ),
             def_location=t1.location_of("f: 0"),
             ref_locations=[t2.location_of("f")],
+        )
+
+    def test_self(self):
+        t = TestDocument("{ f1: 1, f2: self.f1 }")
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("f1: 1"),
+            ref_locations=[t.location_of("f1", nth=2)],
+        )
+
+    def test_super_obj_obj(self):
+        t = TestDocument(
+            dedent(
+                """\
+                {
+                    f1: 1
+                } + {
+                    f1: 2,
+                    f2: super.f1
+                }
+                """
+            )
+        )
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("f1: 1", line=2),
+            ref_locations=[t.location_of("f1", line=5)],
+        )
+
+    def test_super_var_obj(self):
+        t = TestDocument(
+            dedent(
+                """\
+                local o1 = {
+                    f1: 1
+                };
+                o1 + {
+                    f1: 2,
+                    f2: super.f1
+                }
+                """
+            )
+        )
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("f1: 1", line=2),
+            ref_locations=[t.location_of("f1", line=6)],
+        )
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("o1"),
+            ref_locations=[t.location_of("o1", line=4)],
+        )
+
+    def test_super_var_var(self):
+        t = TestDocument(
+            dedent(
+                """\
+                /* 1 */ local o1 = {
+                /* 2 */     f1: 1
+                /* 3 */ };
+                /* 4 */ local o2 = {
+                /* 5 */     f1: 2,
+                /* 6 */     f2: super.f1
+                /* 7 */ };
+                /* 8 */ o1 + o2
+                """
+            )
+        )
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("o1"),
+            ref_locations=[t.location_of("o1", line=8)],
+        )
+
+        self.checkDefRefs(
+            workspace=TestWorkspace.single_doc(t),
+            def_location=t.location_of("o2", line=4),
+            ref_locations=[t.location_of("o2", line=8)],
         )
 
 
