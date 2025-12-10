@@ -324,6 +324,28 @@ class Expr(AST):
 
 
 @D.dataclass
+class Self(Expr):
+    def __post_init__(self):
+        self.scope: Scope | None = None
+
+    @staticmethod
+    def from_cst(uri: str, node: T.Node) -> "Self":
+        assert node.type == "self"
+        return Self(location_of(uri, node))
+
+
+@D.dataclass
+class Super(Expr):
+    def __post_init__(self):
+        self.scope: Scope | None = None
+
+    @staticmethod
+    def from_cst(uri: str, node: T.Node) -> "Super":
+        assert node.type == "super"
+        return Super(location_of(uri, node))
+
+
+@D.dataclass
 class Document(Expr):
     body: Expr
 
@@ -1051,6 +1073,10 @@ class Visitor:
                 self.visit_object(e)
             case FieldAccess() as e:
                 self.visit_field_access(e)
+            case Self() as e:
+                self.visit_self(e)
+            case Super() as e:
+                self.visit_super(e)
 
     def visit_document(self, e: Document):
         self.visit(e.body)
@@ -1176,6 +1202,12 @@ class Visitor:
 
         if e.step is not None:
             self.visit(e.step)
+
+    def visit_self(self, e: Self):
+        del e
+
+    def visit_super(self, e: Super):
+        del e
 
 
 def position_of(point: T.Point) -> L.Position:
@@ -1478,6 +1510,10 @@ class DocumentIndex(Visitor):
                     return self.find_object_scope(l.body, local_scope)
             case Binary(_, Operator.Plus, _, rhs):
                 return self.find_object_scope(rhs, scope)
+            case Self() as e:
+                return e.scope
+            case Super() as e:
+                return e.scope
             case _:
                 return None
 
@@ -1638,6 +1674,12 @@ class DocumentIndex(Visitor):
         for scope in maybe(self.find_object_scope(e.obj, self.current_scope)):
             for binding in maybe(scope.get(e.field)):
                 self.add_id_reference(e.field, binding)
+
+    def visit_self(self, e: Self):
+        e.scope = self.current_self
+
+    def visit_super(self, e: Super):
+        e.scope = self.current_super
 
     def visit_binary(self, e: Binary):
         self.visit(e.lhs)
