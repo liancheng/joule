@@ -121,7 +121,10 @@ class AST:
 
         constructor = dispatch.get(node.type, Unknown.from_cst)
 
-        return constructor(uri, node)
+        try:
+            return constructor(uri, node)
+        except Exception:
+            return Unknown.from_cst(uri, node)
 
     def to(self, expect_type: Type[ASTType]) -> ASTType:
         if not isinstance(self, expect_type):
