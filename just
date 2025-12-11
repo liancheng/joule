@@ -376,9 +376,8 @@ class Id(Expr):
     def arg(self, value: Expr) -> "Arg":
         return Arg(merge_locations(self, value), value, self)
 
-    @property
-    def non_variable(self) -> "Id":
-        return Id(self.location, self.name, False)
+    def var(self, is_variable: bool) -> "Id":
+        return Id(self.location, self.name, is_variable)
 
 
 @D.dataclass
@@ -829,7 +828,7 @@ class FieldKey(AST):
             e, *_ = tail
             return DynamicKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
-            return FixedKey(location, Id.from_cst(uri, head).non_variable)
+            return FixedKey(location, Id.from_cst(uri, head).var(False))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
@@ -979,7 +978,7 @@ class FieldAccess(Expr):
         return FieldAccess(
             location=location_of(uri, node),
             obj=Expr.from_cst(uri, expr),
-            field=Id.from_cst(uri, field).non_variable,
+            field=Id.from_cst(uri, field).var(False),
         )
 
 
@@ -1364,9 +1363,9 @@ class DocumentIndex(Visitor):
         self.workspace_index = workspace_index
         self.tree: Document = tree
         self.inlay_hints: dict[HashablePosition, L.InlayHint] = {}
-        self.current_scope: Scope = Scope()
-        self.current_self: Scope | None = None
-        self.current_super: Scope | None = None
+        self.current_var_scope: Scope = Scope()
+        self.current_self_scope: Scope | None = None
+        self.current_super_scope: Scope | None = None
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.File,
@@ -1453,31 +1452,31 @@ class DocumentIndex(Visitor):
             self.breadcrumbs.pop()
 
     @contextmanager
-    def nested_scope(self):
-        prev = self.current_scope
-        self.current_scope = self.current_scope.nest()
+    def var_scope(self, scope: Scope):
+        prev = self.current_var_scope
+        self.current_var_scope = scope
         try:
-            yield self.current_scope
+            yield self.current_var_scope
         finally:
-            self.current_scope = prev
+            self.current_var_scope = prev
 
     @contextmanager
     def super_scope(self, scope: Scope | None):
-        prev = self.current_super
-        self.current_super = scope
+        prev = self.current_super_scope
+        self.current_super_scope = scope
         try:
-            yield self.current_super
+            yield self.current_super_scope
         finally:
-            self.current_super = prev
+            self.current_super_scope = prev
 
     @contextmanager
     def self_scope(self, scope: Scope | None):
-        prev = self.current_self
-        self.current_self = scope
+        prev = self.current_self_scope
+        self.current_self_scope = scope
         try:
-            yield self.current_self
+            yield self.current_self_scope
         finally:
-            self.current_self = prev
+            self.current_self_scope = prev
 
     def find_object_scope(
         self,
@@ -1507,10 +1506,10 @@ class DocumentIndex(Visitor):
                         for value in maybe(binding.value):
                             return self.find_object_scope(value, binding.scope)
             case Binary(_, _, _, rhs):
-                return self.find_object_scope(rhs, self.current_scope)
+                return self.find_object_scope(rhs, self.current_var_scope)
             case Import(_, "import", path):
                 for index in maybe(self.importee_index(path.raw)):
-                    return self.find_object_scope(index.tree, index.current_scope)
+                    return self.find_object_scope(index.tree, index.current_var_scope)
             case Local() as l:
                 for local_scope in maybe(l.scope):
                     return self.find_object_scope(l.body, local_scope)
@@ -1529,12 +1528,12 @@ class DocumentIndex(Visitor):
         for b in e.binds:
             self.visit_bind(b)
 
-        with self.nested_scope() as nested:
+        with self.var_scope(self.current_var_scope.nest()) as nested:
             e.scope = nested
             self.visit(e.body)
 
     def visit_bind(self, b: Bind):
-        self.current_scope.bind(b.id.name, b.id.location, b.value)
+        self.current_var_scope.bind(b.id.name, b.id.location, b.value)
 
         match b.value:
             case Fn():
@@ -1550,7 +1549,7 @@ class DocumentIndex(Visitor):
         )
 
         with self.parent_symbol(doc_symbol):
-            with self.nested_scope():
+            with self.var_scope(self.current_var_scope.nest()):
                 self.visit(b.value)
 
     def visit_fn(self, e: Fn):
@@ -1564,9 +1563,9 @@ class DocumentIndex(Visitor):
         # This requires all parameters to be bound before traversing any parameter
         # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-        with self.nested_scope():
+        with self.var_scope(self.current_var_scope.nest()):
             for p in e.params:
-                self.current_scope.bind(p.id.name, p.id.location, p.default)
+                self.current_var_scope.bind(p.id.name, p.id.location, p.default)
 
             for p in e.params:
                 _, doc_symbol = self.add_symbol(
@@ -1596,7 +1595,7 @@ class DocumentIndex(Visitor):
             pass
 
     def visit_id(self, e: Id):
-        if e.is_variable and (binding := self.current_scope.get(e)) is not None:
+        if e.is_variable and (binding := self.current_var_scope.get(e)) is not None:
             self.add_id_reference(e, binding)
 
     def visit_field_key(self, e: Object, f: Field):
@@ -1675,7 +1674,7 @@ class DocumentIndex(Visitor):
 
     def visit_object(self, e: Object):
         e.self_scope = Scope()
-        e.super_scope = self.current_super
+        e.super_scope = self.current_super_scope
 
         with self.self_scope(e.self_scope):
             super().visit_object(e)
@@ -1683,20 +1682,20 @@ class DocumentIndex(Visitor):
     def visit_field_access(self, e: FieldAccess):
         self.visit(e.obj)
 
-        for scope in maybe(self.find_object_scope(e.obj, self.current_scope)):
+        for scope in maybe(self.find_object_scope(e.obj, self.current_var_scope)):
             for binding in maybe(scope.get(e.field)):
                 self.add_id_reference(e.field, binding)
 
     def visit_self(self, e: Self):
-        e.scope = self.current_self
+        e.scope = self.current_self_scope
 
     def visit_super(self, e: Super):
-        e.scope = self.current_super
+        e.scope = self.current_super_scope
 
     def visit_binary(self, e: Binary):
         self.visit(e.lhs)
 
-        lhs_scope = self.find_object_scope(e.lhs, self.current_scope)
+        lhs_scope = self.find_object_scope(e.lhs, self.current_var_scope)
         with self.super_scope(lhs_scope):
             self.visit(e.rhs)
 
@@ -1949,6 +1948,10 @@ def index(
 
 @app.command(context_settings=dict(allow_extra_args=True))
 def test(context: typer.Context):
+    # Lowers the recursion limit to make debugging easier. Testing documents are short
+    # and don't require too deep recursions.
+    sys.setrecursionlimit(100)
+
     # `unittest` requires the first argument to be the program name, while Typer strips
     # the program (`just`) and command (`test`) names.
     argv = ["test"] + context.args
@@ -2605,7 +2608,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field_key"),
             FixedKey(
                 t.location_of("x"),
-                t.id("x").non_variable,
+                t.id("x").var(False),
             ),
         )
 
@@ -2626,7 +2629,10 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x: 1"),
-                key=FixedKey(t.location_of("x"), t.id("x").non_variable),
+                key=FixedKey(
+                    t.location_of("x"),
+                    t.id("x").var(False),
+                ),
                 value=t.num(1),
             ),
         )
@@ -2637,7 +2643,10 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x+::: 1"),
-                key=FixedKey(t.location_of("x"), t.id("x").non_variable),
+                key=FixedKey(
+                    t.location_of("x"),
+                    t.id("x").var(False),
+                ),
                 value=t.num(1),
                 visibility=Visibility.Forced,
                 inherited=True,
@@ -2650,7 +2659,10 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("f(p1, p2 = 0):: p1 + p2"),
-                key=FixedKey(t.location_of("f"), t.id("f").non_variable),
+                key=FixedKey(
+                    t.location_of("f"),
+                    t.id("f").var(False),
+                ),
                 value=Fn(
                     t.location_of("f(p1, p2 = 0):: p1 + p2"),
                     params=[
@@ -2737,13 +2749,13 @@ class TestWorkspace:
             ref_location = key.location
             ref_doc = self.docs[ref_location.uri]
             lhs = [Text.styled("Reference", "black on yellow")]
-            lhs.append(ref_doc.highlight([ref_location.range], "black on green"))
+            lhs.append(ref_doc.highlight([ref_location.range], "black on blue"))
 
             rhs = [Text.styled("Definition(s)", "black on yellow")]
             for uri, group in groupby(ref_locations, key=lambda loc: loc.uri):
                 def_doc = self.docs[uri]
                 def_ranges = [loc.range for loc in group]
-                rhs.append(def_doc.highlight(def_ranges, "black on green"))
+                rhs.append(def_doc.highlight(def_ranges, "black on blue"))
 
             rendered.append(side_by_side(Text("\n").join(lhs), Text("\n").join(rhs)))
 
@@ -2987,12 +2999,46 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.checkDefRefs(
-            workspace=TestWorkspace(
+            TestWorkspace(
                 root_uri="file:///test/",
                 docs=[t1, t2],
             ),
             def_location=t1.location_of("f: 1"),
             ref_locations=[t2.location_of("f")],
+        )
+
+    @unittest.skip("FIXME")
+    def test_same_var_field_names(self):
+        t1 = TestDocument(
+            dedent(
+                """\
+                local f = { f: 1 };
+                {
+                    f: f,
+                }.f.f
+                """
+            ),
+            uri="file:///test/t1.jsonnet",
+        )
+
+        TestWorkspace.single_doc(t1)
+
+        self.checkDefRefs(
+            TestWorkspace.single_doc(t1),
+            def_location=t1.location_of("f", line=1),
+            ref_locations=[t1.location_of("f", line=3, nth=2)],
+        )
+
+        self.checkDefRefs(
+            TestWorkspace.single_doc(t1),
+            def_location=t1.location_of("f: f", line=3, nth=1),
+            ref_locations=[t1.location_of("f", line=4, nth=1)],
+        )
+
+        self.checkDefRefs(
+            TestWorkspace.single_doc(t1),
+            def_location=t1.location_of("f: 1", line=1),
+            ref_locations=[t1.location_of("f", line=4, nth=2)],
         )
 
     def test_import_with_local(self):
@@ -3007,7 +3053,7 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.checkDefRefs(
-            workspace=TestWorkspace(
+            TestWorkspace(
                 root_uri="file:///test/",
                 docs=[t1, t2],
             ),
@@ -3019,7 +3065,7 @@ class TestDefRef(unittest.TestCase):
         t = TestDocument("{ f1: 1, f2: self.f1 }")
 
         self.checkDefRefs(
-            workspace=TestWorkspace.single_doc(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f1: 1"),
             ref_locations=[t.location_of("f1", nth=2)],
         )
@@ -3039,7 +3085,7 @@ class TestDefRef(unittest.TestCase):
         )
 
         self.checkDefRefs(
-            workspace=TestWorkspace.single_doc(t),
+            TestWorkspace.single_doc(t),
             def_location=t.location_of("f1: 1", line=2),
             ref_locations=[t.location_of("f1", line=5)],
         )
@@ -3086,6 +3132,11 @@ class TestDefRef(unittest.TestCase):
                 """
             )
         )
+
+        # NOTE: In this case, although `super.f1` on line 6 references `f1: 1` on line
+        # 2, our current 1-pass indexing approach cannot detect this reference. This is
+        # because `o2` is defined and indexed before `o1 + o2`, while the `super` scope
+        # won't be set up until we index `o1 + o2`.
 
         self.checkDefRefs(
             workspace=TestWorkspace.single_doc(t),
