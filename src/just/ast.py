@@ -15,6 +15,8 @@ def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
     return [node for node in nodes if not node.type == "comment"]
 
 
+ParseCST = Callable[[str, T.Node], "AST"]
+
 ASTType = TypeVar("ASTType")
 
 
@@ -22,61 +24,21 @@ ASTType = TypeVar("ASTType")
 class AST:
     location: L.Location
 
-    d: ClassVar[dict[str, Callable[[str, T.Node], AST]]] = {}
+    registry: ClassVar[dict[str, ParseCST]] = {}
 
     @staticmethod
-    def register(node_name: str, fn: Callable[[str, T.Node], AST]):
-        AST.d[node_name] = fn
+    def register(fn: ParseCST, *node_types: str):
+        for node_type in node_types:
+            AST.registry[node_type] = fn
+
+    @staticmethod
+    def skip_paren(uri: str, node: T.Node):
+        return AST.from_cst(uri, strip_comments(node.named_children)[0])
 
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "AST":
-        def skip_paren(uri: str, node: T.Node):
-            return AST.from_cst(uri, strip_comments(node.named_children)[0])
-
-        def dispatch_object(uri: str, node: T.Node):
-            match strip_comments(node.named_children):
-                case head, *_ if head.type == "objforloop":
-                    return ObjComp.from_cst(uri, head)
-                case _:
-                    return Object.from_cst(uri, node)
-
-        dispatch = {
-            "anonymous_function": Fn.from_cst,
-            "array": Array.from_cst,
-            "assert": AssertExpr.from_cst,
-            "binary": Binary.from_cst,
-            "bind": Bind.from_cst,
-            "conditional": If.from_cst,
-            "document": Document.from_cst,
-            "false": Bool.from_cst,
-            "field": Field.from_cst,
-            "fieldaccess_super": FieldAccess.from_cst,
-            "fieldaccess": FieldAccess.from_cst,
-            "fieldname": FieldKey.from_cst,
-            "forloop": ListComp.from_cst,
-            "forspec": ForSpec.from_cst,
-            "functioncall": Call.from_cst,
-            "id": Id.from_cst,
-            "ifspec": IfSpec.from_cst,
-            "implicit_plus": Binary.from_cst,
-            "import": Import.from_cst,
-            "importstr": Import.from_cst,
-            "indexing": Slice.from_cst,
-            "local_bind": Local.from_cst,
-            "named_argument": Arg.from_cst,
-            "number": Num.from_cst,
-            "object": dispatch_object,
-            "param": Param.from_cst,
-            "parenthesis": skip_paren,
-            "self": Self.from_cst,
-            "string": Str.from_cst,
-            "super": Super.from_cst,
-            "true": Bool.from_cst,
-        }
-
-        constructor = dispatch.get(node.type, Unknown.from_cst)
-
         try:
+            constructor = AST.registry.get(node.type, Unknown.from_cst)
             return constructor(uri, node)
         except Exception:
             return Unknown.from_cst(uri, node)
@@ -218,6 +180,15 @@ class Expr(AST):
 
 
 @D.dataclass
+class Paren(Expr):
+    @staticmethod
+    def from_cst(uri: str, node: T.Node) -> "Expr":
+        return Expr.from_cst(uri, strip_comments(node.named_children)[0])
+
+    AST.register(from_cst, "parenthesis")
+
+
+@D.dataclass
 class Self(Expr):
     def __post_init__(self):
         self.scope: Scope | None = None
@@ -226,6 +197,8 @@ class Self(Expr):
     def from_cst(uri: str, node: T.Node) -> "Self":
         assert node.type == "self"
         return Self(location_of(uri, node))
+
+    AST.register(from_cst, "self")
 
 
 @D.dataclass
@@ -238,6 +211,8 @@ class Super(Expr):
         assert node.type == "super"
         return Super(location_of(uri, node))
 
+    AST.register(from_cst, "super")
+
 
 @D.dataclass
 class Document(Expr):
@@ -248,6 +223,8 @@ class Document(Expr):
         assert node.type == "document"
         body, *_ = strip_comments(node.named_children)
         return Document(location_of(uri, node), Expr.from_cst(uri, body))
+
+    AST.register(from_cst, "document")
 
 
 @D.dataclass
@@ -270,6 +247,8 @@ class Id(Expr):
     def var(self, is_variable: bool) -> "Id":
         return Id(self.location, self.name, is_variable)
 
+    AST.register(from_cst, "id")
+
 
 @D.dataclass
 class Num(Expr):
@@ -280,6 +259,8 @@ class Num(Expr):
         assert node.type == "number"
         assert node.text is not None
         return Num(location_of(uri, node), float(node.text.decode()))
+
+    AST.register(from_cst, "number")
 
 
 @D.dataclass
@@ -299,6 +280,8 @@ class Str(Expr):
             raw=content.text.decode(),
         )
 
+    AST.register(from_cst, "string")
+
 
 @D.dataclass
 class Bool(Expr):
@@ -309,6 +292,8 @@ class Bool(Expr):
         assert node.type in ["true", "false"]
         assert node.text is not None
         return Bool(location_of(uri, node), node.text.decode() == "true")
+
+    AST.register(from_cst, "false", "true")
 
 
 @D.dataclass
@@ -325,6 +310,8 @@ class Array(Expr):
                 for child in strip_comments(node.named_children)
             ],
         )
+
+    AST.register(from_cst, "array")
 
 
 class Operator(StrEnum):
@@ -380,6 +367,8 @@ class Binary(Expr):
             rhs=Expr.from_cst(uri, rhs),
         )
 
+    AST.register(from_cst, "binary", "implicit_plus")
+
 
 @D.dataclass
 class Bind(AST):
@@ -419,6 +408,8 @@ class Bind(AST):
                 value=Expr.from_cst(uri, value),
             )
 
+    AST.register(from_cst, "bind")
+
 
 @D.dataclass
 class Local(Expr):
@@ -445,6 +436,8 @@ class Local(Expr):
             body=Expr.from_cst(uri, body[0]),
         )
 
+    AST.register(from_cst, "local_bind")
+
 
 @D.dataclass
 class Param(AST):
@@ -464,6 +457,8 @@ class Param(AST):
             id=Id.from_cst(uri, id),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
+
+    AST.register(from_cst, "param")
 
 
 @D.dataclass
@@ -491,6 +486,8 @@ class Fn(Expr):
             body=Expr.from_cst(uri, body),
         )
 
+    AST.register(from_cst, "anonymous_function")
+
 
 @D.dataclass
 class Arg(AST):
@@ -512,6 +509,8 @@ class Arg(AST):
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, node),
             )
+
+    AST.register(from_cst, "named_argument")
 
 
 @D.dataclass
@@ -538,6 +537,8 @@ class Call(Expr):
             ],
         )
 
+    AST.register(from_cst, "functioncall")
+
 
 @D.dataclass
 class ForSpec(AST):
@@ -555,6 +556,8 @@ class ForSpec(AST):
             Expr.from_cst(uri, expr),
         )
 
+    AST.register(from_cst, "forspec")
+
 
 @D.dataclass
 class IfSpec(AST):
@@ -565,6 +568,8 @@ class IfSpec(AST):
         assert node.type == "ifspec"
         [child] = strip_comments(node.named_children)
         return IfSpec(location_of(uri, node), condition=Expr.from_cst(uri, child))
+
+    AST.register(from_cst, "ifspec")
 
 
 @D.dataclass
@@ -594,6 +599,8 @@ class ListComp(Expr):
             ],
         )
 
+    AST.register(from_cst, "forloop")
+
 
 @D.dataclass
 class Import(Expr):
@@ -610,6 +617,8 @@ class Import(Expr):
             node.type,
             Str.from_cst(uri, path),
         )
+
+    AST.register(from_cst, "import", "importstr")
 
 
 @D.dataclass
@@ -704,6 +713,8 @@ class AssertExpr(Expr):
 
         return AssertExpr(merge_locations(assertion, body), assertion, body)
 
+    AST.register(from_cst, "assert")
+
 
 @D.dataclass
 class FieldKey(AST):
@@ -722,6 +733,8 @@ class FieldKey(AST):
             return FixedKey(location, Id.from_cst(uri, head).var(False))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
+
+    AST.register(from_cst, "fieldname")
 
 
 @D.dataclass
@@ -796,6 +809,8 @@ class Field(AST):
                 visibility=Visibility(vis.text.decode()),
             )
 
+    AST.register(from_cst, "field")
+
 
 @D.dataclass
 class Object(Expr):
@@ -809,26 +824,32 @@ class Object(Expr):
         self.self_scope: Scope | None = None
 
     @staticmethod
-    def from_cst(uri: str, node: T.Node) -> "Object":
+    def from_cst(uri: str, node: T.Node) -> "Object | ObjComp":
         assert node.type == "object"
 
-        binds = []
-        assertions = []
-        fields = []
+        match strip_comments(node.named_children):
+            case head, *_ if head.type == "objforloop":
+                return ObjComp.from_cst(uri, head)
+            case _:
+                binds = []
+                assertions = []
+                fields = []
 
-        for member in strip_comments(node.named_children):
-            assert member.type == "member"
-            head, *_ = strip_comments(member.named_children)
-            match head.type:
-                case "objlocal":
-                    _, bind, *_ = strip_comments(head.named_children)
-                    binds.append(Bind.from_cst(uri, bind))
-                case "assert":
-                    assertions.append(Assert.from_cst(uri, head))
-                case "field":
-                    fields.append(Field.from_cst(uri, head))
+                for member in strip_comments(node.named_children):
+                    assert member.type == "member"
+                    head, *_ = strip_comments(member.named_children)
+                    match head.type:
+                        case "objlocal":
+                            _, bind, *_ = strip_comments(head.named_children)
+                            binds.append(Bind.from_cst(uri, bind))
+                        case "assert":
+                            assertions.append(Assert.from_cst(uri, head))
+                        case "field":
+                            fields.append(Field.from_cst(uri, head))
 
-        return Object(location_of(uri, node), binds, assertions, fields)
+                return Object(location_of(uri, node), binds, assertions, fields)
+
+    AST.register(from_cst, "object")
 
 
 @D.dataclass
@@ -873,6 +894,8 @@ class FieldAccess(Expr):
             field=Id.from_cst(uri, field).var(False),
         )
 
+    AST.register(from_cst, "fieldaccess_super", "fieldaccess")
+
 
 @D.dataclass
 class Slice(Expr):
@@ -904,6 +927,8 @@ class Slice(Expr):
             step=step,
         )
 
+    AST.register(from_cst, "indexing")
+
 
 @D.dataclass
 class If(Expr):
@@ -923,6 +948,8 @@ class If(Expr):
                 Expr.from_cst(uri, alternative) for alternative in maybe_alternative
             ),
         )
+
+    AST.register(from_cst, "conditional")
 
 
 @D.dataclass
