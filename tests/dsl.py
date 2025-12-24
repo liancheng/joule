@@ -47,7 +47,7 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
-class TestDocument:
+class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
         self.source = source
@@ -186,8 +186,8 @@ class TestDocument:
         return Text("\n").join(rendered_lines)
 
 
-class TestWorkspace:
-    def __init__(self, root_uri: str, docs: list[TestDocument]) -> None:
+class FakeWorkspace:
+    def __init__(self, root_uri: str, docs: list[FakeDocument]) -> None:
         self.docs = {doc.uri: doc for doc in docs}
         self.index = WorkspaceIndex(root_uri)
 
@@ -196,9 +196,9 @@ class TestWorkspace:
             self.index.sync(doc.uri, doc.source)
 
     @staticmethod
-    def single_doc(doc: TestDocument) -> "TestWorkspace":
+    def single_doc(doc: FakeDocument) -> "FakeWorkspace":
         root_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
-        return TestWorkspace(root_uri, [doc])
+        return FakeWorkspace(root_uri, [doc])
 
     def dump_references(self):
         rendered = []

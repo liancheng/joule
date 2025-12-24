@@ -28,7 +28,7 @@ from just.ast import (
 )
 from just.parsing import LANG_JSONNET
 
-from .dsl import TestDocument
+from .dsl import FakeDocument
 
 
 class TestAST(unittest.TestCase):
@@ -43,9 +43,9 @@ class TestAST(unittest.TestCase):
             case AST() as tree, AST() if tree != expected:
                 self.assertAstEqual(tree, expected.pretty_tree)
             case str() as source, AST():
-                self.assertAstEqual(TestDocument(source).body, expected.pretty_tree)
+                self.assertAstEqual(FakeDocument(source).body, expected.pretty_tree)
             case str() as source, str():
-                self.assertAstEqual(TestDocument(source).body, expected)
+                self.assertAstEqual(FakeDocument(source).body, expected)
 
     def test_pretty_tree(self):
         self.assertAstEqual(
@@ -112,7 +112,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_number(self):
-        t = TestDocument("1")
+        t = FakeDocument("1")
 
         self.assertAstEqual(
             t.body,
@@ -127,17 +127,17 @@ class TestAST(unittest.TestCase):
             ('@"hello\\nworld"', "hello\\nworld"),
             ("|||\n  hello\n|||", "\n  hello\n"),
         ]:
-            t = TestDocument(literal)
+            t = FakeDocument(literal)
             self.assertAstEqual(
                 t.body,
                 Str(t.body.location, expected),
             )
 
     def test_paren(self):
-        t = TestDocument("(1)")
+        t = FakeDocument("(1)")
         self.assertAstEqual(t.body, t.num(1))
 
-        t = TestDocument("(assert true; 1)")
+        t = FakeDocument("(assert true; 1)")
         self.assertAstEqual(
             t.body,
             AssertExpr(
@@ -151,7 +151,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_local(self):
-        t = TestDocument("local x = 1; x")
+        t = FakeDocument("local x = 1; x")
 
         self.assertAstEqual(
             t.body,
@@ -163,7 +163,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_local_with_asserts(self):
-        t = TestDocument(
+        t = FakeDocument(
             dedent(
                 """\
                 local v1 = 0;
@@ -210,7 +210,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_local_bind_fn(self):
-        t = TestDocument(
+        t = FakeDocument(
             dedent(
                 """\
                 local
@@ -262,7 +262,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_local_multi_binds(self):
-        t = TestDocument(
+        t = FakeDocument(
             dedent(
                 """\
                 local x = 1, y = 2;
@@ -284,7 +284,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_empty_array(self):
-        t = TestDocument("[]")
+        t = FakeDocument("[]")
 
         self.assertAstEqual(
             t.body,
@@ -292,7 +292,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_array(self):
-        t = TestDocument("[1, true, /* ! */ '3']")
+        t = FakeDocument("[1, true, /* ! */ '3']")
 
         self.assertAstEqual(
             t.body,
@@ -308,7 +308,7 @@ class TestAST(unittest.TestCase):
 
     def test_binary(self):
         for op in Operator:
-            t = TestDocument(f"a /*!*/ {op.value} /*!*/ b")
+            t = FakeDocument(f"a /*!*/ {op.value} /*!*/ b")
 
             self.assertAstEqual(
                 t.body,
@@ -316,7 +316,7 @@ class TestAST(unittest.TestCase):
             )
 
     def test_implicit_plus(self):
-        t = TestDocument("a {}")
+        t = FakeDocument("a {}")
 
         self.assertAstEqual(
             t.body,
@@ -324,14 +324,14 @@ class TestAST(unittest.TestCase):
         )
 
     def test_binary_precedences(self):
-        t = TestDocument("a + b * c")
+        t = FakeDocument("a + b * c")
 
         self.assertAstEqual(
             t.body,
             t.id("a") + (t.id("b") * t.id("c")),
         )
 
-        t = TestDocument("(a + b) * c")
+        t = FakeDocument("(a + b) * c")
 
         self.assertAstEqual(
             t.body,
@@ -344,7 +344,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_list_comp(self):
-        t = TestDocument("[x for x in [1, 2] if x > 1]")
+        t = FakeDocument("[x for x in [1, 2] if x > 1]")
 
         self.assertAstEqual(
             t.body,
@@ -372,7 +372,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_fn(self):
-        t = TestDocument("function(x, y = 2) x + y")
+        t = FakeDocument("function(x, y = 2) x + y")
 
         self.assertAstEqual(
             t.body,
@@ -387,7 +387,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_fn_no_params(self):
-        t = TestDocument("function() 1")
+        t = FakeDocument("function() 1")
 
         self.assertAstEqual(
             t.body,
@@ -395,7 +395,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_import(self):
-        t = TestDocument("import 'test.jsonnet'")
+        t = FakeDocument("import 'test.jsonnet'")
 
         self.assertAstEqual(
             t.body,
@@ -410,7 +410,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_importstr(self):
-        t = TestDocument("importstr 'test.jsonnet'")
+        t = FakeDocument("importstr 'test.jsonnet'")
 
         self.assertAstEqual(
             t.body,
@@ -425,7 +425,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_assert_expr_without_message(self):
-        t = TestDocument("assert true; false")
+        t = FakeDocument("assert true; false")
 
         self.assertAstEqual(
             t.body,
@@ -441,7 +441,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_assert_expr_with_message(self):
-        t = TestDocument("assert true: 'never'; /*!*/ false")
+        t = FakeDocument("assert true: 'never'; /*!*/ false")
 
         self.assertAstEqual(
             t.body,
@@ -457,7 +457,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_assert_expr_in_bind(self):
-        t = TestDocument("local x = assert true; false; x")
+        t = FakeDocument("local x = assert true; false; x")
 
         self.assertAstEqual(
             t.body,
@@ -481,7 +481,7 @@ class TestAST(unittest.TestCase):
 
     def test_nested_assert_expr(self):
         # Assertions are right associated.
-        t = TestDocument("assert true; assert false; x")
+        t = FakeDocument("assert true; assert false; x")
 
         self.assertAstEqual(
             t.body,
@@ -503,7 +503,7 @@ class TestAST(unittest.TestCase):
         )
 
     def assertAstEqualByQuery(
-        self, doc: TestDocument, query: T.Query, capture: str, expected: AST
+        self, doc: FakeDocument, query: T.Query, capture: str, expected: AST
     ):
         captures = T.QueryCursor(query).captures(doc.root)
         [node] = captures[capture]
@@ -526,7 +526,7 @@ class TestAST(unittest.TestCase):
     )
 
     def test_object_field_name(self):
-        t = TestDocument("local x = 'f'; { [x]: 1 }")
+        t = FakeDocument("local x = 'f'; { [x]: 1 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field_key"),
@@ -536,7 +536,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        t = TestDocument("{ x: 1 }")
+        t = FakeDocument("{ x: 1 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field_key"),
@@ -546,7 +546,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        t = TestDocument("{ 'x': 1 }")
+        t = FakeDocument("{ 'x': 1 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field_key"),
@@ -557,7 +557,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_object_field(self):
-        t = TestDocument("{ x: 1 }")
+        t = FakeDocument("{ x: 1 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field"),
@@ -571,7 +571,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        t = TestDocument("{ x+::: 1 }")
+        t = FakeDocument("{ x+::: 1 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field"),
@@ -587,7 +587,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-        t = TestDocument("{ f(p1, p2 = 0):: p1 + p2 }")
+        t = FakeDocument("{ f(p1, p2 = 0):: p1 + p2 }")
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field"),
@@ -610,7 +610,7 @@ class TestAST(unittest.TestCase):
         )
 
     def test_obj_comp(self):
-        t = TestDocument(
+        t = FakeDocument(
             dedent(
                 """\
                 {
@@ -654,7 +654,7 @@ class TestAST(unittest.TestCase):
 
     @unittest.skip("tree-sitter-jsonnet does not handle `objforloop` with local.")
     def test_obj_comp_with_local(self):
-        TestDocument(
+        FakeDocument(
             dedent(
                 """\
                 {
