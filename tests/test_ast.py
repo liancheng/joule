@@ -97,14 +97,14 @@ class TestAST(unittest.TestCase):
                 |   `-- [0]=Bind [0:6-0:11]
                 |   .   |-- id=Id [0:6-0:7]
                 |   .   |   |-- name="x"
-                |   .   |   `-- is_variable=True
+                |   .   |   `-- kind="var"
                 |   .   `-- value=Num [0:10-0:11]
                 |   .   .   `-- value=1.0
                 `-- body=Binary [0:13-0:18]
                 .   |-- op="+"
                 .   |-- lhs=Id [0:13-0:14]
                 .   |   |-- name="x"
-                .   |   `-- is_variable=True
+                .   |   `-- kind="varref"
                 .   `-- rhs=Num [0:17-0:18]
                 .   .   `-- value=2.0
                 """
@@ -157,8 +157,8 @@ class TestAST(unittest.TestCase):
             t.body,
             Local(
                 location=t.body.location,
-                binds=[t.id("x").bind(t.num(1))],
-                body=t.id("x", nth=2),
+                binds=[t.var("x").bind(t.num(1))],
+                body=t.var_ref("x", nth=2),
             ),
         )
 
@@ -183,7 +183,7 @@ class TestAST(unittest.TestCase):
                 location=t.location_of("assert true", line=3),
                 condition=t.boolean(True, line=3),
             ),
-            body=t.id("v1", line=4) + t.num(2, line=4),
+            body=t.var_ref("v1", line=4) + t.num(2, line=4),
         )
 
         outer_assert_expr = AssertExpr(
@@ -203,7 +203,7 @@ class TestAST(unittest.TestCase):
             Local(
                 location=t.body.location,
                 binds=[
-                    t.id("v1").bind(t.num(0)),
+                    t.var("v1").bind(t.num(0)),
                 ],
                 body=outer_assert_expr,
             ),
@@ -226,36 +226,38 @@ class TestAST(unittest.TestCase):
             Local(
                 location=t.body.location,
                 binds=[
-                    t.id("f1", line=2).bind(
+                    t.var("f1", line=2).bind(
                         Fn(
                             location=t.location_of("f1(x) = x + 1", line=2),
                             params=[t.param("x", line=2)],
-                            body=t.id("x", line=2, nth=2) + t.num(1, line=2, nth=2),
+                            body=t.var_ref("x", line=2, nth=2)
+                            + t.num(1, line=2, nth=2),
                         )
                     ),
-                    t.id("f2", line=3).bind(
+                    t.var("f2", line=3).bind(
                         Fn(
                             location=t.location_of("f2(y, z) = y + z", line=3),
                             params=[
                                 t.param("y", line=3),
                                 t.param("z", line=3),
                             ],
-                            body=t.id("y", line=3, nth=2) + t.id("z", line=3, nth=2),
+                            body=t.var_ref("y", line=3, nth=2)
+                            + t.var_ref("z", line=3, nth=2),
                         )
                     ),
                 ],
                 body=Call(
                     location=t.location_of("f2(f1(3), z = 4)", line=4),
-                    fn=t.id("f2", line=4),
+                    fn=t.var_ref("f2", line=4),
                     args=[
                         t.arg(
                             Call(
                                 location=t.location_of("f1(3)", line=4),
-                                fn=t.id("f1", line=4),
+                                fn=t.var_ref("f1", line=4),
                                 args=[t.arg(t.num(3, line=4))],
                             )
                         ),
-                        t.id("z", line=4).arg(t.num(4, line=4)),
+                        t.arg(t.num(4, line=4), name="z", line=4),
                     ],
                 ),
             ),
@@ -276,10 +278,10 @@ class TestAST(unittest.TestCase):
             Local(
                 location=t.body.location,
                 binds=[
-                    t.id("x").bind(t.num(1)),
-                    t.id("y").bind(t.num(2)),
+                    t.var("x").bind(t.num(1)),
+                    t.var("y").bind(t.num(2)),
                 ],
-                body=t.id("x", line=2) + t.id("y", line=2),
+                body=t.var_ref("x", line=2) + t.var_ref("y", line=2),
             ),
         )
 
@@ -312,7 +314,7 @@ class TestAST(unittest.TestCase):
 
             self.assertAstEqual(
                 t.body,
-                t.id("a").bin_op(op, t.id("b")),
+                t.var_ref("a").bin_op(op, t.var_ref("b")),
             )
 
     def test_implicit_plus(self):
@@ -320,7 +322,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            t.id("a") + Object(t.location_of("{}")),
+            t.var_ref("a") + Object(t.location_of("{}")),
         )
 
     def test_binary_precedences(self):
@@ -328,7 +330,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            t.id("a") + (t.id("b") * t.id("c")),
+            t.var_ref("a") + (t.var_ref("b") * t.var_ref("c")),
         )
 
         t = FakeDocument("(a + b) * c")
@@ -338,8 +340,8 @@ class TestAST(unittest.TestCase):
             Binary(
                 t.body.location,
                 op=Operator.Multiply,
-                lhs=t.id("a") + t.id("b"),
-                rhs=t.id("c"),
+                lhs=t.var_ref("a") + t.var_ref("b"),
+                rhs=t.var_ref("c"),
             ),
         )
 
@@ -350,10 +352,10 @@ class TestAST(unittest.TestCase):
             t.body,
             ListComp(
                 location=t.body.location,
-                expr=t.id("x"),
+                expr=t.var_ref("x"),
                 for_spec=ForSpec(
                     location=t.location_of("for x in [1, 2]"),
-                    id=t.id("x", nth=2),
+                    id=t.var("x", nth=2),
                     expr=Array(
                         location=t.location_of("[1, 2]"),
                         values=[
@@ -365,7 +367,7 @@ class TestAST(unittest.TestCase):
                 comp_spec=[
                     IfSpec(
                         location=t.location_of("if x > 1"),
-                        condition=t.id("x", nth=3) > t.num(1, nth=2),
+                        condition=t.var_ref("x", nth=3) > t.num(1, nth=2),
                     ),
                 ],
             ),
@@ -382,7 +384,7 @@ class TestAST(unittest.TestCase):
                     t.param("x"),
                     t.param("y", default=t.num(2)),
                 ],
-                body=t.id("x", nth=2) + t.id("y", nth=2),
+                body=t.var_ref("x", nth=2) + t.var_ref("y", nth=2),
             ),
         )
 
@@ -464,7 +466,7 @@ class TestAST(unittest.TestCase):
             Local(
                 location=t.body.location,
                 binds=[
-                    t.id("x").bind(
+                    t.var("x").bind(
                         AssertExpr(
                             location=t.location_of("assert true; false"),
                             assertion=Assert(
@@ -475,7 +477,7 @@ class TestAST(unittest.TestCase):
                         )
                     )
                 ],
-                body=t.id("x", nth=2),
+                body=t.var_ref("x", nth=2),
             ),
         )
 
@@ -497,7 +499,7 @@ class TestAST(unittest.TestCase):
                         location=t.location_of("assert false"),
                         condition=t.boolean(False),
                     ),
-                    body=t.id("x"),
+                    body=t.var_ref("x"),
                 ),
             ),
         )
@@ -532,7 +534,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field_key"),
             DynamicKey(
                 t.location_of("[x]"),
-                t.id("x", nth=2),
+                t.var_ref("x", nth=2),
             ),
         )
 
@@ -540,10 +542,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.query_one(self.object_query, "field_key"),
-            FixedKey(
-                t.location_of("x"),
-                t.id("x").var(False),
-            ),
+            t.field("x"),
         )
 
         t = FakeDocument("{ 'x': 1 }")
@@ -563,10 +562,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x: 1"),
-                key=FixedKey(
-                    t.location_of("x"),
-                    t.id("x").var(False),
-                ),
+                key=t.field("x"),
                 value=t.num(1),
             ),
         )
@@ -577,10 +573,7 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("x+::: 1"),
-                key=FixedKey(
-                    t.location_of("x"),
-                    t.id("x").var(False),
-                ),
+                key=t.field("x"),
                 value=t.num(1),
                 visibility=Visibility.Forced,
                 inherited=True,
@@ -593,17 +586,14 @@ class TestAST(unittest.TestCase):
             t.query_one(self.object_query, "field"),
             Field(
                 location=t.location_of("f(p1, p2 = 0):: p1 + p2"),
-                key=FixedKey(
-                    t.location_of("f"),
-                    t.id("f").var(False),
-                ),
+                key=t.field("f"),
                 value=Fn(
                     t.location_of("f(p1, p2 = 0):: p1 + p2"),
                     params=[
                         t.param("p1"),
                         t.param("p2", default=t.num(0)),
                     ],
-                    body=t.id("p1", nth=2) + t.id("p2", nth=2),
+                    body=t.var_ref("p1", nth=2) + t.var_ref("p2", nth=2),
                 ),
                 visibility=Visibility.Hidden,
             ),
@@ -631,13 +621,13 @@ class TestAST(unittest.TestCase):
                     location=t.location_of("['f' + x]: 0", line=2),
                     key=DynamicKey(
                         t.location_of("['f' + x]", line=2),
-                        t.str("f", literal="'f'", line=2) + t.id("x", line=2),
+                        t.str("f", literal="'f'", line=2) + t.var_ref("x", line=2),
                     ),
                     value=t.num(0, line=2),
                 ),
                 for_spec=ForSpec(
                     location=t.location_of("for x in [1, 2]", line=3),
-                    id=t.id("x", line=3),
+                    id=t.var("x", line=3),
                     expr=Array(
                         location=t.location_of("[1, 2]", line=3),
                         values=[t.num(1, line=3), t.num(2, line=3)],
@@ -646,7 +636,7 @@ class TestAST(unittest.TestCase):
                 comp_spec=[
                     IfSpec(
                         location=t.location_of("if x > 1", line=4),
-                        condition=t.id("x", line=4) > t.num(1, line=4),
+                        condition=t.var_ref("x", line=4) > t.num(1, line=4),
                     )
                 ],
             ),

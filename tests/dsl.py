@@ -11,7 +11,9 @@ from just.ast import (
     Bool,
     Document,
     Expr,
+    FixedKey,
     Id,
+    IdKind,
     Num,
     Param,
     Str,
@@ -71,7 +73,7 @@ class FakeDocument:
     def offset_of(self, pos: L.Position) -> int:
         return self.line_offsets[pos.line] + pos.character
 
-    def start_of(self, needle: str, line=1, nth=1) -> L.Position:
+    def start_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Position:
         assert line >= 1 and nth >= 1
 
         line -= 1
@@ -87,25 +89,43 @@ class FakeDocument:
 
         return L.Position(line, character)
 
-    def end_of(self, needle: str, line=1, nth=1) -> L.Position:
+    def end_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Position:
         pos = self.start_of(needle, line, nth)
         pos.character += len(needle)
         return pos
 
-    def location_of(self, needle: str, line=1, nth=1) -> L.Location:
+    def location_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Location:
         start = self.start_of(needle, line, nth)
         end = L.Position(start.line, start.character + len(needle))
         return L.Location(self.uri, L.Range(start, end))
 
-    def id(self, name: str, line=1, nth=1) -> Id:
-        return Id(self.location_of(name, line, nth), name)
+    def id(self, name: str, kind: IdKind, line: int = 1, nth: int = 1) -> Id:
+        return Id(self.location_of(name, line, nth), name, kind)
 
-    def boolean(self, value: bool, line=1, nth=1) -> Bool:
+    def var(self, name: str, line: int = 1, nth: int = 1) -> Id:
+        return self.id(name, IdKind.Var, line, nth)
+
+    def var_ref(self, name: str, line: int = 1, nth: int = 1) -> Id:
+        return self.id(name, IdKind.VarRef, line, nth)
+
+    def field(self, name: str, line: int = 1, nth: int = 1) -> FixedKey:
+        return FixedKey(
+            location=self.location_of(name, line, nth),
+            id=self.id(name, IdKind.Field, line, nth),
+        )
+
+    def boolean(self, value: bool, line: int = 1, nth: int = 1) -> Bool:
         needle = "true" if value else "false"
         range = self.location_of(needle, line, nth)
         return Bool(range, value)
 
-    def num(self, value: float | int, literal: str | None = None, line=1, nth=1) -> Num:
+    def num(
+        self,
+        value: float | int,
+        literal: str | None = None,
+        line: int = 1,
+        nth: int = 1,
+    ) -> Num:
         match value, literal:
             case int(), None:
                 literal = str(value)
@@ -115,18 +135,29 @@ class FakeDocument:
 
         return Num(self.location_of(literal, line, nth), value)
 
-    def str(self, value: str, literal: str, line=1, nth=1) -> Str:
+    def str(self, value: str, literal: str, line: int = 1, nth: int = 1) -> Str:
         return Str(self.location_of(literal, line, nth), value)
 
     def param(
         self, name: str, line: int = 1, nth: int = 1, default: Expr | None = None
     ) -> Param:
-        id = self.id(name, line, nth)
+        id = self.id(name, IdKind.Param, line, nth)
         location = id.location if default is None else merge_locations(id, default)
         return Param(location, id, default)
 
-    def arg(self, value: Expr) -> Arg:
-        return Arg(value.location, value)
+    def arg(
+        self,
+        value: Expr,
+        name: str | None = None,
+        line: int = 1,
+        nth: int = 1,
+    ) -> Arg:
+        match name:
+            case None:
+                return Arg(value.location, value)
+            case str():
+                id = self.id(name, IdKind.CallArg, line, nth)
+                return Arg(merge_locations(id, value), value, id)
 
     def highlight(self, ranges: list[L.Range], style: str):
         styled = Text.styled

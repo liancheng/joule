@@ -1,5 +1,5 @@
 import dataclasses as D
-from enum import StrEnum
+from enum import StrEnum, auto
 from itertools import dropwhile
 from textwrap import dedent
 from typing import Any, Callable, ClassVar, Iterator, cast
@@ -13,6 +13,15 @@ from just.util import head_or_none, maybe
 
 def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
     return [node for node in nodes if not node.type == "comment"]
+
+
+class IdKind(StrEnum):
+    Var = auto()
+    VarRef = auto()
+    Field = auto()
+    FieldRef = auto()
+    Param = auto()
+    CallArg = auto()
 
 
 ParseCST = Callable[[str, T.Node], "AST"]
@@ -223,22 +232,31 @@ class Document(Expr):
 @D.dataclass
 class Id(Expr):
     name: str
-    is_variable: bool = True
+    kind: IdKind
 
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "Id":
         assert node.type == "id"
         assert node.text is not None
-        return Id(location_of(uri, node), node.text.decode())
+
+        # By default, an ID is a variable reference. IDs of other kinds are always
+        # parsed while parsing other specific AST nodes, where the `IdKind` is
+        # explicitly specified.
+        return Id(location_of(uri, node), node.text.decode(), IdKind.VarRef)
 
     def bind(self, value: Expr) -> "Bind":
         return Bind(merge_locations(self, value), self, value)
 
     def arg(self, value: Expr) -> "Arg":
-        return Arg(merge_locations(self, value), value, self)
+        return Arg(merge_locations(self, value), value, self.into(IdKind.CallArg))
 
-    def var(self, is_variable: bool) -> "Id":
-        return Id(self.location, self.name, is_variable)
+    def into(self, kind: IdKind) -> "Id":
+        self.kind = kind
+        return self
+
+    @property
+    def is_variable(self) -> bool:
+        return self.kind in [IdKind.VarRef, IdKind.FieldRef]
 
     AST.register(from_cst, "id")
 
@@ -390,14 +408,14 @@ class Bind(AST):
 
             return Bind(
                 location=fn.location,
-                id=Id.from_cst(uri, fn_name),
+                id=Id.from_cst(uri, fn_name).into(IdKind.Var),
                 value=fn,
             )
         else:
             id, value, *_ = children
             return Bind(
                 location=location_of(uri, node),
-                id=Id.from_cst(uri, id),
+                id=Id.from_cst(uri, id).into(IdKind.Var),
                 value=Expr.from_cst(uri, value),
             )
 
@@ -447,7 +465,7 @@ class Param(AST):
         id, *maybe_default = children
         return Param(
             location=location_of(uri, node),
-            id=Id.from_cst(uri, id),
+            id=Id.from_cst(uri, id).into(IdKind.Param),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
 
@@ -495,7 +513,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                id=Id.from_cst(uri, name),
+                id=Id.from_cst(uri, name).into(IdKind.CallArg),
             )
         else:
             return Arg(
@@ -545,7 +563,7 @@ class ForSpec(AST):
 
         return ForSpec(
             location_of(uri, node),
-            Id.from_cst(uri, id),
+            Id.from_cst(uri, id).into(IdKind.Var),
             Expr.from_cst(uri, expr),
         )
 
@@ -723,7 +741,7 @@ class FieldKey(AST):
             e, *_ = tail
             return DynamicKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
-            return FixedKey(location, Id.from_cst(uri, head).var(False))
+            return FixedKey(location, Id.from_cst(uri, head).into(IdKind.Field))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
@@ -884,7 +902,7 @@ class FieldAccess(Expr):
         return FieldAccess(
             location=location_of(uri, node),
             obj=Expr.from_cst(uri, expr),
-            field=Id.from_cst(uri, field).var(False),
+            field=Id.from_cst(uri, field).into(IdKind.FieldRef),
         )
 
     AST.register(from_cst, "fieldaccess_super", "fieldaccess")
