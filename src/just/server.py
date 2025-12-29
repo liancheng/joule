@@ -466,8 +466,8 @@ class WorkspaceIndex:
 
     def sync(self, uri: str, source: str):
         cst = parse_jsonnet(source)
-        tree = Expr.from_cst(uri, cst)
-        self.docs[uri] = DocumentIndex(self, tree.to(Document))
+        doc = Document.from_cst(uri, cst)
+        self.docs[uri] = DocumentIndex(self, doc)
 
     def invalidate_location_map(self, uri: str, map: LocationMap) -> LocationMap:
         map = defaultdict(

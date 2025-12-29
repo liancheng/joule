@@ -2,7 +2,7 @@ import dataclasses as D
 from enum import StrEnum
 from itertools import dropwhile
 from textwrap import dedent
-from typing import Any, Callable, ClassVar, Iterator, Type, TypeVar, cast
+from typing import Any, Callable, ClassVar, Iterator, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -16,8 +16,6 @@ def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
 
 
 ParseCST = Callable[[str, T.Node], "AST"]
-
-ASTType = TypeVar("ASTType")
 
 
 @D.dataclass
@@ -38,18 +36,10 @@ class AST:
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "AST":
         try:
-            constructor = AST.registry.get(node.type, Unknown.from_cst)
-            return constructor(uri, node)
+            cst_parser = AST.registry.get(node.type, Unknown.from_cst)
+            return cst_parser(uri, node)
         except Exception:
             return Unknown.from_cst(uri, node)
-
-    def to(self, expect_type: Type[ASTType]) -> ASTType:
-        if not isinstance(self, expect_type):
-            raise TypeError(
-                f"Expected {expect_type.__name__}, but got {type(self).__name__}"
-            )
-
-        return cast(ASTType, self)
 
     @property
     def pretty_tree(self) -> str:
@@ -142,7 +132,10 @@ class PrettyCST(PrettyTree):
 class Expr(AST):
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "Expr":
-        return AST.from_cst(uri, node).to(Expr)
+        if isinstance(ast := AST.from_cst(uri, node), Expr):
+            return cast(Expr, ast)
+        else:
+            raise TypeError(f"Expected {Expr.__name__}, but got {type(ast).__name__}")
 
     def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
         return Binary(merge_locations(self, rhs), op, self, rhs)
