@@ -111,5 +111,7 @@ def test():
 
     unittest.main(
         module=None,
-        argv=[sys.argv[0], "discover"],
+        tb_locals=True,
+        verbosity=2,
+        argv=["unittest", "discover"],
     )

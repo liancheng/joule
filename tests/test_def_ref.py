@@ -7,6 +7,11 @@ from rich.text import Text
 
 from .dsl import FakeDocument, FakeWorkspace, side_by_side
 
+TITLE_STYLE = "black on yellow"
+DEFAULT_HIGHLIGHT_STYLE = "black on blue"
+EXPECTED_HIGHLIGHT_STYLE = "black on green"
+OBSERVED_HIGHLIGHT_STYLE = "black on red"
+
 
 class TestDefRef(unittest.TestCase):
     def assertLocationsEqual(
@@ -35,7 +40,7 @@ class TestDefRef(unittest.TestCase):
             )
 
         def header(title: str) -> Text:
-            return Text.styled(title + "\n", "black on yellow")
+            return Text.styled(title + "\n", TITLE_STYLE)
 
         console = Console()
 
@@ -48,8 +53,8 @@ class TestDefRef(unittest.TestCase):
                 console.print(clue)
 
             message = side_by_side(
-                header("Expected") + highlight(expected, "black on green"),
-                header("Obtained") + highlight(obtained, "black on red"),
+                header("Expected") + highlight(expected, EXPECTED_HIGHLIGHT_STYLE),
+                header("Obtained") + highlight(obtained, OBSERVED_HIGHLIGHT_STYLE),
             )
 
             console.print(message)
@@ -72,7 +77,7 @@ class TestDefRef(unittest.TestCase):
                 workspace.dump_definitions(),
                 Text(""),
                 Text("Checking symbol reference(s):"),
-                def_doc.highlight([def_location.range], "black on yellow"),
+                def_doc.highlight([def_location.range], TITLE_STYLE),
                 Text(""),
             ]
         )
@@ -93,7 +98,7 @@ class TestDefRef(unittest.TestCase):
             clue = Text("\n").join(
                 [
                     Text("Checking symbol definition:"),
-                    ref_doc.highlight([location.range], "black on yellow"),
+                    ref_doc.highlight([location.range], TITLE_STYLE),
                     Text(""),
                     workspace.dump_definitions(),
                 ]
