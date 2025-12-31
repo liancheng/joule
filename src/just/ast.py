@@ -48,7 +48,7 @@ class AST:
             cst_parser = AST.registry.get(node.type, Unknown.from_cst)
             return cst_parser(uri, node)
         except Exception:
-            return Unknown.from_cst(uri, node)
+            return Error.from_cst(uri, node)
 
     @property
     def pretty_tree(self) -> str:
@@ -966,8 +966,15 @@ class If(Expr):
 @D.dataclass
 class Unknown(Expr):
     @staticmethod
-    def from_cst(uri: str, node: T.Node) -> "Expr":
+    def from_cst(uri: str, node: T.Node) -> "Unknown":
         return Unknown(location_of(uri, node))
+
+
+@D.dataclass
+class Error(Expr):
+    @staticmethod
+    def from_cst(uri: str, node: T.Node) -> "Error":
+        return Error(location_of(uri, node))
 
 
 class Visitor:
