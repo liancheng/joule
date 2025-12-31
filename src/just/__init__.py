@@ -94,24 +94,3 @@ def index(
     ],
 ):
     WorkspaceIndex(workspace_root.as_uri()).sync(path.as_uri(), path.read_text())
-
-
-@app.command(
-    context_settings=dict(
-        allow_extra_args=True,
-        ignore_unknown_options=True,
-    )
-)
-def test():
-    # Lowers the recursion limit to make debugging easier. Testing documents are short
-    # and don't require too deep recursions.
-    sys.setrecursionlimit(128)
-
-    import unittest
-
-    unittest.main(
-        module=None,
-        tb_locals=True,
-        verbosity=2,
-        argv=["unittest", "discover"],
-    )
