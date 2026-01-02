@@ -3,6 +3,7 @@ import logging
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator, Sequence
 
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
@@ -32,6 +33,7 @@ from just.ast import (
     Visitor,
 )
 from just.parsing import parse_jsonnet
+from just.typing import URI
 from just.util import first, head_or_none, maybe
 
 log = logging.root
@@ -105,11 +107,8 @@ class DocumentIndex(Visitor):
         return self.tree.location.uri
 
     @property
-    def document_symbols(self):
-        return self.root_symbol.children
-
-    def add_workspace_symbol(self, symbol: L.WorkspaceSymbol):
-        self.workspace_index.workspace_symbols[self.uri].append(symbol)
+    def document_symbols(self) -> Sequence[L.DocumentSymbol]:
+        return self.root_symbol.children or []
 
     def add_document_symbol(self, symbol: L.DocumentSymbol):
         parent = self.breadcrumbs[-1]
@@ -140,7 +139,6 @@ class DocumentIndex(Visitor):
             selection_range=selection_range or location.range,
         )
 
-        self.add_workspace_symbol(ws_symbol)
         self.add_document_symbol(doc_symbol)
 
         return ws_symbol, doc_symbol
@@ -445,37 +443,32 @@ LocationMap = dict[HashableLocation, list[L.Location]]
 
 
 class WorkspaceIndex:
-    def __init__(self, root_uri: str):
+    def __init__(self, root_uri: URI):
         self.root_uri = root_uri
+        self.docs: dict[URI, DocumentIndex] = {}
 
-        # Indexed documents
-        self.docs: dict[str, DocumentIndex] = {}
-
-        # TODO: Use a suffix tree to make it scalable.
-        self.workspace_symbols: dict[str, list[L.WorkspaceSymbol]] = defaultdict(
-            list[L.WorkspaceSymbol]
-        )
-
-    def definitions(self, uri: str, position: L.Position) -> list[L.Location]:
-        return [
+    def definitions(self, uri: URI, position: L.Position) -> list[L.Location]:
+        local_defs = [
             location
             for doc in maybe(self.docs.get(uri))
             for location in doc.find_goto_locations(position, doc.ref_to_defs)
         ]
 
-    def references(self, uri: str, position: L.Position) -> list[L.Location]:
+        return local_defs
+
+    def references(self, uri: URI, position: L.Position) -> list[L.Location]:
         return [
             location
             for doc in maybe(self.docs.get(uri))
             for location in doc.find_goto_locations(position, doc.def_to_refs)
         ]
 
-    def sync(self, uri: str, source: str):
+    def sync(self, uri: URI, source: str):
         cst = parse_jsonnet(source)
         doc = Document.from_cst(uri, cst)
         self.docs[uri] = DocumentIndex(self, doc)
 
-    def get_or_sync(self, uri: str, source: str) -> DocumentIndex:
+    def get_or_sync(self, uri: URI, source: str) -> DocumentIndex:
         if uri not in self.docs:
             self.sync(uri, source)
         return self.docs[uri]
@@ -485,7 +478,7 @@ class JustLanguageServer(LanguageServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def set_workspace_root(self, root_path: str, root_uri: str):
+    def set_workspace_root(self, root_path: str, root_uri: URI):
         self.workspace.add_folder(L.WorkspaceFolder(root_path, root_uri))
         self.workspace_index = WorkspaceIndex(root_uri)
 
@@ -541,12 +534,18 @@ def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
 
 
 @server.feature(L.WORKSPACE_SYMBOL)
-def workspace_symbol(ls: JustLanguageServer, params: L.WorkspaceSymbolParams):
+def workspace_symbol(ls: JustLanguageServer, _: L.WorkspaceSymbolParams):
+    def offsprings(symbol: L.DocumentSymbol) -> Iterator[L.DocumentSymbol]:
+        if children := symbol.children:
+            for child in children:
+                yield child
+                yield from offsprings(child)
+
     return [
         symbol
-        for symbols in ls.workspace_index.workspace_symbols.values()
-        for symbol in symbols
-        if params.query in symbol.name
+        for doc in ls.workspace_index.docs.values()
+        for top_level_symbol in doc.document_symbols
+        for symbol in offsprings(top_level_symbol)
     ]
 
 
