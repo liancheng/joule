@@ -779,46 +779,58 @@ class Field(AST):
         assert node.type == "field"
         children = strip_comments(node.children)
 
-        if len(node.children_by_field_name("function")) == 0:
-            key, plus_or_vis, *rest = children
+        def parse_function_field(children: list[T.Node]) -> Field:
+            key, _, params_or_paren, *rest = children
 
-            match plus_or_vis:
-                case plus if plus.text == b"+":
-                    vis, value, *_ = rest
-                    assert vis.text is not None
-                    return Field(
-                        location=location_of(uri, node),
-                        key=FieldKey.from_cst(uri, key),
-                        value=Expr.from_cst(uri, value),
-                        visibility=Visibility(vis.text.decode()),
-                        inherited=True,
-                    )
-                case vis:
-                    assert vis.text is not None
-                    value, *_ = rest
-                    return Field(
-                        location=location_of(uri, node),
-                        key=FieldKey.from_cst(uri, key),
-                        value=Expr.from_cst(uri, value),
-                        visibility=Visibility(vis.text.decode()),
-                        inherited=False,
-                    )
-        else:
-            key, _, params, _, vis, body, *_ = children
+            match params_or_paren:
+                case params if params.type == "params":
+                    _, vis, body, *_ = rest
+                    params = [
+                        Param.from_cst(uri, param)
+                        for param in strip_comments(params.named_children)
+                    ]
+                case _:
+                    params = []
+                    vis, body, *_ = rest
+
             assert vis.text is not None
             return Field(
                 location=location_of(uri, node),
                 key=FieldKey.from_cst(uri, key),
                 value=Fn(
                     location_of(uri, node),
-                    params=[
-                        Param.from_cst(uri, param)
-                        for param in strip_comments(params.named_children)
-                    ],
+                    params=params,
                     body=Expr.from_cst(uri, body),
                 ),
                 visibility=Visibility(vis.text.decode()),
             )
+
+        def parse_value_field(children: list[T.Node]) -> Field:
+            key, plus_or_vis, *rest = children
+
+            match plus_or_vis:
+                case plus if plus.text == b"+":
+                    vis, value, *_ = rest
+                    assert vis.text is not None
+                    inherited = True
+                case vis:
+                    assert vis.text is not None
+                    value, *_ = rest
+                    inherited = False
+
+            return Field(
+                location=location_of(uri, node),
+                key=FieldKey.from_cst(uri, key),
+                value=Expr.from_cst(uri, value),
+                visibility=Visibility(vis.text.decode()),
+                inherited=inherited,
+            )
+
+        return (
+            parse_function_field(children)
+            if len(node.children_by_field_name("function")) > 0
+            else parse_value_field(children)
+        )
 
     AST.register(from_cst, "field")
 
@@ -972,9 +984,11 @@ class Unknown(Expr):
 
 @D.dataclass
 class Error(Expr):
+    node_type: str
+
     @staticmethod
     def from_cst(uri: str, node: T.Node) -> "Error":
-        return Error(location_of(uri, node))
+        return Error(location_of(uri, node), node.type)
 
 
 class Visitor:

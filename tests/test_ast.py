@@ -555,7 +555,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-    def test_object_field(self):
+    def test_field(self):
         t = FakeDocument("{ x: 1 }")
 
         self.assertAstEqual(
@@ -567,6 +567,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
+    def test_hidden_field(self):
         t = FakeDocument("{ x+::: 1 }")
 
         self.assertAstEqual(
@@ -580,6 +581,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
+    def test_function_field(self):
         t = FakeDocument("{ f(p1, p2 = 0):: p1 + p2 }")
 
         self.assertAstEqual(
@@ -594,6 +596,23 @@ class TestAST(unittest.TestCase):
                         t.param("p2", default=t.num(0)),
                     ],
                     body=t.var_ref("p1", nth=2) + t.var_ref("p2", nth=2),
+                ),
+                visibility=Visibility.Hidden,
+            ),
+        )
+
+    def test_function_field_no_params(self):
+        t = FakeDocument("{ f():: 1 }")
+
+        self.assertAstEqual(
+            t.query_one(self.object_query, "field"),
+            Field(
+                location=t.location_of("f():: 1"),
+                key=t.field("f"),
+                value=Fn(
+                    t.location_of("f():: 1"),
+                    params=[],
+                    body=t.num(1),
                 ),
                 visibility=Visibility.Hidden,
             ),
