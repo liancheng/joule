@@ -44,7 +44,7 @@ class AST:
         return AST.from_cst(uri, strip_comments(node.named_children)[0])
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "AST":
+    def from_cst(uri: URI, node: T.Node) -> AST:
         try:
             cst_parser = AST.registry.get(node.type, Unknown.from_cst)
             return cst_parser(uri, node)
@@ -54,6 +54,13 @@ class AST:
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
+
+
+def skip_parenthesis(uri: URI, node: T.Node) -> Expr:
+    return Expr.from_cst(uri, strip_comments(node.named_children)[0])
+
+
+AST.register(skip_parenthesis, "parenthesis")
 
 
 ESCAPE_TABLE: dict[int, str] = str.maketrans(
@@ -141,54 +148,49 @@ class PrettyCST(PrettyTree):
 @D.dataclass
 class Expr(AST):
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Expr":
+    def from_cst(uri: URI, node: T.Node) -> Expr:
         if isinstance(ast := AST.from_cst(uri, node), Expr):
             return cast(Expr, ast)
         else:
             raise TypeError(f"Expected {Expr.__name__}, but got {type(ast).__name__}")
 
-    def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
+    @property
+    def tails(self) -> list[Expr]:
+        return [self]
+
+    def bin_op(self, op: "Operator", rhs: "Expr") -> Binary:
         return Binary(merge_locations(self, rhs), op, self, rhs)
 
-    def __add__(self, rhs: "Expr") -> "Binary":
+    def __add__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.Plus, rhs)
 
-    def __sub__(self, rhs: "Expr") -> "Binary":
+    def __sub__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.Minus, rhs)
 
-    def __mul__(self, rhs: "Expr") -> "Binary":
+    def __mul__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.Multiply, rhs)
 
-    def __truediv__(self, rhs: "Expr") -> "Binary":
+    def __truediv__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.Divide, rhs)
 
-    def __lt__(self, rhs: "Expr") -> "Binary":
+    def __lt__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.LT, rhs)
 
-    def __le__(self, rhs: "Expr") -> "Binary":
+    def __le__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.LE, rhs)
 
-    def __gt__(self, rhs: "Expr") -> "Binary":
+    def __gt__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.GT, rhs)
 
-    def __ge__(self, rhs: "Expr") -> "Binary":
+    def __ge__(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.GE, rhs)
 
-    def eq(self, rhs: object) -> "Binary":
+    def eq(self, rhs: object) -> Binary:
         assert isinstance(rhs, Expr)
         return self.bin_op(Operator.Eq, rhs)
 
-    def not_eq(self, rhs: "Expr") -> "Binary":
+    def not_eq(self, rhs: "Expr") -> Binary:
         return self.bin_op(Operator.NotEq, rhs)
-
-
-@D.dataclass
-class Paren(Expr):
-    @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Expr":
-        return Expr.from_cst(uri, strip_comments(node.named_children)[0])
-
-    AST.register(from_cst, "parenthesis")
 
 
 @D.dataclass
@@ -197,7 +199,7 @@ class Self(Expr):
         self.scope: Scope | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Self":
+    def from_cst(uri: URI, node: T.Node) -> Self:
         assert node.type == "self"
         return Self(location_of(uri, node))
 
@@ -210,7 +212,7 @@ class Super(Expr):
         self.scope: Scope | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Super":
+    def from_cst(uri: URI, node: T.Node) -> Super:
         assert node.type == "super"
         return Super(location_of(uri, node))
 
@@ -222,10 +224,14 @@ class Document(Expr):
     body: Expr
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Document":
+    def from_cst(uri: URI, node: T.Node) -> Document:
         assert node.type == "document"
         body, *_ = strip_comments(node.named_children)
         return Document(location_of(uri, node), Expr.from_cst(uri, body))
+
+    @property
+    def tails(self) -> list[Expr]:
+        return self.body.tails
 
     AST.register(from_cst, "document")
 
@@ -236,7 +242,7 @@ class Id(Expr):
     kind: IdKind
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Id":
+    def from_cst(uri: URI, node: T.Node) -> Id:
         assert node.type == "id"
         assert node.text is not None
 
@@ -245,13 +251,13 @@ class Id(Expr):
         # explicitly specified.
         return Id(location_of(uri, node), node.text.decode(), IdKind.VarRef)
 
-    def bind(self, value: Expr) -> "Bind":
+    def bind(self, value: Expr) -> Bind:
         return Bind(merge_locations(self, value), self, value)
 
-    def arg(self, value: Expr) -> "Arg":
+    def arg(self, value: Expr) -> Arg:
         return Arg(merge_locations(self, value), value, self.into(IdKind.CallArg))
 
-    def into(self, kind: IdKind) -> "Id":
+    def into(self, kind: IdKind) -> Id:
         self.kind = kind
         return self
 
@@ -267,7 +273,7 @@ class Num(Expr):
     value: float
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Num":
+    def from_cst(uri: URI, node: T.Node) -> Num:
         assert node.type == "number"
         assert node.text is not None
         return Num(location_of(uri, node), float(node.text.decode()))
@@ -280,7 +286,7 @@ class Str(Expr):
     raw: str
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Str":
+    def from_cst(uri: URI, node: T.Node) -> Str:
         assert node.type == "string"
 
         _, content, _ = node.named_children
@@ -300,7 +306,7 @@ class Bool(Expr):
     value: bool
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Bool":
+    def from_cst(uri: URI, node: T.Node) -> Bool:
         assert node.type in ["true", "false"]
         assert node.text is not None
         return Bool(location_of(uri, node), node.text.decode() == "true")
@@ -313,7 +319,7 @@ class Array(Expr):
     values: list[Expr]
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Array":
+    def from_cst(uri: URI, node: T.Node) -> Array:
         assert node.type == "array"
         return Array(
             location=location_of(uri, node),
@@ -360,7 +366,7 @@ class Binary(Expr):
     rhs: Expr
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Binary":
+    def from_cst(uri: URI, node: T.Node) -> Binary:
         assert node.type in ["binary", "implicit_plus"]
 
         match node.type:
@@ -388,7 +394,7 @@ class Bind(AST):
     value: Expr
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Bind":
+    def from_cst(uri: URI, node: T.Node) -> Bind:
         assert node.type == "bind"
 
         children = strip_comments(node.named_children)
@@ -431,8 +437,12 @@ class Local(Expr):
     def __post_init__(self):
         self.scope: Scope | None = None
 
+    @property
+    def tails(self) -> list[Expr]:
+        return self.body.tails
+
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Local":
+    def from_cst(uri: URI, node: T.Node) -> Local:
         assert node.type == "local_bind"
 
         # Skips the first node, which is the "local" keyword.
@@ -457,7 +467,7 @@ class Param(AST):
     default: Expr | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Param":
+    def from_cst(uri: URI, node: T.Node) -> Param:
         assert node.type == "param"
 
         children = strip_comments(node.named_children)
@@ -478,8 +488,12 @@ class Fn(Expr):
     params: list[Param]
     body: Expr
 
+    @property
+    def tails(self) -> list[Expr]:
+        return self.body.tails
+
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Fn":
+    def from_cst(uri: URI, node: T.Node) -> Fn:
         assert node.type == "anonymous_function"
         first, *rest = strip_comments(node.named_children)
 
@@ -507,7 +521,7 @@ class Arg(AST):
     id: Id | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Arg":
+    def from_cst(uri: URI, node: T.Node) -> Arg:
         if node.type == "named_argument":
             name, value = strip_comments(node.named_children)
 
@@ -531,7 +545,7 @@ class Call(Expr):
     args: list[Arg]
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Call":
+    def from_cst(uri: URI, node: T.Node) -> Call:
         assert node.type == "functioncall"
 
         children = strip_comments(node.named_children)
@@ -558,7 +572,7 @@ class ForSpec(AST):
     expr: Expr
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "ForSpec":
+    def from_cst(uri: URI, node: T.Node) -> ForSpec:
         assert node.type == "forspec"
         id, expr = strip_comments(node.named_children)
 
@@ -576,7 +590,7 @@ class IfSpec(AST):
     condition: Expr
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "IfSpec":
+    def from_cst(uri: URI, node: T.Node) -> IfSpec:
         assert node.type == "ifspec"
         [child] = strip_comments(node.named_children)
         return IfSpec(location_of(uri, node), condition=Expr.from_cst(uri, child))
@@ -591,7 +605,7 @@ class ListComp(Expr):
     comp_spec: list[ForSpec | IfSpec]
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "ListComp":
+    def from_cst(uri: URI, node: T.Node) -> ListComp:
         assert node.type == "forloop"
 
         children = strip_comments(node.named_children)
@@ -620,7 +634,7 @@ class Import(Expr):
     path: Str
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Import":
+    def from_cst(uri: URI, node: T.Node) -> Import:
         assert node.type in ["import", "importstr"]
 
         [path] = strip_comments(node.named_children)
@@ -639,7 +653,7 @@ class Assert(AST):
     message: Expr | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Assert":
+    def from_cst(uri: URI, node: T.Node) -> Assert:
         assert node.type == "assert"
 
         children = strip_comments(node.named_children)
@@ -665,8 +679,12 @@ class AssertExpr(Expr):
     assertion: Assert
     body: Expr
 
+    @property
+    def tails(self) -> list[Expr]:
+        return self.body.tails
+
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Expr":
+    def from_cst(uri: URI, node: T.Node) -> Expr:
         # An `AssertExpr` is an expression consisting of an assertion followed by an
         # expression. Ideally, one expression should map to one `Expr` node and one
         # tree-sitter node. However, `AssertExpr` breaks this nice property.
@@ -731,7 +749,7 @@ class AssertExpr(Expr):
 @D.dataclass
 class FieldKey(AST):
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "FieldKey":
+    def from_cst(uri: URI, node: T.Node) -> FieldKey:
         assert node.type == "fieldname"
 
         location = location_of(uri, node)
@@ -776,7 +794,7 @@ class Field(AST):
         self.enclosing_obj: Object | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Field":
+    def from_cst(uri: URI, node: T.Node) -> Field:
         assert node.type == "field"
         children = strip_comments(node.children)
 
@@ -848,7 +866,7 @@ class Object(Expr):
         self.self_scope: Scope | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Object | ObjComp":
+    def from_cst(uri: URI, node: T.Node) -> Object | ObjComp:
         assert node.type == "object"
 
         match strip_comments(node.named_children):
@@ -884,7 +902,7 @@ class ObjComp(Expr):
     comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "ObjComp":
+    def from_cst(uri: URI, node: T.Node) -> ObjComp:
         assert node.type == "objforloop"
         field, for_spec, *maybe_comp_spec = node.named_children
 
@@ -909,7 +927,7 @@ class FieldAccess(Expr):
     field: Id
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "FieldAccess":
+    def from_cst(uri: URI, node: T.Node) -> FieldAccess:
         assert node.type in ["fieldaccess", "fieldaccess_super"]
         expr, field = strip_comments(node.named_children)
         return FieldAccess(
@@ -929,7 +947,7 @@ class Slice(Expr):
     step: Expr | None = None
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Slice":
+    def from_cst(uri: URI, node: T.Node) -> Slice:
         assert node.type == "indexing"
         expr, begin, *rest = strip_comments(node.named_children)
         match rest:
@@ -960,8 +978,16 @@ class If(Expr):
     consequence: Expr
     alternative: Expr | None
 
+    @property
+    def tails(self) -> list[Expr]:
+        return self.consequence.tails + [
+            tail
+            for alternative in maybe(self.alternative)
+            for tail in alternative.tails
+        ]
+
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "If":
+    def from_cst(uri: URI, node: T.Node) -> If:
         assert node.type == "conditional"
         condition, consequence, *maybe_alternative = strip_comments(node.named_children)
         return If(
@@ -979,7 +1005,7 @@ class If(Expr):
 @D.dataclass
 class Unknown(Expr):
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Unknown":
+    def from_cst(uri: URI, node: T.Node) -> Unknown:
         return Unknown(location_of(uri, node))
 
 
@@ -988,7 +1014,7 @@ class Error(Expr):
     node_type: str
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Error":
+    def from_cst(uri: URI, node: T.Node) -> Error:
         return Error(location_of(uri, node), node.type)
 
 
@@ -1255,7 +1281,7 @@ class Scope:
             None if self.parent is None else self.parent.get(id),
         )
 
-    def nest(self) -> "Scope":
+    def nest(self) -> Scope:
         child = Scope([], parent=self)
         self.children.append(child)
         return child
@@ -1265,7 +1291,7 @@ class Scope:
         return str(PrettyScope(self))
 
     @staticmethod
-    def empty() -> "Scope":
+    def empty() -> Scope:
         return Scope()
 
 

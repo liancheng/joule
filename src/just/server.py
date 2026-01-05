@@ -1,4 +1,5 @@
 import dataclasses as D
+from itertools import chain
 import logging
 from collections import defaultdict
 from contextlib import contextmanager
@@ -536,10 +537,12 @@ def did_change(ls: JustLanguageServer, params: L.DidChangeTextDocumentParams):
 @server.feature(L.WORKSPACE_SYMBOL)
 def workspace_symbol(ls: JustLanguageServer, _: L.WorkspaceSymbolParams):
     def offsprings(symbol: L.DocumentSymbol) -> Iterator[L.DocumentSymbol]:
-        if children := symbol.children:
-            for child in children:
-                yield child
-                yield from offsprings(child)
+        return iter(
+            offspring
+            for children in maybe(symbol.children)
+            for child in children
+            for offspring in chain([child], offsprings(child))
+        )
 
     return [
         symbol
