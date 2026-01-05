@@ -166,7 +166,6 @@ class DocumentIndex(Visitor):
             L.InlayHint(
                 position=ref.location.range.start,
                 label="󰁝",
-                kind=L.InlayHintKind.Parameter,
             )
         )
 
@@ -175,7 +174,6 @@ class DocumentIndex(Visitor):
             L.InlayHint(
                 position=binding.location.range.start,
                 label=f"󰁅{len(refs)}",
-                kind=L.InlayHintKind.Parameter,
             )
         )
 
@@ -365,7 +363,6 @@ class DocumentIndex(Visitor):
                 L.InlayHint(
                     position=f.key.location.range.end,
                     label=", ".join(label_parts),
-                    kind=L.InlayHintKind.Parameter,
                     padding_left=True,
                     padding_right=True,
                 )
@@ -408,7 +405,6 @@ class DocumentIndex(Visitor):
             L.InlayHint(
                 position=e.path.location.range.end,
                 label="",
-                kind=L.InlayHintKind.Parameter,
             )
         )
 
