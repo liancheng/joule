@@ -1,8 +1,8 @@
 import dataclasses as D
-from itertools import chain
 import logging
 from collections import defaultdict
 from contextlib import contextmanager
+from itertools import chain
 from pathlib import Path
 from typing import Iterator, Sequence
 
@@ -33,15 +33,16 @@ from just.ast import (
     Visibility,
     Visitor,
 )
+from just.icon import Icon
 from just.parsing import parse_jsonnet
 from just.typing import URI
-from just.util import first, head_or_none, maybe
+from just.util import head_or_none, maybe
 
 log = logging.root
 
 
 @D.dataclass(frozen=True)
-class HashablePosition:
+class PositionKey:
     pos: L.Position
 
     def __hash__(self) -> int:
@@ -49,7 +50,7 @@ class HashablePosition:
 
 
 @D.dataclass(frozen=True)
-class HashableLocation:
+class LocationKey:
     location: L.Location
 
     def __hash__(self) -> int:
@@ -63,7 +64,7 @@ class HashableLocation:
             )
         )
 
-    def __lt__(self, that: "HashableLocation") -> bool:
+    def __lt__(self, that: "LocationKey") -> bool:
         self_in_other = (
             that.location.range.start <= self.location.range.start
             and self.location.range.end <= that.location.range.end
@@ -85,7 +86,7 @@ class DocumentIndex(Visitor):
     def __init__(self, workspace_index: "WorkspaceIndex", tree: Document) -> None:
         self.workspace_index = workspace_index
         self.tree: Document = tree
-        self.inlay_hints: dict[HashablePosition, L.InlayHint] = {}
+        self.inlay_hints: dict[PositionKey, L.InlayHint] = {}
         self.current_var_scope: Scope = Scope()
         self.current_self_scope: Scope | None = None
         self.current_super_scope: Scope | None = None
@@ -131,9 +132,7 @@ class DocumentIndex(Visitor):
         return self.root_symbol.children or []
 
     def add_document_symbol(self, symbol: L.DocumentSymbol):
-        parent = self.breadcrumbs[-1]
-
-        match parent.children:
+        match (parent := self.breadcrumbs[-1]).children:
             case list():
                 parent.children.append(symbol)
             case None:
@@ -166,17 +165,20 @@ class DocumentIndex(Visitor):
     def find_goto_locations(
         self,
         position: L.Position,
-        lookup: dict[HashableLocation, list[L.Location]],
+        lookup: dict[LocationKey, list[L.Location]],
     ) -> list[L.Location]:
-        return first(
-            lookup[key]
-            for key in sorted(lookup.keys())
-            if key.location.range.start <= position <= key.location.range.end
-        ).or_else([])
+        return next(
+            iter(
+                lookup[key]
+                for key in sorted(lookup.keys())
+                if key.location.range.start <= position <= key.location.range.end
+            ),
+            [],
+        )
 
     def add_reference(self, ref: Expr, binding: Binding):
-        defs = self.ref_to_defs[HashableLocation(ref.location)]
-        refs = self.def_to_refs[HashableLocation(binding.location)]
+        defs = self.ref_to_defs[LocationKey(ref.location)]
+        refs = self.def_to_refs[LocationKey(binding.location)]
 
         defs.append(binding.location)
         refs.append(ref.location)
@@ -196,7 +198,7 @@ class DocumentIndex(Visitor):
         ref_doc.add_hint(
             L.InlayHint(
                 position=ref.location.range.end,
-                label="󰁝",
+                label=Icon.Reference,
             )
         )
 
@@ -204,12 +206,12 @@ class DocumentIndex(Visitor):
         def_doc.add_hint(
             L.InlayHint(
                 position=binding.location.range.end,
-                label=f"󰁅{len(refs)}",
+                label=f"{Icon.Definition}{len(refs)}",
             )
         )
 
     def add_hint(self, hint: L.InlayHint):
-        self.inlay_hints[HashablePosition(hint.position)] = hint
+        self.inlay_hints[PositionKey(hint.position)] = hint
 
     @contextmanager
     def parent_symbol(self, symbol: L.DocumentSymbol):
@@ -248,27 +250,27 @@ class DocumentIndex(Visitor):
 
     def find_self_scope(self, t: AST, scope: Scope) -> Scope | None:
         match t:
-            case Object() as obj if obj.self_scope is not None:
-                return obj.self_scope
+            case Object() if t.self_scope is not None:
+                return t.self_scope
             case Document():
                 return self.find_self_scope(t.body, Scope())
-            case Id() as id:
+            case Id():
                 return head_or_none(
                     self.find_self_scope(value, binding.scope)
-                    for binding in maybe(scope.get(id))
+                    for binding in maybe(scope.get(t))
                     for value in maybe(binding.value)
                 )
-            case Field() as f:
+            case Field():
                 return head_or_none(
-                    self.find_self_scope(f.value, var_scope)
-                    for obj in maybe(f.enclosing_obj)
+                    self.find_self_scope(t.value, var_scope)
+                    for obj in maybe(t.enclosing_obj)
                     for var_scope in maybe(obj.var_scope)
                 )
-            case FieldAccess() as f:
+            case FieldAccess():
                 return head_or_none(
                     self.find_self_scope(value, binding.scope)
-                    for parent_scope in maybe(self.find_self_scope(f.obj, scope))
-                    for binding in maybe(parent_scope.get(f.field))
+                    for parent_scope in maybe(self.find_self_scope(t.obj, scope))
+                    for binding in maybe(parent_scope.get(t.field))
                     for value in maybe(binding.value)
                 )
             case Binary(_, _, _, rhs):
@@ -278,17 +280,17 @@ class DocumentIndex(Visitor):
                     self.find_self_scope(index.tree, index.current_var_scope)
                     for index in maybe(self.importee_index(path.raw))
                 )
-            case Local() as l:
+            case Local():
                 return head_or_none(
-                    self.find_self_scope(l.body, local_scope)
-                    for local_scope in maybe(l.scope)
+                    self.find_self_scope(t.body, local_scope)
+                    for local_scope in maybe(t.scope)
                 )
             case Binary(_, Operator.Plus, _, rhs):
                 return self.find_self_scope(rhs, scope)
-            case Self() as e:
-                return e.scope
-            case Super() as e:
-                return e.scope
+            case Self():
+                return t.scope
+            case Super():
+                return t.scope
             case _:
                 return None
 
@@ -435,7 +437,7 @@ class DocumentIndex(Visitor):
         self.add_hint(
             L.InlayHint(
                 position=e.path.location.range.end,
-                label="",
+                label=Icon.File,
             )
         )
 
@@ -467,7 +469,7 @@ class DocumentIndex(Visitor):
             self.visit(e.rhs)
 
 
-LocationMap = dict[HashableLocation, list[L.Location]]
+LocationMap = dict[LocationKey, list[L.Location]]
 
 
 class WorkspaceIndex:

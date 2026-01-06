@@ -10,14 +10,14 @@ class PrettyTree:
         raise NotImplementedError()
 
     def __repr__(self):
-        def grow(buf: list[str], nodes: list[PrettyTree], branches: str = ""):
+        def grow(lines: list[str], nodes: list[PrettyTree], branches: str = ""):
             for i, node in enumerate(nodes):
                 last_child = i == len(nodes) - 1
                 new_branch = ".   " if last_child else "|   "
                 fork = "`-- " if last_child else "|-- "
 
-                buf.append(f"{branches}{fork}{node.node_text()}")
-                grow(buf, node.children(), branches + new_branch)
+                lines.append(f"{branches}{fork}{node.node_text()}")
+                grow(lines, node.children(), branches + new_branch)
 
         lines = [self.node_text()]
         grow(lines, self.children())

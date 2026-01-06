@@ -1,5 +1,5 @@
 vim.lsp.config["just"] = {
-	cmd = { "./just", "serve" },
+	cmd = { "just", "serve" },
 	filetypes = { "jsonnet" },
 	root_markers = { ".git", "jsonnetfile.json" },
 }
