@@ -83,9 +83,9 @@ class LocationKey:
 
 
 class DocumentIndex(Visitor):
-    def __init__(self, workspace_index: "WorkspaceIndex", tree: Document) -> None:
+    def __init__(self, workspace_index: "WorkspaceIndex", doc: Document) -> None:
         self.workspace_index = workspace_index
-        self.tree: Document = tree
+        self.doc: Document = doc
         self.inlay_hints: dict[PositionKey, L.InlayHint] = {}
         self.current_var_scope: Scope = Scope()
         self.current_self_scope: Scope | None = None
@@ -93,16 +93,16 @@ class DocumentIndex(Visitor):
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.File,
-            range=tree.location.range,
-            selection_range=tree.location.range,
+            range=doc.location.range,
+            selection_range=doc.location.range,
         )
         self.breadcrumbs = [self.root_symbol]
-
-        # For go-to-definition and find-references
         self.ref_to_defs: LocationMap = defaultdict(list[L.Location])
         self.def_to_refs: LocationMap = defaultdict(list[L.Location])
+        self.links: list[L.DocumentLink] = []
+        self.hovers: dict[LocationKey, L.Hover] = {}
 
-        self.visit(tree)
+        self.visit(doc)
 
     @staticmethod
     def load(
@@ -125,7 +125,7 @@ class DocumentIndex(Visitor):
 
     @property
     def uri(self):
-        return self.tree.location.uri
+        return self.doc.location.uri
 
     @property
     def document_symbols(self) -> Sequence[L.DocumentSymbol]:
@@ -277,7 +277,7 @@ class DocumentIndex(Visitor):
                 return self.find_self_scope(rhs, self.current_var_scope)
             case Import(_, "import", path):
                 return head_or_none(
-                    self.find_self_scope(index.tree, index.current_var_scope)
+                    self.find_self_scope(index.doc, index.current_var_scope)
                     for index in maybe(self.importee_index(path.raw))
                 )
             case Local():
@@ -410,8 +410,10 @@ class DocumentIndex(Visitor):
 
         if raw_path.startswith("../") or raw_path.startswith("./"):
             return Path.from_uri(self.uri).parent.joinpath(raw_path).absolute()
+        elif (path := root.joinpath(raw_path).absolute()).exists():
+            return path
         else:
-            return root.joinpath(raw_path).absolute()
+            return root.joinpath("vendor", raw_path)
 
     def importee_index(self, raw_path: str) -> "DocumentIndex | None":
         path = self.resolve_importee_path(raw_path)
@@ -427,6 +429,17 @@ class DocumentIndex(Visitor):
         )
 
     def visit_import(self, e: Import):
+        importee_path = self.resolve_importee_path(e.path.raw).as_uri()
+
+        self.links.append(
+            L.DocumentLink(
+                range=e.path.location.range,
+                target=importee_path,
+            )
+        )
+
+        self.hovers[LocationKey(e.path.location)] = L.Hover(importee_path)
+
         self.add_symbol(
             name=e.path.raw,
             kind=L.SymbolKind.File,
@@ -600,3 +613,21 @@ def inlay_hint(ls: JustLanguageServer, params: L.InlayHintParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
     return list(doc_index.inlay_hints.values())
+
+
+@server.feature(L.TEXT_DOCUMENT_DOCUMENT_LINK)
+def document_link(ls: JustLanguageServer, params: L.DocumentLinkParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
+    return doc_index.links
+
+
+@server.feature(L.TEXT_DOCUMENT_HOVER)
+def hover(ls: JustLanguageServer, params: L.HoverParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
+    return head_or_none(
+        hover
+        for key, hover in doc_index.hovers.items()
+        if key.location.range.start <= params.position <= key.location.range.end
+    )
