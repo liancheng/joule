@@ -162,19 +162,48 @@ class DocumentIndex(Visitor):
 
         return ws_symbol, doc_symbol
 
+    def definition(
+        self,
+        position: L.Position,
+        include_current: bool = False,
+        local: bool = False,
+    ) -> list[L.Location]:
+        return self.find_goto_locations(
+            position, self.ref_to_defs, include_current, local
+        )
+
+    def references(
+        self,
+        position: L.Position,
+        include_current: bool = False,
+        local: bool = False,
+    ) -> list[L.Location]:
+        return self.find_goto_locations(
+            position, self.def_to_refs, include_current, local
+        )
+
     def find_goto_locations(
         self,
         position: L.Position,
         lookup: dict[LocationKey, list[L.Location]],
+        include_current: bool = False,
+        local: bool = False,
     ) -> list[L.Location]:
-        return next(
-            iter(
-                lookup[key]
-                for key in sorted(lookup.keys())
-                if key.location.range.start <= position <= key.location.range.end
-            ),
-            [],
+        candidate = head_or_none(
+            (key, locations)
+            for key, locations in sorted(lookup.items(), key=lambda pair: pair[0])
+            if key.location.range.start <= position <= key.location.range.end
         )
+
+        match candidate:
+            case None:
+                return []
+            case key, locations:
+                if local:
+                    locations = list(filter(lambda x: x.uri == self.uri, locations))
+                if include_current:
+                    locations = list(chain([key.location], locations))
+                return locations
 
     def add_reference(self, ref: Expr, binding: Binding):
         defs = self.ref_to_defs[LocationKey(ref.location)]
@@ -606,6 +635,21 @@ def definition(ls: JustLanguageServer, params: L.DefinitionParams):
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JustLanguageServer, params: L.ReferenceParams):
     return ls.workspace_index.references(params.text_document.uri, params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
+def document_highlight(ls: JustLanguageServer, params: L.DocumentHighlightParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
+
+    defs = doc_index.definition(params.position, include_current=True, local=True)
+    refs = doc_index.references(params.position, include_current=True, local=True)
+
+    match defs, refs:
+        case [], _:
+            return refs
+        case _:
+            return [r for d in defs for r in doc_index.references(d.range.start)]
 
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
