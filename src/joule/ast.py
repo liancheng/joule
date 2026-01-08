@@ -2,8 +2,9 @@ import dataclasses as D
 from enum import StrEnum, auto
 from itertools import dropwhile
 from textwrap import dedent
-from typing import Any, Callable, ClassVar, Iterator, cast
+from typing import Any, Callable, ClassVar, Iterable, Iterator, cast
 
+from itertools import chain
 import lsprotocol.types as L
 import tree_sitter as T
 
@@ -49,11 +50,31 @@ class AST:
             cst_parser = AST.registry.get(node.type, Unknown.from_cst)
             return cst_parser(uri, node)
         except Exception:
-            return Error.from_cst(uri, node)
+            return ErrorAST.from_cst(uri, node)
 
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return []
+
+    def narrowest_under(self, position: L.Position) -> AST | None:
+        candidate = head_or_none(
+            node
+            for child in self.children
+            if location_contains(child.location, position)
+            for node in maybe(child.narrowest_under(position))
+        )
+
+        match candidate:
+            case None if location_contains(self.location, position):
+                return self
+            case None:
+                return None
+            case node:
+                return node
 
 
 def skip_parenthesis(uri: URI, node: T.Node) -> Expr:
@@ -152,7 +173,7 @@ class Expr(AST):
         if isinstance(ast := AST.from_cst(uri, node), Expr):
             return cast(Expr, ast)
         else:
-            raise TypeError(f"Expected {Expr.__name__}, but got {type(ast).__name__}")
+            return ErrorExpr(location_of(uri, node), node.type)
 
     @property
     def tails(self) -> list[Expr]:
@@ -223,15 +244,19 @@ class Super(Expr):
 class Document(Expr):
     body: Expr
 
+    @property
+    def children(self) -> list[AST]:
+        return [self.body]
+
+    @property
+    def tails(self) -> list[Expr]:
+        return self.body.tails
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Document:
         assert node.type == "document"
         body, *_ = strip_comments(node.named_children)
         return Document(location_of(uri, node), Expr.from_cst(uri, body))
-
-    @property
-    def tails(self) -> list[Expr]:
-        return self.body.tails
 
     AST.register(from_cst, "document")
 
@@ -318,6 +343,10 @@ class Bool(Expr):
 class Array(Expr):
     values: list[Expr]
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return iter(cast(AST, value) for value in self.values)
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Array:
         assert node.type == "array"
@@ -365,6 +394,10 @@ class Binary(Expr):
     lhs: Expr
     rhs: Expr
 
+    @property
+    def children(self) -> list[AST]:
+        return [self.lhs, self.rhs]
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Binary:
         assert node.type in ["binary", "implicit_plus"]
@@ -392,6 +425,10 @@ class Binary(Expr):
 class Bind(AST):
     id: Id
     value: Expr
+
+    @property
+    def children(self) -> list[AST]:
+        return [self.id, self.value]
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Bind:
@@ -441,6 +478,10 @@ class Local(Expr):
     def tails(self) -> list[Expr]:
         return self.body.tails
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain(self.binds, [self.body])
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Local:
         assert node.type == "local_bind"
@@ -466,6 +507,10 @@ class Param(AST):
     id: Id
     default: Expr | None = None
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.id], maybe(self.default))
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Param:
         assert node.type == "param"
@@ -487,6 +532,10 @@ class Param(AST):
 class Fn(Expr):
     params: list[Param]
     body: Expr
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain(self.params, [self.body])
 
     @property
     def tails(self) -> list[Expr]:
@@ -520,6 +569,10 @@ class Arg(AST):
     value: Expr
     id: Id | None = None
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.value], maybe(self.id))
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Arg:
         if node.type == "named_argument":
@@ -543,6 +596,10 @@ class Arg(AST):
 class Call(Expr):
     fn: Expr
     args: list[Arg]
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.fn], self.args)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Call:
@@ -571,6 +628,10 @@ class ForSpec(AST):
     id: Id
     container: Expr
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return [self.id, self.container]
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> ForSpec:
         assert node.type == "forspec"
@@ -589,6 +650,10 @@ class ForSpec(AST):
 class IfSpec(AST):
     condition: Expr
 
+    @property
+    def children(self) -> list[AST]:
+        return [self.condition]
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> IfSpec:
         assert node.type == "ifspec"
@@ -603,6 +668,10 @@ class ListComp(Expr):
     expr: Expr
     for_spec: ForSpec
     comp_spec: list[ForSpec | IfSpec]
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.expr, self.for_spec], self.comp_spec)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> ListComp:
@@ -633,6 +702,10 @@ class Import(Expr):
     type: str
     path: Str
 
+    @property
+    def children(self) -> list[AST]:
+        return [self.path]
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Import:
         assert node.type in ["import", "importstr"]
@@ -651,6 +724,10 @@ class Import(Expr):
 class Assert(AST):
     condition: Expr
     message: Expr | None = None
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.condition], maybe(self.message))
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Assert:
@@ -682,6 +759,10 @@ class AssertExpr(Expr):
     @property
     def tails(self) -> list[Expr]:
         return self.body.tails
+
+    @property
+    def children(self) -> list[AST]:
+        return [self.assertion, self.body]
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Expr:
@@ -771,10 +852,18 @@ class FieldKey(AST):
 class FixedKey(FieldKey):
     id: Id | Str
 
+    @property
+    def children(self) -> list[AST]:
+        return [self.id]
+
 
 @D.dataclass
 class DynamicKey(FieldKey):
     expr: Expr
+
+    @property
+    def children(self) -> list[AST]:
+        return [self.expr]
 
 
 class Visibility(StrEnum):
@@ -792,6 +881,10 @@ class Field(AST):
 
     def __post_init__(self):
         self.enclosing_obj: Object | None = None
+
+    @property
+    def children(self) -> list[AST]:
+        return [self.key, self.value]
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Field:
@@ -865,6 +958,10 @@ class Object(Expr):
         self.super_scope: Scope | None = None
         self.self_scope: Scope | None = None
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain(self.binds, self.assertions, self.fields)
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Object | ObjComp:
         assert node.type == "object"
@@ -901,6 +998,10 @@ class ObjComp(Expr):
     for_spec: ForSpec
     comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain(self.binds, [self.field], [self.for_spec], self.comp_spec)
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> ObjComp:
         assert node.type == "objforloop"
@@ -926,6 +1027,10 @@ class FieldAccess(Expr):
     obj: Expr
     field: Id
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return [self.obj, self.field]
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> FieldAccess:
         assert node.type in ["fieldaccess", "fieldaccess_super"]
@@ -945,6 +1050,10 @@ class Slice(Expr):
     begin: Expr
     end: Expr | None = None
     step: Expr | None = None
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.array, self.begin], maybe(self.end), maybe(self.step))
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Slice:
@@ -986,6 +1095,10 @@ class If(Expr):
             for tail in alternative.tails
         ]
 
+    @property
+    def children(self) -> Iterable[AST]:
+        return chain([self.condition, self.consequence], maybe(self.alternative))
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> If:
         assert node.type == "conditional"
@@ -1010,12 +1123,21 @@ class Unknown(Expr):
 
 
 @D.dataclass
-class Error(Expr):
+class ErrorAST(Expr):
     node_type: str
 
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> Error:
-        return Error(location_of(uri, node), node.type)
+    def from_cst(uri: URI, node: T.Node) -> ErrorAST:
+        return ErrorAST(location_of(uri, node), node.type)
+
+
+@D.dataclass
+class ErrorExpr(Expr):
+    node_type: str
+
+    @staticmethod
+    def from_cst(uri: URI, node: T.Node) -> ErrorExpr:
+        return ErrorExpr(location_of(uri, node), node.type)
 
 
 def position_of(point: T.Point) -> L.Position:
@@ -1031,6 +1153,14 @@ def range_of(node: T.Node) -> L.Range:
 
 def location_of(uri: URI, node: T.Node) -> L.Location:
     return L.Location(uri, range_of(node))
+
+
+def range_contains(range: L.Range, position: L.Position):
+    return range.start <= position <= range.end
+
+
+def location_contains(location: L.Location, position: L.Position):
+    return range_contains(location.range, position)
 
 
 RangeLike = L.Range | T.Range | T.Node | AST

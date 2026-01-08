@@ -1,6 +1,7 @@
 import unittest
 from textwrap import dedent
 
+from joule.util import maybe
 import tree_sitter as T
 
 from joule.ast import (
@@ -15,6 +16,7 @@ from joule.ast import (
     FixedKey,
     Fn,
     ForSpec,
+    IdKind,
     IfSpec,
     Import,
     ListComp,
@@ -675,4 +677,46 @@ class TestAST(unittest.TestCase):
                 }
                 """
             )
+        )
+
+    def test_narrowest_enclosing_node(self):
+        t = FakeDocument("{ f: local x = 1; x }")
+
+        self.assertAstEqual(
+            next(iter(maybe(t.body.narrowest_under(t.start_of("x"))))),
+            t.id("x", IdKind.Var),
+        )
+
+        self.assertAstEqual(
+            next(iter(maybe(t.body.narrowest_under(t.start_of("="))))),
+            t.id("x", IdKind.Var).bind(t.num(1)),
+        )
+
+        self.assertAstEqual(
+            next(iter(maybe(t.body.narrowest_under(t.start_of("local"))))),
+            Local(
+                t.location_of("local x = 1; x"),
+                [t.id("x", IdKind.Var).bind(t.num(1))],
+                t.id("x", IdKind.VarRef, nth=2),
+            ),
+        )
+
+        local = Local(
+            t.location_of("local x = 1; x"),
+            binds=[t.id("x", IdKind.Var).bind(t.num(1))],
+            body=t.id("x", IdKind.VarRef, nth=2),
+        )
+
+        self.assertAstEqual(
+            next(iter(maybe(t.body.narrowest_under(t.end_of(";"))))),
+            local,
+        )
+
+        self.assertAstEqual(
+            next(iter(maybe(t.body.narrowest_under(t.end_of(":"))))),
+            Field(
+                t.location_of("f: local x = 1; x"),
+                key=FixedKey(t.location_of("f"), t.id("f", IdKind.Field)),
+                value=local,
+            ),
         )

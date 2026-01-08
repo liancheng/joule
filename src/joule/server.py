@@ -31,6 +31,7 @@ from joule.ast import (
     Str,
     Super,
     Visibility,
+    location_contains,
 )
 from joule.icon import Icon
 from joule.parsing import parse_jsonnet
@@ -65,17 +66,13 @@ class LocationKey:
         )
 
     def __lt__(self, that: "LocationKey") -> bool:
-        self_in_other = (
-            that.location.range.start <= self.location.range.start
-            and self.location.range.end <= that.location.range.end
-        )
-
         return (
             self.location.uri < that.location.uri
             or self.location.uri == that.location.uri
             and self.location.range != that.location.range
             and (
-                self_in_other
+                that.location.range.start <= self.location.range.start
+                and self.location.range.end <= that.location.range.end
                 or self.location.range.start <= that.location.range.start
                 and self.location.range.end <= that.location.range.end
             )
@@ -166,19 +163,19 @@ class DocumentIndex(Visitor):
         local: bool = False,
     ) -> list[L.Location]:
         candidate = head_or_none(
-            (key, locations)
-            for key, locations in sorted(lookup.items(), key=lambda pair: pair[0])
-            if key.location.range.start <= position <= key.location.range.end
+            (node, lookup[LocationKey(node.location)])
+            for node in maybe(self.doc.narrowest_under(position))
+            if location_contains(node.location, position)
         )
 
         match candidate:
             case None:
                 return []
-            case key, locations:
+            case node, locations:
                 if local:
                     locations = list(filter(lambda x: x.uri == self.uri, locations))
                 if include_current:
-                    locations = list(chain([key.location], locations))
+                    locations = list(chain([node.location], locations))
                 return locations
 
     def add_reference(self, ref: Expr, binding: Binding):
@@ -675,5 +672,5 @@ def hover(ls: JouleLanguageServer, params: L.HoverParams):
     return head_or_none(
         hover
         for key, hover in doc_index.hovers.items()
-        if key.location.range.start <= params.position <= key.location.range.end
+        if location_contains(key.location, params.position)
     )
