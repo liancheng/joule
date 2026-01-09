@@ -23,7 +23,7 @@ class IdKind(StrEnum):
     Field = auto()
     FieldRef = auto()
     Param = auto()
-    CallArg = auto()
+    ArgRef = auto()
 
 
 ParseCST = Callable[[str, T.Node], "AST"]
@@ -60,16 +60,16 @@ class AST:
     def children(self) -> Iterable[AST]:
         return []
 
-    def node_at(self, position: L.Position) -> AST | None:
+    def node_at(self, pos_or_span: L.Position | L.Range) -> AST | None:
         candidate = head_or_none(
             node
             for child in self.children
-            if location_contains(child.location, position)
-            for node in maybe(child.node_at(position))
+            if location_contains(child.location, pos_or_span)
+            for node in maybe(child.node_at(pos_or_span))
         )
 
         match candidate:
-            case None if location_contains(self.location, position):
+            case None if location_contains(self.location, pos_or_span):
                 return self
             case None:
                 return None
@@ -170,14 +170,19 @@ class PrettyCST(PrettyTree):
 class Expr(AST):
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Expr:
-        if isinstance(ast := AST.from_cst(uri, node), Expr):
-            return cast(Expr, ast)
-        else:
-            return ErrorExpr(location_of(uri, node), node.type)
+        match AST.from_cst(uri, node):
+            case Expr() as e:
+                return e
+            case _:
+                return ErrorExpr(location_of(uri, node), node.type)
 
     @property
     def tails(self) -> list[Expr]:
         return [self]
+
+    def arg(self, name: Id | None = None) -> Arg:
+        location = merge_locations(name, self) if name else self.location
+        return Arg(location, self, name)
 
     def bin_op(self, op: "Operator", rhs: "Expr") -> Binary:
         return Binary(merge_locations(self, rhs), op, self, rhs)
@@ -279,8 +284,9 @@ class Id(Expr):
     def bind(self, value: Expr) -> Bind:
         return Bind(merge_locations(self, value), self, value)
 
-    def arg(self, value: Expr) -> Arg:
-        return Arg(merge_locations(self, value), value, self.into(IdKind.CallArg))
+    def param(self, default: Expr | None = None) -> Param:
+        location = merge_locations(self, default) if default else self.location
+        return Param(location, self.into(IdKind.Var), default)
 
     def into(self, kind: IdKind) -> Id:
         self.kind = kind
@@ -509,7 +515,7 @@ class Param(AST):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.id], maybe(self.default))
+        return chain([self.id], iter(maybe(self.default)))
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Param:
@@ -521,7 +527,7 @@ class Param(AST):
         id, *maybe_default = children
         return Param(
             location=location_of(uri, node),
-            id=Id.from_cst(uri, id).into(IdKind.Param),
+            id=Id.from_cst(uri, id).into(IdKind.Var),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
 
@@ -567,11 +573,11 @@ class Fn(Expr):
 @D.dataclass
 class Arg(AST):
     value: Expr
-    id: Id | None = None
+    name: Id | None = None
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.value], maybe(self.id))
+        return chain([self.value], maybe(self.name))
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Arg:
@@ -581,7 +587,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                id=Id.from_cst(uri, name).into(IdKind.CallArg),
+                name=Id.from_cst(uri, name).into(IdKind.ArgRef),
             )
         else:
             return Arg(
@@ -750,6 +756,9 @@ class Assert(AST):
             message=message,
         )
 
+    def guard(self, body: Expr) -> AssertExpr:
+        return AssertExpr(merge_locations(self, body), self, body)
+
 
 @D.dataclass
 class AssertExpr(Expr):
@@ -827,6 +836,12 @@ class AssertExpr(Expr):
     AST.register(from_cst, "assert")
 
 
+class Visibility(StrEnum):
+    Default = ":"
+    Hidden = "::"
+    Forced = ":::"
+
+
 @D.dataclass
 class FieldKey(AST):
     @staticmethod
@@ -839,13 +854,27 @@ class FieldKey(AST):
 
         if head.text.decode() == "[":
             e, *_ = tail
-            return DynamicKey(location, Expr.from_cst(uri, e))
+            return ComputedKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
             return FixedKey(location, Id.from_cst(uri, head).into(IdKind.Field))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
     AST.register(from_cst, "fieldname")
+
+    def with_value(
+        self,
+        value: Expr,
+        visibility: Visibility = Visibility.Default,
+        inherited: bool = False,
+    ) -> Field:
+        return Field(
+            merge_locations(self.location, value.location),
+            self,
+            value,
+            visibility,
+            inherited,
+        )
 
 
 @D.dataclass
@@ -858,18 +887,12 @@ class FixedKey(FieldKey):
 
 
 @D.dataclass
-class DynamicKey(FieldKey):
+class ComputedKey(FieldKey):
     expr: Expr
 
     @property
     def children(self) -> list[AST]:
         return [self.expr]
-
-
-class Visibility(StrEnum):
-    Default = ":"
-    Hidden = "::"
-    Forced = ":::"
 
 
 @D.dataclass
@@ -1155,12 +1178,16 @@ def location_of(uri: URI, node: T.Node) -> L.Location:
     return L.Location(uri, range_of(node))
 
 
-def range_contains(range: L.Range, position: L.Position):
-    return range.start <= position <= range.end
+def range_contains(range: L.Range, inner: L.Position | L.Range):
+    match inner:
+        case L.Position():
+            return range.start <= inner <= range.end
+        case L.Range():
+            return range.start <= inner.start and inner.end <= range.end
 
 
-def location_contains(location: L.Location, position: L.Position):
-    return range_contains(location.range, position)
+def location_contains(location: L.Location, inner: L.Position | L.Range):
+    return range_contains(location.range, inner)
 
 
 RangeLike = L.Range | T.Range | T.Node | AST

@@ -107,33 +107,54 @@ class TestDefRef(unittest.TestCase):
             )
 
     def test_local_bind(self):
-        t = FakeDocument("local x = 1; x + x")
+        t = FakeDocument(
+            dedent(
+                """\
+                local x = 1; x + x
+                      ^x     ^x.1^x.2
+                """
+            )
+        )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("x"),
+            def_location=t.at("x"),
             ref_locations=[
-                t.location_of("x", nth=2),
-                t.location_of("x", nth=3),
+                t.at("x.1"),
+                t.at("x.2"),
             ],
         )
 
     def test_field(self):
-        t = FakeDocument("{ f: 1 }.f")
+        t = FakeDocument(
+            dedent(
+                """\
+                { f: 1 }.f
+                  ^f     ^f.1
+                """
+            )
+        )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f"),
-            ref_locations=[t.location_of("f", nth=2)],
+            def_location=t.at("f"),
+            ref_locations=[t.at("f.1")],
         )
 
     def test_nested_field(self):
-        t = FakeDocument("{ f: { g: 1 } }.f.g")
+        t = FakeDocument(
+            dedent(
+                """\
+                { f: { g: 1 } }.f.g
+                       ^g         ^g.1
+                """
+            )
+        )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("g"),
-            ref_locations=[t.location_of("g", nth=2)],
+            def_location=t.at("g"),
+            ref_locations=[t.at("g.1")],
         )
 
     def test_obj_obj_composition(self):
@@ -143,15 +164,17 @@ class TestDefRef(unittest.TestCase):
                 (
                     { f: 1 }
                     { f: 2 }
+                      ^f
                 ).f
+                  ^f.1
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f", line=3),
-            ref_locations=[t.location_of("f", line=4)],
+            def_location=t.at("f"),
+            ref_locations=[t.at("f.1")],
         )
 
     def test_var_obj_composition(self):
@@ -160,14 +183,15 @@ class TestDefRef(unittest.TestCase):
                 """\
                 local o = { f: 1 };
                 (o + { f: 2 }).f
+                       ^f      ^f.1
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f", line=2),
-            ref_locations=[t.location_of("f", line=2, nth=2)],
+            def_location=t.at("f"),
+            ref_locations=[t.at("f.1")],
         )
 
     def test_obj_var_composition(self):
@@ -175,15 +199,17 @@ class TestDefRef(unittest.TestCase):
             dedent(
                 """\
                 local o = { f: 1 };
+                            ^f
                 ({ f: 2 } + o).f
+                               ^f.1
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f"),
-            ref_locations=[t.location_of("f", line=2, nth=2)],
+            def_location=t.at("f"),
+            ref_locations=[t.at("f.1")],
         )
 
     def test_var_var_composition(self):
@@ -193,26 +219,38 @@ class TestDefRef(unittest.TestCase):
                 local o1 = { f: 1 };
                 local o2 = { f: 2 };
                 local o3 = { f: { g: 3 } };
+                                  ^g
                 (o1 + o2 + o3).f.g
+                                 ^g.1
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("g", line=3),
-            ref_locations=[t.location_of("g", line=4)],
+            def_location=t.at("g"),
+            ref_locations=[t.at("g.1")],
         )
 
     @unittest.skip("Cross-document references not implemented")
     def test_import(self):
         t1 = FakeDocument(
-            "{ f: 1 }",
+            dedent(
+                """\
+                { f: 1 },
+                  ^f
+                """
+            ),
             uri="file:///test/t1.jsonnet",
         )
 
         t2 = FakeDocument(
-            "(import 't1.jsonnet').f",
+            dedent(
+                """\
+                (import 't1.jsonnet').f
+                                      ^f
+                """
+            ),
             uri="file:///test/t2.jsonnet",
         )
 
@@ -221,8 +259,8 @@ class TestDefRef(unittest.TestCase):
                 root_uri="file:///test/",
                 docs=[t1, t2],
             ),
-            def_location=t1.location_of("f: 1"),
-            ref_locations=[t2.location_of("f")],
+            def_location=t1.at("f"),
+            ref_locations=[t2.at("f")],
         )
 
     def test_same_var_field_names(self):
@@ -230,9 +268,13 @@ class TestDefRef(unittest.TestCase):
             dedent(
                 """\
                 local f = { f: 1 };
+                      ^1f   ^2f
                 {
                     f: f,
+                    ^3f^1f.1
                 }.f.f
+                  ^3f.1
+                    ^2f.1
                 """
             ),
             uri="file:///test/t1.jsonnet",
@@ -242,31 +284,41 @@ class TestDefRef(unittest.TestCase):
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.location_of("f", line=1),
-            ref_locations=[t1.location_of("f", line=3, nth=2)],
+            def_location=t1.at("1f"),
+            ref_locations=[t1.at("1f.1")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.location_of("f", line=3, nth=1),
-            ref_locations=[t1.location_of("f", line=4, nth=1)],
+            def_location=t1.at("2f"),
+            ref_locations=[t1.at("2f.1")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.location_of("f", line=1, nth=2),
-            ref_locations=[t1.location_of("f", line=4, nth=2)],
+            def_location=t1.at("3f"),
+            ref_locations=[t1.at("3f.1")],
         )
 
     @unittest.skip("Cross-document references not implemented")
     def test_import_with_local(self):
         t1 = FakeDocument(
-            "local o1 = { f: 0 }; o1",
+            dedent(
+                """\
+                local o1 = { f: 0 }; o1
+                             ^f_def
+                """
+            ),
             uri="file:///test/t1.jsonnet",
         )
 
         t2 = FakeDocument(
-            "local o2 = import 't1.jsonnet'; o2.f",
+            dedent(
+                """\
+                local o2 = import 't1.jsonnet'; o2.f
+                                                   ^f_ref
+                """
+            ),
             uri="file:///test/t2.jsonnet",
         )
 
@@ -275,17 +327,24 @@ class TestDefRef(unittest.TestCase):
                 root_uri="file:///test/",
                 docs=[t1, t2],
             ),
-            def_location=t1.location_of("f: 0"),
-            ref_locations=[t2.location_of("f")],
+            def_location=t1.at("f_def"),
+            ref_locations=[t2.at("f_ref")],
         )
 
     def test_self(self):
-        t = FakeDocument("{ f1: 1, f2: self.f1 }")
+        t = FakeDocument(
+            dedent(
+                """\
+                { f1: 1, f2: self.f1 }
+                  ^^f1            ^^f1.1
+                """
+            )
+        )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f1"),
-            ref_locations=[t.location_of("f1", nth=2)],
+            def_location=t.at("f1"),
+            ref_locations=[t.at("f1.1")],
         )
 
     def test_super_obj_obj(self):
@@ -294,9 +353,11 @@ class TestDefRef(unittest.TestCase):
                 """\
                 {
                     f1: 1
+                    ^^f1
                 } + {
                     f1: 2,
                     f2: super.f1
+                              ^^f1.1
                 }
                 """
             )
@@ -304,8 +365,8 @@ class TestDefRef(unittest.TestCase):
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f1", line=2),
-            ref_locations=[t.location_of("f1", line=5)],
+            def_location=t.at("f1"),
+            ref_locations=[t.at("f1.1")],
         )
 
     def test_super_var_obj(self):
@@ -313,11 +374,15 @@ class TestDefRef(unittest.TestCase):
             dedent(
                 """\
                 local o1 = {
+                      ^^o1
                     f1: 1
+                    ^^f1
                 };
                 o1 + {
+                ^^o1.1
                     f1: 2,
                     f2: super.f1
+                              ^^f1.1
                 }
                 """
             )
@@ -325,28 +390,32 @@ class TestDefRef(unittest.TestCase):
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f1", line=2),
-            ref_locations=[t.location_of("f1", line=6)],
+            def_location=t.at("f1"),
+            ref_locations=[t.at("f1.1")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("o1"),
-            ref_locations=[t.location_of("o1", line=4)],
+            def_location=t.at("o1"),
+            ref_locations=[t.at("o1.1")],
         )
 
     def test_super_var_var(self):
         t = FakeDocument(
             dedent(
                 """\
-                /* 1 */ local o1 = {
-                /* 2 */     f1: 1
-                /* 3 */ };
-                /* 4 */ local o2 = {
-                /* 5 */     f1: 2,
-                /* 6 */     f2: super.f1
-                /* 7 */ };
-                /* 8 */ o1 + o2
+                local o1 = {
+                      ^^o1
+                    f1: 1
+                };
+                local o2 = {
+                      ^^o2
+                    f1: 2,
+                    f2: super.f1
+                };
+                o1 + o2
+                ^^o1.1
+                     ^^o2.1
                 """
             )
         )
@@ -358,14 +427,14 @@ class TestDefRef(unittest.TestCase):
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("o1"),
-            ref_locations=[t.location_of("o1", line=8)],
+            def_location=t.at("o1"),
+            ref_locations=[t.at("o1.1")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("o2", line=4),
-            ref_locations=[t.location_of("o2", line=8)],
+            def_location=t.at("o2"),
+            ref_locations=[t.at("o2.1")],
         )
 
     def test_fn_params(self):
@@ -373,22 +442,26 @@ class TestDefRef(unittest.TestCase):
             dedent(
                 """\
                 local f(p) =
+                      ^f_def
+                        ^p_def
                     p + 1;
+                    ^p_ref
                 f(1)
+                ^f_ref
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("p"),
-            ref_locations=[t.location_of("p", line=2)],
+            def_location=t.at("p_def"),
+            ref_locations=[t.at("p_ref")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("f"),
-            ref_locations=[t.location_of("f", line=3)],
+            def_location=t.at("f_def"),
+            ref_locations=[t.at("f_ref")],
         )
 
     def test_fn_param_refs(self):
@@ -397,50 +470,60 @@ class TestDefRef(unittest.TestCase):
                 """\
                 function(
                     p1 = p2,
+                    ^^p1 ^^p2.1
                     p2 = 3,
+                    ^^p2
                     p3 = p1,
+                    ^^p3 ^^p1.1
                 ) p1 + p2 + p3;
+                  ^^p1.2    ^^p3.1
+                       ^^p2.2
                 """
             )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("p1", line=2),
+            def_location=t.at("p1"),
             ref_locations=[
-                t.location_of("p1", line=4),
-                t.location_of("p1", line=5),
+                t.at("p1.1"),
+                t.at("p1.2"),
             ],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("p2", line=3),
+            def_location=t.at("p2"),
             ref_locations=[
-                t.location_of("p2", line=2),
-                t.location_of("p2", line=5),
+                t.at("p2.1"),
+                t.at("p2.2"),
             ],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("p3", line=4),
-            ref_locations=[
-                t.location_of("p3", line=5),
-            ],
+            def_location=t.at("p3"),
+            ref_locations=[t.at("p3.1")],
         )
 
     def test_list_comp(self):
-        t = FakeDocument("[local y = 1; x + y for x in std.range(1, 3)]")
-
-        self.checkDefRefs(
-            FakeWorkspace.single_doc(t),
-            def_location=t.location_of("x", nth=2),
-            ref_locations=[t.location_of("x")],
+        t = FakeDocument(
+            dedent(
+                """\
+                [local y = 1; x + y for x in std.range(1, 3)]
+                       ^y     ^x.1^y.1  ^x
+                """
+            )
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t),
-            def_location=t.location_of("y"),
-            ref_locations=[t.location_of("y", nth=2)],
+            def_location=t.at("x"),
+            ref_locations=[t.at("x.1")],
+        )
+
+        self.checkDefRefs(
+            FakeWorkspace.single_doc(t),
+            def_location=t.at("y"),
+            ref_locations=[t.at("y.1")],
         )

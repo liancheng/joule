@@ -1,3 +1,3 @@
 #!/bin/sh
 
-uv run python -m unittest discover --locals
+uv run python -m unittest discover

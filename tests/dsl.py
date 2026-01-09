@@ -1,5 +1,7 @@
+import re
 from itertools import accumulate, chain
 from pathlib import Path
+from textwrap import dedent
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -8,19 +10,49 @@ from rich.text import Text
 from joule.ast import (
     AST,
     Arg,
+    Array,
+    Assert,
+    Bind,
     Bool,
+    Call,
+    ComputedKey,
     Document,
     Expr,
+    Field,
     FixedKey,
+    Fn,
+    ForSpec,
     Id,
     IdKind,
+    IfSpec,
+    Import,
+    ListComp,
+    Local,
     Num,
+    Object,
     Param,
+    Slice,
     Str,
-    merge_locations,
 )
 from joule.parsing import parse_jsonnet
 from joule.server import WorkspaceIndex
+from joule.util import head, maybe
+
+LOCATION_MARK_PATTERN = re.compile(
+    dedent(
+        """\
+        (?P<indent>[ ]*)
+        (?P<range>\\^+)
+        (?P<mark>:?[a-zA-Z0-9-_.]+:?)
+        """
+    ),
+    re.VERBOSE,
+)
+
+LOCATION_MARK_LINE_PATTERN = re.compile(
+    f"({LOCATION_MARK_PATTERN.pattern})+",
+    re.VERBOSE,
+)
 
 
 def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
@@ -49,14 +81,118 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
+class LocationDSL(L.Location):
+    @property
+    def start(self):
+        return self.range.start
+
+    @property
+    def end(self):
+        return self.range.end
+
+    def id(self, name: str, kind: IdKind) -> Id:
+        return Id(self, name, kind)
+
+    def var(self, name: str) -> Id:
+        return self.id(name, IdKind.Var)
+
+    def var_ref(self, name: str) -> Id:
+        return self.id(name, IdKind.VarRef)
+
+    def arg_ref(self, name: str) -> Id:
+        return self.id(name, IdKind.ArgRef)
+
+    def num(self, value: float | int) -> Num:
+        return Num(self, float(value))
+
+    @property
+    def true(self) -> Bool:
+        return Bool(self, True)
+
+    @property
+    def false(self) -> Bool:
+        return Bool(self, False)
+
+    def string(self, value: str) -> Str:
+        return Str(self, value)
+
+    def fixed_id_key(self, name: str) -> FixedKey:
+        return FixedKey(self, self.id(name, IdKind.Field))
+
+    def fixed_str_key(self, name: str) -> FixedKey:
+        return FixedKey(self, self.string(name))
+
+    def computed_key(self, expr: Expr) -> ComputedKey:
+        return ComputedKey(self, expr)
+
+    def fn(self, params: list[Param], body: Expr) -> Fn:
+        return Fn(self, params, body)
+
+    def call(self, fn: Expr, args: list[Arg]) -> Call:
+        return Call(self, fn, args)
+
+    def slice(
+        self,
+        expr: Expr,
+        begin: Expr,
+        end: Expr | None = None,
+        step: Expr | None = None,
+    ) -> Slice:
+        return Slice(self, expr, begin, end, step)
+
+    def array(self, *values: Expr) -> Array:
+        return Array(self, list(values))
+
+    def object(self, *objinside: Bind | Assert | Field) -> Object:
+        binds = []
+        asserts = []
+        fields = []
+
+        for ast in objinside:
+            match ast:
+                case Bind():
+                    binds.append(ast)
+                case Assert():
+                    asserts.append(ast)
+                case Field():
+                    fields.append(ast)
+
+        return Object(self, binds, asserts, fields)
+
+    def if_(self, condition: Expr) -> IfSpec:
+        return IfSpec(self, condition)
+
+    def for_(self, id: Id, container: Expr) -> ForSpec:
+        return ForSpec(self, id, container)
+
+    def assert_(self, condition: Expr, message: Expr | None = None) -> Assert:
+        return Assert(self, condition, message)
+
+    def local(self, binds: list[Bind], body: Expr) -> Local:
+        return Local(self, binds, body)
+
+    def import_(self, path: Str) -> Import:
+        return Import(self, "import", path)
+
+    def importstr(self, path: Str) -> Import:
+        return Import(self, "importstr", path)
+
+    def list_comp(
+        self,
+        expr: Expr,
+        for_spec: ForSpec,
+        *comp_spec: ForSpec | IfSpec,
+    ) -> ListComp:
+        return ListComp(self, expr, for_spec, list(comp_spec))
+
+
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
-        self.source = source
-        self.root = parse_jsonnet(source)
+        self.source, self.locations = self._preprocess(source)
+        self.root = parse_jsonnet(self.source)
         self.body = Document.from_cst(self.uri, self.root).body
-
-        self.lines = source.splitlines(keepends=True)
+        self.lines = self.source.splitlines(keepends=True)
 
         # Appends the last empty line if needed.
         if source.endswith("\n"):
@@ -64,100 +200,73 @@ class FakeDocument:
 
         # Computes the character offset of the first character in each line, used for
         # converting line-character positions to offsets.
-        self.line_offsets = list(accumulate(chain([0], map(len, self.lines))))
+        self.line_offsets: list[int] = list(
+            accumulate(chain([0], map(len, self.lines)))
+        )
+
+    def _preprocess(self, source: str) -> tuple[str, dict[str, L.Location]]:
+        line_no = -1
+        source_lines: list[str] = []
+        open_marks: dict[str, L.Position] = {}
+        locations: dict[str, L.Location] = {}
+
+        for line in source.splitlines():
+            if not re.fullmatch(LOCATION_MARK_LINE_PATTERN, line):
+                line_no += 1
+                source_lines.append(line)
+            else:
+                for m in list(re.finditer(LOCATION_MARK_PATTERN, line)):
+                    start_char, end_char = m.span("range")
+                    raw_mark: str = m.group("mark")
+                    mark: str = raw_mark.strip(":")
+
+                    match raw_mark.endswith(":"), raw_mark.startswith(":"):
+                        # Opening marks like `x:`
+                        case True, False:
+                            assert mark not in open_marks, f"Duplicate mark: {mark}"
+                            start = L.Position(line_no, start_char)
+                            open_marks[mark] = start
+                        # Closing marks like `:x`
+                        case False, True:
+                            assert mark in open_marks, f"No matching open mark: {mark}"
+                            start = open_marks.pop(mark)
+                            end = L.Position(line_no, end_char)
+                            locations[mark] = L.Location(self.uri, L.Range(start, end))
+                        # `x` and `:x:` are equivalent
+                        case _:
+                            start = L.Position(line_no, start_char)
+                            end = L.Position(line_no, end_char)
+                            locations[mark] = L.Location(self.uri, L.Range(start, end))
+
+        assert len(open_marks) == 0, (
+            f"Closing mark(s) missing: {', '.join(open_marks.keys())}"
+        )
+
+        return "\n".join(source_lines), locations
+
+    @property
+    def location(self) -> LocationDSL:
+        return LocationDSL(self.body.location.uri, self.body.location.range)
+
+    def at(self, mark: str) -> LocationDSL:
+        location = self.locations[mark]
+        return LocationDSL(location.uri, location.range)
 
     def query_one(self, query: T.Query, capture: str) -> AST:
-        [node] = T.QueryCursor(query).captures(self.root).get(capture, [])
+        node = head(T.QueryCursor(query).captures(self.root).get(capture, []))
         return AST.from_cst(self.uri, node)
+
+    def node_at(self, target: str | L.Position | L.Range) -> AST:
+        match target:
+            case str() as mark:
+                target = self.locations[mark].range
+            case _:
+                pass
+
+        return head(maybe(self.body.node_at(target)))
 
     def offset_of(self, pos: L.Position) -> int:
         return self.line_offsets[pos.line] + pos.character
-
-    def start_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Position:
-        assert line >= 1 and nth >= 1
-
-        line -= 1
-        nth -= 1
-
-        character = self.lines[line].find(needle)
-        assert character >= 0
-
-        while nth > 0:
-            nth -= 1
-            character = self.lines[line].find(needle, character + len(needle))
-            assert character >= 0
-
-        return L.Position(line, character)
-
-    def end_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Position:
-        pos = self.start_of(needle, line, nth)
-        pos.character += len(needle)
-        return pos
-
-    def location_of(self, needle: str, line: int = 1, nth: int = 1) -> L.Location:
-        start = self.start_of(needle, line, nth)
-        end = L.Position(start.line, start.character + len(needle))
-        return L.Location(self.uri, L.Range(start, end))
-
-    def id(self, name: str, kind: IdKind, line: int = 1, nth: int = 1) -> Id:
-        return Id(self.location_of(name, line, nth), name, kind)
-
-    def var(self, name: str, line: int = 1, nth: int = 1) -> Id:
-        return self.id(name, IdKind.Var, line, nth)
-
-    def var_ref(self, name: str, line: int = 1, nth: int = 1) -> Id:
-        return self.id(name, IdKind.VarRef, line, nth)
-
-    def field(self, name: str, line: int = 1, nth: int = 1) -> FixedKey:
-        return FixedKey(
-            location=self.location_of(name, line, nth),
-            id=self.id(name, IdKind.Field, line, nth),
-        )
-
-    def boolean(self, value: bool, line: int = 1, nth: int = 1) -> Bool:
-        needle = "true" if value else "false"
-        range = self.location_of(needle, line, nth)
-        return Bool(range, value)
-
-    def num(
-        self,
-        value: float | int,
-        literal: str | None = None,
-        line: int = 1,
-        nth: int = 1,
-    ) -> Num:
-        match value, literal:
-            case int(), None:
-                literal = str(value)
-                value = float(value)
-            case _:
-                assert literal is not None
-
-        return Num(self.location_of(literal, line, nth), value)
-
-    def str(self, value: str, literal: str, line: int = 1, nth: int = 1) -> Str:
-        return Str(self.location_of(literal, line, nth), value)
-
-    def param(
-        self, name: str, line: int = 1, nth: int = 1, default: Expr | None = None
-    ) -> Param:
-        id = self.id(name, IdKind.Param, line, nth)
-        location = id.location if default is None else merge_locations(id, default)
-        return Param(location, id, default)
-
-    def arg(
-        self,
-        value: Expr,
-        name: str | None = None,
-        line: int = 1,
-        nth: int = 1,
-    ) -> Arg:
-        match name:
-            case None:
-                return Arg(value.location, value)
-            case str():
-                id = self.id(name, IdKind.CallArg, line, nth)
-                return Arg(merge_locations(id, value), value, id)
 
     def highlight(self, ranges: list[L.Range], style: str):
         styled = Text.styled
