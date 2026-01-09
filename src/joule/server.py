@@ -536,7 +536,7 @@ class JouleLanguageServer(LanguageServer):
         self.workspace_index = WorkspaceIndex(root_uri)
 
 
-server = JouleLanguageServer("just", "v0.1")
+server = JouleLanguageServer("joule", "v0.1")
 
 
 @server.feature(L.INITIALIZE)
@@ -560,8 +560,8 @@ def initialize(ls: JouleLanguageServer, params: L.InitializeParams):
             workspace_symbol_provider=True,
         ),
         server_info=L.ServerInfo(
-            name="just",
-            version="v0.1",
+            name=ls.name,
+            version=ls.version,
         ),
     )
 
