@@ -60,12 +60,12 @@ class AST:
     def children(self) -> Iterable[AST]:
         return []
 
-    def narrowest_node(self, position: L.Position) -> AST | None:
+    def node_at(self, position: L.Position) -> AST | None:
         candidate = head_or_none(
             node
             for child in self.children
             if location_contains(child.location, position)
-            for node in maybe(child.narrowest_node(position))
+            for node in maybe(child.node_at(position))
         )
 
         match candidate:

@@ -683,21 +683,21 @@ class TestAST(unittest.TestCase):
     def test_narrowest_enclosing_node(self):
         t = FakeDocument("{ f: local x = 1; x }")
 
-        def find_narrowest_node(position: L.Position) -> AST:
-            return head(maybe(t.body.narrowest_node(position)))
+        def node_at(position: L.Position) -> AST:
+            return head(maybe(t.body.node_at(position)))
 
         self.assertAstEqual(
-            find_narrowest_node(t.start_of("x")),
+            node_at(t.start_of("x")),
             t.id("x", IdKind.Var),
         )
 
         self.assertAstEqual(
-            find_narrowest_node(t.start_of("=")),
+            node_at(t.start_of("=")),
             t.id("x", IdKind.Var).bind(t.num(1)),
         )
 
         self.assertAstEqual(
-            find_narrowest_node(t.start_of("local")),
+            node_at(t.start_of("local")),
             Local(
                 t.location_of("local x = 1; x"),
                 [t.id("x", IdKind.Var).bind(t.num(1))],
@@ -712,12 +712,12 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            find_narrowest_node(t.end_of(";")),
+            node_at(t.end_of(";")),
             local,
         )
 
         self.assertAstEqual(
-            find_narrowest_node(t.end_of(":")),
+            node_at(t.end_of(":")),
             Field(
                 t.location_of("f: local x = 1; x"),
                 key=FixedKey(t.location_of("f"), t.id("f", IdKind.Field)),

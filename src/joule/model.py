@@ -144,7 +144,7 @@ class DocumentIndex(Visitor):
         include_current: bool = False,
         local: bool = False,
     ) -> list[L.Location]:
-        for node in maybe(self.doc.narrowest_node(position)):
+        for node in maybe(self.doc.node_at(position)):
             locations = iter(lookup[LocationKey(node.location)])
 
             if local:
