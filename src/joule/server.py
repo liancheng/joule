@@ -117,15 +117,7 @@ def references(ls: JouleLanguageServer, params: L.ReferenceParams):
 def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
-
-    defs = doc_index.definition(params.position, include_current=True, local=True)
-    refs = doc_index.references(params.position, include_current=True, local=True)
-
-    match defs, refs:
-        case [], _:
-            return refs
-        case _:
-            return [r for d in defs for r in doc_index.references(d.range.start)]
+    return doc_index.highlight(params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)

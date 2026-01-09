@@ -117,44 +117,34 @@ class DocumentIndex(Visitor):
             case None:
                 parent.children = [symbol]
 
-    def definition(
-        self,
-        position: L.Position,
-        include_current: bool = False,
-        local: bool = False,
-    ) -> list[L.Location]:
-        return self.find_goto_locations(
-            position, self.ref_to_defs, include_current, local
-        )
+    def local_definition(self, location: L.Location) -> list[L.Location]:
+        return self.find_goto_locations(location, self.ref_to_defs)
 
-    def references(
-        self,
-        position: L.Position,
-        include_current: bool = False,
-        local: bool = False,
-    ) -> list[L.Location]:
-        return self.find_goto_locations(
-            position, self.def_to_refs, include_current, local
-        )
+    def local_references(self, location: L.Location) -> list[L.Location]:
+        return self.find_goto_locations(location, self.def_to_refs)
+
+    def highlight(self, position: L.Position) -> list[L.DocumentHighlight]:
+        return [
+            L.DocumentHighlight(location.range)
+            for node in maybe(self.doc.node_at(position))
+            for location in chain(
+                [node.location],
+                self.local_definition(node.location),
+                self.local_references(node.location),
+            )
+            if location.uri == self.uri
+        ]
 
     def find_goto_locations(
         self,
-        position: L.Position,
+        location: L.Location,
         lookup: dict[LocationKey, list[L.Location]],
-        include_current: bool = False,
-        local: bool = False,
     ) -> list[L.Location]:
-        for node in maybe(self.doc.node_at(position)):
-            locations = iter(lookup[LocationKey(node.location)])
-
-            if local:
-                locations = filter(lambda x: x.uri == self.uri, locations)
-            if include_current:
-                locations = chain([node.location], locations)
-
-            return list(locations)
-
-        return []
+        return [
+            location
+            for locations in maybe(lookup.get(LocationKey(location)))
+            for location in locations
+        ]
 
     def add_reference(self, ref: Expr, binding: Binding):
         defs = self.ref_to_defs[LocationKey(ref.location)]
@@ -498,7 +488,8 @@ class WorkspaceIndex:
         local_defs = [
             location
             for doc in maybe(self.docs.get(uri))
-            for location in doc.definition(position)
+            for node in maybe(doc.doc.node_at(position))
+            for location in doc.local_definition(node.location)
         ]
 
         return local_defs
@@ -507,7 +498,8 @@ class WorkspaceIndex:
         return [
             location
             for doc in maybe(self.docs.get(uri))
-            for location in doc.references(position)
+            for node in maybe(doc.doc.node_at(position))
+            for location in doc.local_references(node.location)
         ]
 
     def load(self, uri: URI, source: str | None):
