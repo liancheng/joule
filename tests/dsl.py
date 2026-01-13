@@ -23,7 +23,6 @@ from joule.ast import (
     Fn,
     ForSpec,
     Id,
-    IdKind,
     IfSpec,
     Import,
     ListComp,
@@ -90,17 +89,17 @@ class LocationDSL(L.Location):
     def end(self):
         return self.range.end
 
-    def id(self, name: str, kind: IdKind) -> Id:
+    def id(self, name: str, kind: Id.Kind) -> Id:
         return Id(self, name, kind)
 
     def var(self, name: str) -> Id:
-        return self.id(name, IdKind.Var)
+        return self.id(name, Id.Kind.Var)
 
     def var_ref(self, name: str) -> Id:
-        return self.id(name, IdKind.VarRef)
+        return self.id(name, Id.Kind.VarRef)
 
     def arg_ref(self, name: str) -> Id:
-        return self.id(name, IdKind.ArgRef)
+        return self.id(name, Id.Kind.ArgRef)
 
     def num(self, value: float | int) -> Num:
         return Num(self, float(value))
@@ -117,7 +116,7 @@ class LocationDSL(L.Location):
         return Str(self, value)
 
     def fixed_id_key(self, name: str) -> FixedKey:
-        return FixedKey(self, self.id(name, IdKind.Field))
+        return FixedKey(self, self.id(name, Id.Kind.Field))
 
     def fixed_str_key(self, name: str) -> FixedKey:
         return FixedKey(self, self.string(name))
@@ -269,11 +268,27 @@ class FakeDocument:
         return self.line_offsets[pos.line] + pos.character
 
     def highlight(self, ranges: list[L.Range], style: str):
+        """Renders the Jsonnet document with given text ranges highlighted.
+
+        The document is rendered with its URI, a top ruler, an optional bottom ruler
+        for long documents, and a line number gutter:
+
+        ```plaintext
+        file:///tmp/test.jsonnet <-- Document URI
+          0    5   10   15       <-- Top ruler
+          |''''|''''|''''|''''
+        1 |local x = { f: 1 };
+        2 |local y = x.f;
+        3 |y + 1
+        ^^
+          Line number gutter
+        ```
+        """
         styled = Text.styled
-        rendered_lines = []
+        rendered = []
 
         uri_line = styled(self.uri, "grey50")
-        rendered_lines.append(uri_line)
+        rendered.append(uri_line)
 
         # Renders the ranges.
         rendered_source = styled(self.source, "default")
@@ -287,43 +302,61 @@ class FakeDocument:
         raw_lines = self.source.splitlines()
         width = max(map(len, raw_lines))
         height = len(raw_lines)
-        gutter_width = len(str(height))
+        line_no_width = len(str(height))
+        gutter_width = line_no_width + 1
 
-        # Renders a horizontal ruler like the following:
-        #
-        #     0    5   10   15      <-- header line
-        #     |''''|''''|''''|''''  <-- guide line
-        #   1 |local x = { f: 1 };
-        #   2 |local y = x.f;
-        #   3 |x
         def render_ruler(width: int, left_padding: int) -> list[Text]:
-            # To build the header line, builds right-aligned 5-character wide column
-            # segments first, joins them together, then chops off the first 4 spaces.
-            # The final left-padding is for the line number gutter.
+            # Assuming that the document has 10 lines with a max line width of 18, to
+            # render a ruler, produces a sequence with step 5 first:
+            #
+            #   [0, 5, 10, 15]
+            #
             every_5_chars = range(0, width // 5 * 5 + 1, 5)
-            header_segs = [f"{i:>5}" for i in every_5_chars]
-            header_line = styled("".join(header_segs)[4:], "grey50")
-            header_line.pad_left(left_padding)
 
+            # Prints each number with a width of 5, right aligned ("." for space):
+            #
+            #   ["....0", "....5", "...10", "...15"]
+            #
+            header_segs = [f"{i:>5}" for i in every_5_chars]
+
+            # Joins the segments and chops off the leading spaces, producing:
+            #
+            #   "0....5...10...15"
+            #
+            header_line = styled("".join(header_segs)[4:], "grey50")
+
+            # Produces the guide line according to the max line width, e.g.:
+            #
+            #   "|''''|''''|''''|'''"
+            #
             guide_line = styled(("|''''" * (width // 5 + 1))[: width + 1], "grey50")
+
+            # Adds left padding for the line number gutter. E.g., if the document has 10
+            # lines, the gutter witdh is the width of the max line number (2) plus one
+            # (a padding space):
+            #
+            #   "...0....5...10...15"
+            #   "...|''''|''''|''''|'''"
+            #
+            header_line.pad_left(left_padding)
             guide_line.pad_left(left_padding)
 
             return [header_line, guide_line]
 
         # Renders a top horizontal ruler.
-        ruler_lines = render_ruler(width, gutter_width + 1)
-        rendered_lines.extend(ruler_lines)
+        ruler_lines = render_ruler(width, gutter_width)
+        rendered.extend(ruler_lines)
 
         # Renders source lines with line numbers.
         for i, line in enumerate(rendered_source.split()):
-            line_no = styled(f"{i + 1:>{gutter_width}} |", "grey50")
-            rendered_lines.append(line_no + line)
+            line_no = styled(f"{i + 1:>{line_no_width}} |", "grey50")
+            rendered.append(line_no + line)
 
-        # Renders a bottom horizontal ruler for long files.
+        # Renders a bottom horizontal ruler for long documents.
         if height > 5:
-            rendered_lines.extend(ruler_lines)
+            rendered.extend(ruler_lines)
 
-        return Text("\n").join(rendered_lines)
+        return Text("\n").join(rendered)
 
 
 class FakeWorkspace:

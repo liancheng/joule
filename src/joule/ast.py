@@ -1,10 +1,9 @@
 import dataclasses as D
 from enum import StrEnum, auto
-from itertools import dropwhile
+from itertools import chain, dropwhile
 from textwrap import dedent
 from typing import Any, Callable, ClassVar, Iterable, Iterator, cast
 
-from itertools import chain
 import lsprotocol.types as L
 import tree_sitter as T
 
@@ -15,15 +14,6 @@ from joule.util import head_or_none, maybe
 
 def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
     return [node for node in nodes if not node.type == "comment"]
-
-
-class IdKind(StrEnum):
-    Var = auto()
-    VarRef = auto()
-    Field = auto()
-    FieldRef = auto()
-    Param = auto()
-    ArgRef = auto()
 
 
 ParseCST = Callable[[str, T.Node], "AST"]
@@ -187,6 +177,7 @@ class Expr(AST):
         return [self]
 
     def arg(self, name: Id | None = None) -> Arg:
+        assert name is None or name.kind == Id.Kind.ArgRef
         location = merge_locations(name, self) if name else self.location
         return Arg(location, self, name)
 
@@ -274,8 +265,15 @@ class Document(Expr):
 
 @D.dataclass
 class Id(Expr):
+    class Kind(StrEnum):
+        Var = auto()
+        VarRef = auto()
+        Field = auto()
+        FieldRef = auto()
+        ArgRef = auto()
+
     name: str
-    kind: IdKind
+    kind: Kind
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> Id:
@@ -285,22 +283,22 @@ class Id(Expr):
         # By default, an ID is a variable reference. IDs of other kinds are always
         # parsed while parsing other specific AST nodes, where the `IdKind` is
         # explicitly specified.
-        return Id(location_of(uri, node), node.text.decode(), IdKind.VarRef)
+        return Id(location_of(uri, node), node.text.decode(), Id.Kind.VarRef)
 
     def bind(self, value: Expr) -> Bind:
         return Bind(merge_locations(self, value), self, value)
 
     def param(self, default: Expr | None = None) -> Param:
         location = merge_locations(self, default) if default else self.location
-        return Param(location, self.into(IdKind.Var), default)
+        return Param(location, self.into(Id.Kind.Var), default)
 
-    def into(self, kind: IdKind) -> Id:
+    def into(self, kind: Kind) -> Id:
         self.kind = kind
         return self
 
     @property
     def is_variable(self) -> bool:
-        return self.kind in [IdKind.VarRef, IdKind.FieldRef]
+        return self.kind in [Id.Kind.VarRef, Id.Kind.FieldRef]
 
     AST.register(from_cst, "id")
 
@@ -464,14 +462,14 @@ class Bind(AST):
 
             return Bind(
                 location=fn.location,
-                id=Id.from_cst(uri, fn_name).into(IdKind.Var),
+                id=Id.from_cst(uri, fn_name).into(Id.Kind.Var),
                 value=fn,
             )
         else:
             id, value, *_ = children
             return Bind(
                 location=location_of(uri, node),
-                id=Id.from_cst(uri, id).into(IdKind.Var),
+                id=Id.from_cst(uri, id).into(Id.Kind.Var),
                 value=Expr.from_cst(uri, value),
             )
 
@@ -533,7 +531,7 @@ class Param(AST):
         id, *maybe_default = children
         return Param(
             location=location_of(uri, node),
-            id=Id.from_cst(uri, id).into(IdKind.Var),
+            id=Id.from_cst(uri, id).into(Id.Kind.Var),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
 
@@ -593,7 +591,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                name=Id.from_cst(uri, name).into(IdKind.ArgRef),
+                name=Id.from_cst(uri, name).into(Id.Kind.ArgRef),
             )
         else:
             return Arg(
@@ -651,7 +649,7 @@ class ForSpec(AST):
 
         return ForSpec(
             location_of(uri, node),
-            Id.from_cst(uri, id).into(IdKind.Var),
+            Id.from_cst(uri, id).into(Id.Kind.Var),
             Expr.from_cst(uri, expr),
         )
 
@@ -862,7 +860,7 @@ class FieldKey(AST):
             e, *_ = tail
             return ComputedKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
-            return FixedKey(location, Id.from_cst(uri, head).into(IdKind.Field))
+            return FixedKey(location, Id.from_cst(uri, head).into(Id.Kind.Field))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
@@ -921,14 +919,14 @@ class Field(AST):
         children = strip_comments(node.children)
 
         def parse_function_field(children: list[T.Node]) -> Field:
-            key, _, params_or_paren, *rest = children
+            key, lparen, params_or_rparen, *rest = children
 
-            match params_or_paren:
-                case params if params.type == "params":
+            match params_or_rparen:
+                case n if n.type == "params":
                     _, vis, body, *_ = rest
                     params = [
                         Param.from_cst(uri, param)
-                        for param in strip_comments(params.named_children)
+                        for param in strip_comments(n.named_children)
                     ]
                 case _:
                     params = []
@@ -939,7 +937,7 @@ class Field(AST):
                 location=location_of(uri, node),
                 key=FieldKey.from_cst(uri, key),
                 value=Fn(
-                    location_of(uri, node),
+                    L.Location(uri, merge_ranges(lparen, body)),
                     params=params,
                     body=Expr.from_cst(uri, body),
                 ),
@@ -1067,7 +1065,7 @@ class FieldAccess(Expr):
         return FieldAccess(
             location=location_of(uri, node),
             obj=Expr.from_cst(uri, expr),
-            field=Id.from_cst(uri, field).into(IdKind.FieldRef),
+            field=Id.from_cst(uri, field).into(Id.Kind.FieldRef),
         )
 
     AST.register(from_cst, "fieldaccess_super", "fieldaccess")
@@ -1184,16 +1182,16 @@ def location_of(uri: URI, node: T.Node) -> L.Location:
     return L.Location(uri, range_of(node))
 
 
-def range_contains(range: L.Range, inner: L.Position | L.Range):
+def range_contains(outer: L.Range, inner: L.Position | L.Range):
     match inner:
         case L.Position():
-            return range.start <= inner <= range.end
+            return outer.start <= inner <= outer.end
         case L.Range():
-            return range.start <= inner.start and inner.end <= range.end
+            return outer.start <= inner.start and inner.end <= outer.end
 
 
-def location_contains(location: L.Location, inner: L.Position | L.Range):
-    return range_contains(location.range, inner)
+def location_contains(outer: L.Location, inner: L.Position | L.Range):
+    return range_contains(outer.range, inner)
 
 
 RangeLike = L.Range | T.Range | T.Node | AST

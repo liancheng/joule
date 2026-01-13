@@ -1,4 +1,5 @@
 from joule.ast import (
+    AST,
     Arg,
     Array,
     Assert,
@@ -7,9 +8,8 @@ from joule.ast import (
     Bind,
     Bool,
     Call,
-    Document,
     ComputedKey,
-    Expr,
+    Document,
     Field,
     FieldAccess,
     FixedKey,
@@ -32,7 +32,7 @@ from joule.ast import (
 
 
 class Visitor:
-    def visit(self, tree: Expr):
+    def visit(self, tree: AST):
         match tree:
             case Document() as e:
                 self.visit_document(e)
