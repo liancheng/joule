@@ -124,16 +124,24 @@ class DocumentIndex(Visitor):
         return self.find_goto_locations(location, self.def_to_refs)
 
     def highlight(self, position: L.Position) -> list[L.DocumentHighlight]:
-        return [
-            L.DocumentHighlight(location.range)
-            for node in maybe(self.doc.node_at(position))
-            for location in chain(
-                [node.location],
-                self.local_definition(node.location),
-                self.local_references(node.location),
+        for node in maybe(self.doc.node_at(position)):
+            defs = [defn for defn in self.local_definition(node.location)]
+            refs = (
+                self.local_references(node.location)
+                if len(defs) == 0
+                else [ref for defn in defs for ref in self.local_references(defn)]
             )
-            if location.uri == self.uri
-        ]
+
+            if len(defs) == 0 and len(refs) == 0:
+                return []
+            else:
+                return [
+                    L.DocumentHighlight(location.range)
+                    for location in chain(defs, refs, [node.location])
+                    if location.uri == self.uri
+                ]
+
+        return []
 
     def find_goto_locations(
         self,
