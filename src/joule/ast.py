@@ -52,6 +52,12 @@ class AST:
         except Exception:
             return ErrorAST.from_cst(uri, node)
 
+    def __post_init__(self):
+        self.parent: AST | None = None
+
+        for child in self.children:
+            child.parent = self
+
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
