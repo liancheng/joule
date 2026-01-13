@@ -6,9 +6,8 @@ from typing import Iterator
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
-from joule.ast import location_contains
+from joule.ast import URI, location_contains
 from joule.model import WorkspaceIndex
-from joule.typing import URI
 from joule.util import head_or_none, maybe
 
 log = logging.root

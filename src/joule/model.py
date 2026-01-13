@@ -9,6 +9,7 @@ import lsprotocol.types as L
 
 from joule.ast import (
     AST,
+    URI,
     Binary,
     Bind,
     Binding,
@@ -32,7 +33,6 @@ from joule.ast import (
 )
 from joule.icon import Icon
 from joule.parsing import parse_jsonnet
-from joule.typing import URI
 from joule.util import head_or_none, maybe
 from joule.visitor import Visitor
 
@@ -85,10 +85,10 @@ class DocumentIndex(Visitor):
 
     @staticmethod
     def load(
-        workspace: WorkspaceIndex,
+        workspace: "WorkspaceIndex",
         uri_or_path: URI | Path,
         source: str | None = None,
-    ) -> DocumentIndex:
+    ) -> "DocumentIndex":
         match uri_or_path:
             case Path():
                 path = uri_or_path

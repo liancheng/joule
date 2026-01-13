@@ -18,3 +18,9 @@ joule = "joule:app"
 [build-system]
 requires = ["uv_build"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.19",
+    "pytest>=9.0.2",
+]
