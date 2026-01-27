@@ -1,9 +1,9 @@
 import tree_sitter as T
-from tree_sitter_language_pack import get_language, get_parser
+import tree_sitter_jsonnet as J
 
 
-LANG_JSONNET = get_language("jsonnet")
-JSONNET_TS_PARSER = get_parser("jsonnet")
+LANG_JSONNET = T.Language(J.language())
+JSONNET_TS_PARSER = T.Parser(LANG_JSONNET)
 
 
 def parse_jsonnet(source: str) -> T.Node:

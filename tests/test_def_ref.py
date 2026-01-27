@@ -268,13 +268,9 @@ class TestDefRef(unittest.TestCase):
             dedent(
                 """\
                 local f = { f: 1 };
-                      ^1f   ^2f
-                {
-                    f: f,
-                    ^3f^1f.1
-                }.f.f
-                  ^3f.1
-                    ^2f.1
+                      ^1    ^2
+                { f: f }.f.f
+                  ^3 ^4  ^5^6
                 """
             ),
             uri="file:///test/t1.jsonnet",
@@ -284,20 +280,20 @@ class TestDefRef(unittest.TestCase):
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.at("1f"),
-            ref_locations=[t1.at("1f.1")],
+            def_location=t1.at("1"),
+            ref_locations=[t1.at("4")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.at("2f"),
-            ref_locations=[t1.at("2f.1")],
+            def_location=t1.at("2"),
+            ref_locations=[t1.at("6")],
         )
 
         self.checkDefRefs(
             FakeWorkspace.single_doc(t1),
-            def_location=t1.at("3f"),
-            ref_locations=[t1.at("3f.1")],
+            def_location=t1.at("3"),
+            ref_locations=[t1.at("5")],
         )
 
     @unittest.skip("Cross-document references not implemented")
@@ -351,14 +347,10 @@ class TestDefRef(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                {
-                    f1: 1
-                    ^^f1
-                } + {
-                    f1: 2,
-                    f2: super.f1
-                              ^^f1.1
-                }
+                { f1: 1 }
+                  ^^f1
+                + { f1: 2, f2: super.f1 }
+                                     ^^f1.1
                 """
             )
         )
@@ -373,17 +365,10 @@ class TestDefRef(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                local o1 = {
-                      ^^o1
-                    f1: 1
-                    ^^f1
-                };
-                o1 + {
-                ^^o1.1
-                    f1: 2,
-                    f2: super.f1
-                              ^^f1.1
-                }
+                local o1 = { f1: 1 };
+                      ^^o1   ^^f1
+                o1 + { f1: 2, f2: super.f1 }
+                ^^o1.1                  ^^f1.1
                 """
             )
         )

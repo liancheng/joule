@@ -173,6 +173,9 @@ class LocationDSL(L.Location):
     def import_(self, path: Str) -> Import:
         return Import(self, "import", path)
 
+    def importbin(self, path: Str) -> Import:
+        return Import(self, "importbin", path)
+
     def importstr(self, path: Str) -> Import:
         return Import(self, "importstr", path)
 

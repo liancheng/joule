@@ -8,7 +8,7 @@ dependencies = [
     "pygls>=2.0.0",
     "rich>=14.2.0",
     "tree-sitter>=0.25.2",
-    "tree-sitter-language-pack>=0.13.0",
+    "tree-sitter-jsonnet",
     "typer>=0.20.1",
 ]
 
@@ -24,3 +24,11 @@ dev = [
     "debugpy>=1.8.19",
     "pytest>=9.0.2",
 ]
+
+[tool.uv.workspace]
+members = [
+    "vendor/tree-sitter-jsonnet",
+]
+
+[tool.uv.sources]
+tree-sitter-jsonnet = { workspace = true }

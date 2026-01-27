@@ -136,15 +136,15 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 (assert true; 1)
-                 ^^^^^^^^^^^a
-                        ^^^^t ^1
+                 ^^^^^^^^^^^1
+                        ^^^^2 ^3
                 """
             )
         )
 
         self.assertAstEqual(
             t.body,
-            t.at("a").assert_(t.at("t").true).guard(t.at("1").num(1)),
+            t.at("1").assert_(t.at("2").true).guard(t.at("3").num(1)),
         )
 
     def test_local(self):
@@ -152,7 +152,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 local x = 1; x
-                      ^x  ^1 ^x1
+                      ^1  ^2 ^3
                 """
             )
         )
@@ -160,8 +160,10 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.location.local(
-                [t.at("x").var("x").bind(t.at("1").num(1))],
-                t.at("x1").var_ref("x"),
+                binds=[
+                    t.at("1").var("x").bind(t.at("2").num(1)),
+                ],
+                body=t.at("3").var_ref("x"),
             ),
         )
 
@@ -477,6 +479,23 @@ class TestAST(unittest.TestCase):
             ),
         )
 
+    def test_importbin(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                importbin 'bin'
+                          ^^^^^path
+                """
+            )
+        )
+
+        self.assertAstEqual(
+            t.body,
+            t.location.importbin(
+                t.at("path").string("bin"),
+            ),
+        )
+
     def test_importstr(self):
         t = FakeDocument(
             dedent(
@@ -641,15 +660,15 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 { x: 1 }
-                  ^^^^f
-                  ^k ^v
+                  ^^^^1
+                  ^2 ^3
                 """
             )
         )
 
         self.assertAstEqual(
-            t.node_at("f"),
-            t.at("k").fixed_id_key("x").with_value(t.at("v").num(1)),
+            t.node_at("1"),
+            t.at("2").fixed_id_key("x").with_value(t.at("3").num(1)),
         )
 
     def test_hidden_field(self):
@@ -657,18 +676,18 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 { x+::: 1 }
-                  ^^^^^^^f
-                  ^k    ^v
+                  ^^^^^^^1
+                  ^2    ^3
                 """
             )
         )
 
         self.assertAstEqual(
-            t.node_at("f"),
-            t.at("k")
+            t.node_at("1"),
+            t.at("2")
             .fixed_id_key("x")
             .with_value(
-                t.at("v").num(1),
+                t.at("3").num(1),
                 visibility=Visibility.Forced,
                 inherited=True,
             ),
@@ -679,24 +698,24 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 { f(p, q = 0):: p + q }
-                  ^^^^^^^^^^^^^^^^^^^F
-                   ^^^^^^^^^^^^^^^^^^fn
-                  ^f^p ^q  ^0   ^p1 ^q1
+                  ^^^^^^^^^^^^^^^^^^^1
+                   ^^^^^^^^^^^^^^^^^^2
+                  ^3^4 ^5  ^6   ^7  ^8
                 """
             )
         )
 
         self.assertAstEqual(
-            t.node_at("F"),
-            t.at("f")
+            t.node_at("1"),
+            t.at("3")
             .fixed_id_key("f")
             .with_value(
-                t.at("fn").fn(
+                t.at("2").fn(
                     params=[
-                        t.at("p").var("p").param(),
-                        t.at("q").var("q").param(t.at("0").num(0)),
+                        t.at("4").var("p").param(),
+                        t.at("5").var("q").param(t.at("6").num(0)),
                     ],
-                    body=t.at("p1").var_ref("p") + t.at("q1").var_ref("q"),
+                    body=t.at("7").var_ref("p") + t.at("8").var_ref("q"),
                 ),
                 visibility=Visibility.Hidden,
             ),
@@ -729,57 +748,57 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 {
-                    ['f' + x]: 0
-                    ^^^^^^^^^k ^0
-                     ^^^f  ^x1
-                    ^^^^^^^^^^^^F
-                    for x in [1, 2]
-                        ^x    ^1 ^2
-                             ^^^^^^a
-                    ^^^^^^^^^^^^^^^fs
-                    if x > 3
-                    ^^^^^^^^is
-                       ^x2 ^3
+                    local x = 1,
+                          ^1  ^2
+                    ['f' + y]: x + y,
+                     ^^^3  ^4  ^5  ^6
+                    ^^^^^^^^^7
+                    assert true,
+                           ^^^^8
+                    ^^^^^^^^^^^9
+                    for x in [2, 3]
+                        ^10   ^11^12
+                             ^^^^^^13
+                    ^^^^^^^^^^^^^^^14
+                    if x + y < 4
+                       ^15 ^16 ^17
+                    ^^^^^^^^^^^^18
                 }
                 """
             )
         )
 
-        f = t.at("f").string("f")
-        x = t.at("x").var("x")
-        x_ref1 = t.at("x1").var_ref("x")
-        x_ref2 = t.at("x2").var_ref("x")
+        field = (
+            t.at("7")
+            .computed_key(t.at("3").string("f") + t.at("4").var_ref("y"))
+            .with_value(t.at("5").var_ref("x") + t.at("6").var_ref("y"))
+        )
 
-        _0 = t.at("0").num(0)
-        _1 = t.at("1").num(1)
-        _2 = t.at("2").num(2)
-        _3 = t.at("3").num(3)
+        assertion = t.at("9").assert_(t.at("8").true)
+
+        bind = t.at("1").var("x").bind(t.at("2").num(1))
+
+        array = t.at("13").array(
+            t.at("11").num(2),
+            t.at("12").num(3),
+        )
+
+        for_spec = t.at("14").for_(t.at("10").var("x"), array)
+
+        if_spec = t.at("18").if_(
+            t.at("15").var_ref("x") + t.at("16").var_ref("y") < t.at("17").num(4)
+        )
 
         self.assertAstEqual(
             t.body,
             ObjComp(
                 location=t.body.location,
-                binds=[],
-                field=t.at("k").computed_key(f + x_ref1).with_value(_0),
-                for_spec=t.at("fs").for_(x, t.at("a").array(_1, _2)),
-                comp_spec=[t.at("is").if_(x_ref2 > _3)],
+                field=field,
+                binds=[bind],
+                asserts=[assertion],
+                for_spec=for_spec,
+                comp_spec=[if_spec],
             ),
-        )
-
-    @unittest.skip("tree-sitter-jsonnet does not handle `objforloop` with local.")
-    def test_obj_comp_with_local(self):
-        FakeDocument(
-            dedent(
-                """\
-                {
-                    local y = 3,
-                    ['f' + x]: x,
-                    local z = 4,
-                    for x in [1, 2]
-                    if x > 1
-                }
-                """
-            )
         )
 
     def test_narrowest_enclosing_node(self):
@@ -788,44 +807,40 @@ class TestAST(unittest.TestCase):
                 """\
                 {
                   f: local x = 1; x
-                  ^^^^^^^^^^^^^^^^^field
-                  ^f ^^^^^^^^^^^^^^local
-                   ^colon  ^x^eq^semicolon
-                               ^1 ^x1
+                  ^1 ^^^^^^^^^^^^^^2
+                   ^3      ^4^5 ^6
+                               ^7 ^8
                 }
                 """
             )
         )
 
-        x = t.at("x").var("x")
-        x_ref = t.at("x1").var_ref("x")
-        bind_x = x.bind(t.at("1").num(1))
+        var = t.at("4").var("x")
+        bind = var.bind(t.at("7").num(1))
+        local = t.at("2").local(binds=[bind], body=t.at("8").var_ref("x"))
+        field = t.at("1").fixed_id_key("f").with_value(local)
 
-        f = t.at("f").fixed_id_key("f")
-        local = t.at("local").local(binds=[bind_x], body=x_ref)
-        field = f.with_value(local)
-
-        self.assertAstEqual(t.node_at(t.at("x").start), x)
-        self.assertAstEqual(t.node_at(t.at("eq").start), bind_x)
-        self.assertAstEqual(t.node_at(t.at("local").start), local)
-        self.assertAstEqual(t.node_at(t.at("semicolon").end), local)
-        self.assertAstEqual(t.node_at(t.at("colon").end), field)
+        self.assertAstEqual(t.node_at(t.at("2").start), local)
+        self.assertAstEqual(t.node_at(t.at("3").end), field)
+        self.assertAstEqual(t.node_at(t.at("4").start), var)
+        self.assertAstEqual(t.node_at(t.at("5").start), bind)
+        self.assertAstEqual(t.node_at(t.at("6").end), local)
 
     def test_slice(self):
         t = FakeDocument(
             dedent(
                 """\
                 local x = { f: 1, g: 2 }; x['f']
-                                          ^^^^^^s
-                                          ^x^^^f
+                                          ^^^^^^1
+                                          ^2^^^3
                 """
             )
         )
 
         self.assertAstEqual(
-            t.node_at("s"),
-            t.at("s").slice(
-                t.at("x").var_ref("x"),
-                t.at("f").string("f"),
+            t.node_at("1"),
+            t.at("1").slice(
+                t.at("2").var_ref("x"),
+                t.at("3").string("f"),
             ),
         )
