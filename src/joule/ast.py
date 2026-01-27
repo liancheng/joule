@@ -720,7 +720,7 @@ class Import(Expr):
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Import":
-        assert node.type in ["import", "importstr"]
+        assert node.type in ["import", "importbin", "importstr"]
 
         [path] = strip_comments(node.named_children)
         return Import(
@@ -729,7 +729,7 @@ class Import(Expr):
             Str.from_cst(uri, path),
         )
 
-    AST.register(from_cst, "import", "importstr")
+    AST.register(from_cst, "import", "importbin", "importstr")
 
 
 @D.dataclass
@@ -995,35 +995,35 @@ class Object(Expr):
     def from_cst(uri: URI, node: T.Node) -> "Object | ObjComp":
         assert node.type == "object"
 
-        match strip_comments(node.named_children):
-            case head, *_ if head.type == "objforloop":
-                return ObjComp.from_cst(uri, head)
-            case _:
-                binds = []
-                assertions = []
-                fields = []
+        if any(child.type == "forspec" for child in node.named_children):
+            return ObjComp.from_cst(uri, node)
+        else:
+            binds = []
+            asserts = []
+            fields = []
 
-                for member in strip_comments(node.named_children):
-                    assert member.type == "member"
-                    head, *_ = strip_comments(member.named_children)
-                    match head.type:
-                        case "objlocal":
-                            _, bind, *_ = strip_comments(head.named_children)
-                            binds.append(Bind.from_cst(uri, bind))
-                        case "assert":
-                            assertions.append(Assert.from_cst(uri, head))
-                        case "field":
-                            fields.append(Field.from_cst(uri, head))
+            for member in strip_comments(node.named_children):
+                assert member.type == "member"
+                head, *_ = strip_comments(member.named_children)
+                match head.type:
+                    case "objlocal":
+                        _, bind, *_ = strip_comments(head.named_children)
+                        binds.append(Bind.from_cst(uri, bind))
+                    case "assert":
+                        asserts.append(Assert.from_cst(uri, head))
+                    case "field":
+                        fields.append(Field.from_cst(uri, head))
 
-                return Object(location_of(uri, node), binds, assertions, fields)
+            return Object(location_of(uri, node), binds, asserts, fields)
 
     AST.register(from_cst, "object")
 
 
 @D.dataclass
 class ObjComp(Expr):
-    binds: list[Bind]
     field: Field
+    binds: list[Bind]
+    asserts: list[Assert]
     for_spec: ForSpec
     comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
 
@@ -1033,13 +1033,45 @@ class ObjComp(Expr):
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ObjComp":
-        assert node.type == "objforloop"
-        field, for_spec, *maybe_comp_spec = node.named_children
+        assert node.type == "object"
+
+        obj_locals = []
+        asserts = []
+        fields = []
+        for_specs = []
+        maybe_comp_spec = []
+
+        for child in strip_comments(node.named_children):
+            match child.type:
+                case "member":
+                    match strip_comments(child.named_children):
+                        case [member] if member.type == "field":
+                            fields.append(member)
+                        case [member] if member.type == "objlocal":
+                            obj_locals.append(member)
+                        case [member] if member.type == "assert":
+                            asserts.append(member)
+                        case _:
+                            pass
+                case "forspec":
+                    for_specs.append(child)
+                case "compspec":
+                    maybe_comp_spec.append(child)
+
+        [field] = fields
+        [for_spec] = for_specs
+        assert len(maybe_comp_spec) <= 1
+
+        def local_bind_from_cst(node: T.Node) -> Bind:
+            assert node.type == "objlocal"
+            _, bind, *_ = strip_comments(node.named_children)
+            return Bind.from_cst(uri, bind)
 
         return ObjComp(
             location=location_of(uri, node),
-            binds=[],
             field=Field.from_cst(uri, field),
+            binds=[local_bind_from_cst(local) for local in obj_locals],
+            asserts=[Assert.from_cst(uri, assertion) for assertion in asserts],
             for_spec=ForSpec.from_cst(uri, for_spec),
             comp_spec=[
                 ForSpec.from_cst(uri, spec)
@@ -1082,7 +1114,11 @@ class Slice(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.array, self.begin], maybe(self.end), maybe(self.step))
+        return chain(
+            [self.array, self.begin],
+            maybe(self.end),
+            maybe(self.step),
+        )
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Slice":
