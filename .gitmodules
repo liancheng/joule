@@ -1,0 +1,4 @@
+[submodule "vendor/tree-sitter-jsonnet"]
+	path = vendor/tree-sitter-jsonnet
+	url = https://github.com/liancheng/tree-sitter-jsonnet
+	branch = master
