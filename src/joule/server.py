@@ -7,8 +7,8 @@ import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
 from joule.ast import URI, location_contains
-from joule.model import WorkspaceIndex
 from joule.util import head_or_none, maybe
+from joule.workspace_model import WorkspaceIndex
 
 log = logging.root
 

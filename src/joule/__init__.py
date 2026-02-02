@@ -12,7 +12,8 @@ from joule.ast import (
     PrettyCST,
 )
 from joule.parsing import parse_jsonnet
-from joule.server import WorkspaceIndex, server
+from joule.server import server
+from joule.document_model import WorkspaceIndex
 
 app = typer.Typer(
     no_args_is_help=True,

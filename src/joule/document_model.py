@@ -62,8 +62,8 @@ class LocationKey:
 
 
 class DocumentIndex(Visitor):
-    def __init__(self, workspace_index: "WorkspaceIndex", doc: Document) -> None:
-        self.workspace_index = workspace_index
+    def __init__(self, workspace_root: URI, doc: Document) -> None:
+        self.workspace_root = workspace_root
         self.doc: Document = doc
         self.inlay_hints: dict[PositionKey, L.InlayHint] = {}
         self.current_var_scope: Scope = Scope()
@@ -85,22 +85,15 @@ class DocumentIndex(Visitor):
 
     @staticmethod
     def load(
-        workspace: "WorkspaceIndex",
-        uri_or_path: URI | Path,
+        workspace_root: URI,
+        uri: URI,
         source: str | None = None,
     ) -> "DocumentIndex":
-        match uri_or_path:
-            case Path():
-                path = uri_or_path
-                uri = path.as_uri()
-            case _:
-                uri = uri_or_path
-                path = Path.from_uri(uri)
-
+        path = Path.from_uri(uri)
         source = source or path.read_text("utf-8")
         cst = parse_jsonnet(source)
         doc = Document.from_cst(uri, cst)
-        return DocumentIndex(workspace, doc)
+        return DocumentIndex(workspace_root, doc)
 
     @property
     def uri(self):
@@ -161,19 +154,7 @@ class DocumentIndex(Visitor):
         defs.append(binding.location)
         refs.append(ref.location)
 
-        ref_doc = (
-            self
-            if ref.location.uri == self.uri
-            else self.workspace_index.get_or_load(ref.location.uri)
-        )
-
-        def_doc = (
-            self
-            if binding.location.uri == self.uri
-            else self.workspace_index.get_or_load(binding.location.uri)
-        )
-
-        ref_doc.add_hint(
+        self.add_hint(
             L.InlayHint(
                 position=ref.location.range.end,
                 label=Icon.Reference,
@@ -181,7 +162,7 @@ class DocumentIndex(Visitor):
         )
 
         # Shows the # of references.
-        def_doc.add_hint(
+        self.add_hint(
             L.InlayHint(
                 position=binding.location.range.end,
                 label=f"{Icon.Definition}{len(refs)}",
@@ -253,11 +234,6 @@ class DocumentIndex(Visitor):
                 )
             case Binary(_, _, _, rhs):
                 return self.find_self_scope(rhs, self.current_var_scope)
-            case Import(_, "import", path):
-                return head_or_none(
-                    self.find_self_scope(index.doc, index.current_var_scope)
-                    for index in maybe(self.importee_index(path.raw))
-                )
             case Local():
                 return head_or_none(
                     self.find_self_scope(t.body, local_scope)
@@ -404,7 +380,7 @@ class DocumentIndex(Visitor):
         self.visit(f.value)
 
     def resolve_importee_path(self, raw_path: str) -> Path:
-        root = Path.from_uri(self.workspace_index.root_uri)
+        root = Path.from_uri(self.workspace_root)
 
         if raw_path.startswith("../") or raw_path.startswith("./"):
             return Path.from_uri(self.uri).parent.joinpath(raw_path).absolute()
@@ -412,19 +388,6 @@ class DocumentIndex(Visitor):
             return path
         else:
             return root.joinpath("vendor", raw_path)
-
-    def importee_index(self, raw_path: str) -> "DocumentIndex | None":
-        path = self.resolve_importee_path(raw_path)
-        index = self.workspace_index.docs.get(path.as_uri())
-
-        return index or (
-            self.workspace_index.get_or_load(
-                uri=path.as_uri(),
-                source=path.read_text(encoding="utf-8"),
-            )
-            if path.exists()
-            else None
-        )
 
     def visit_import(self, e: Import):
         importee_path = self.resolve_importee_path(e.path.raw)
@@ -511,7 +474,7 @@ class WorkspaceIndex:
         ]
 
     def load(self, uri: URI, source: str | None):
-        self.docs[uri] = DocumentIndex.load(self, uri, source)
+        self.docs[uri] = DocumentIndex.load(self.root_uri, uri, source)
 
     def get_or_load(self, uri: URI, source: str | None = None) -> DocumentIndex:
         if uri not in self.docs:

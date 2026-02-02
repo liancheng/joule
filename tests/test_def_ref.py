@@ -232,37 +232,6 @@ class TestDefRef(unittest.TestCase):
             ref_locations=[t.at("g.1")],
         )
 
-    @unittest.skip("Cross-document references not implemented")
-    def test_import(self):
-        t1 = FakeDocument(
-            dedent(
-                """\
-                { f: 1 },
-                  ^f
-                """
-            ),
-            uri="file:///test/t1.jsonnet",
-        )
-
-        t2 = FakeDocument(
-            dedent(
-                """\
-                (import 't1.jsonnet').f
-                                      ^f
-                """
-            ),
-            uri="file:///test/t2.jsonnet",
-        )
-
-        self.checkDefRefs(
-            FakeWorkspace(
-                root_uri="file:///test/",
-                docs=[t1, t2],
-            ),
-            def_location=t1.at("f"),
-            ref_locations=[t2.at("f")],
-        )
-
     def test_same_var_field_names(self):
         t1 = FakeDocument(
             dedent(
@@ -294,37 +263,6 @@ class TestDefRef(unittest.TestCase):
             FakeWorkspace.single_doc(t1),
             def_location=t1.at("3"),
             ref_locations=[t1.at("5")],
-        )
-
-    @unittest.skip("Cross-document references not implemented")
-    def test_import_with_local(self):
-        t1 = FakeDocument(
-            dedent(
-                """\
-                local o1 = { f: 0 }; o1
-                             ^f_def
-                """
-            ),
-            uri="file:///test/t1.jsonnet",
-        )
-
-        t2 = FakeDocument(
-            dedent(
-                """\
-                local o2 = import 't1.jsonnet'; o2.f
-                                                   ^f_ref
-                """
-            ),
-            uri="file:///test/t2.jsonnet",
-        )
-
-        self.checkDefRefs(
-            FakeWorkspace(
-                root_uri="file:///test/",
-                docs=[t1, t2],
-            ),
-            def_location=t1.at("f_def"),
-            ref_locations=[t2.at("f_ref")],
         )
 
     def test_self(self):
