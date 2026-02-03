@@ -22,6 +22,7 @@ from joule.ast import (
     ListComp,
     Local,
     Num,
+    ObjComp,
     Object,
     Param,
     Self,
@@ -34,42 +35,44 @@ from joule.ast import (
 class Visitor:
     def visit(self, tree: AST):
         match tree:
-            case Document() as e:
-                self.visit_document(e)
-            case Id() as e:
-                self.visit_id(e)
-            case Str() as e:
-                self.visit_str(e)
-            case Num() as e:
-                self.visit_num(e)
-            case Bool() as e:
-                self.visit_bool(e)
-            case Array() as e:
-                self.visit_array(e)
-            case Binary() as e:
-                self.visit_binary(e)
-            case Local() as e:
-                self.visit_local(e)
-            case Fn() as e:
-                self.visit_fn(e)
-            case Call() as e:
-                self.visit_call(e)
-            case ListComp() as e:
-                self.visit_list_comp(e)
-            case Import() as e:
-                self.visit_import(e)
-            case AssertExpr() as e:
-                self.visit_assert_expr(e)
-            case If() as e:
-                self.visit_if(e)
-            case Object() as e:
-                self.visit_object(e)
-            case FieldAccess() as e:
-                self.visit_field_access(e)
-            case Self() as e:
-                self.visit_self(e)
-            case Super() as e:
-                self.visit_super(e)
+            case Document():
+                self.visit_document(tree)
+            case Id():
+                self.visit_id(tree)
+            case Str():
+                self.visit_str(tree)
+            case Num():
+                self.visit_num(tree)
+            case Bool():
+                self.visit_bool(tree)
+            case Array():
+                self.visit_array(tree)
+            case Binary():
+                self.visit_binary(tree)
+            case Local():
+                self.visit_local(tree)
+            case Fn():
+                self.visit_fn(tree)
+            case Call():
+                self.visit_call(tree)
+            case ListComp():
+                self.visit_list_comp(tree)
+            case Import():
+                self.visit_import(tree)
+            case AssertExpr():
+                self.visit_assert_expr(tree)
+            case If():
+                self.visit_if(tree)
+            case ObjComp():
+                self.visit_obj_comp(tree)
+            case Object():
+                self.visit_object(tree)
+            case FieldAccess():
+                self.visit_field_access(tree)
+            case Self():
+                self.visit_self(tree)
+            case Super():
+                self.visit_super(tree)
 
     def visit_document(self, e: Document):
         self.visit(e.body)
@@ -136,7 +139,7 @@ class Visitor:
         self.visit(e.expr)
 
     def visit_for_spec(self, s: ForSpec):
-        self.visit(s.container)
+        self.visit(s.source)
         self.visit_id(s.id)
 
     def visit_if_spec(self, s: IfSpec):
@@ -160,15 +163,29 @@ class Visitor:
         if e.alternative is not None:
             self.visit(e.alternative)
 
+    def visit_obj_comp(self, e: ObjComp):
+        self.visit_for_spec(e.for_spec)
+
+        for s in e.comp_spec:
+            match s:
+                case IfSpec():
+                    self.visit_if_spec(s)
+                case ForSpec():
+                    self.visit_for_spec(s)
+
+        for b in e.binds:
+            self.visit_bind(b)
+
+        for a in e.asserts:
+            self.visit_assert(a)
+
     def visit_object(self, e: Object):
         for f in e.fields:
             match f.key:
                 case FixedKey() as key:
-                    self.visit(key.id)
+                    self.visit_fixed_key(e, f, key)
                 case ComputedKey() as key:
-                    self.visit(key.expr)
-
-            self.visit_field_key(e, f)
+                    self.visit_computed_key(f, key)
 
         for b in e.binds:
             self.visit_bind(b)
@@ -177,13 +194,18 @@ class Visitor:
             self.visit_assert(a)
 
         for f in e.fields:
-            self.visit_field_value(e, f)
+            self.visit_field_value(f)
 
-    def visit_field_key(self, e: Object, f: Field):
+    def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         del e, f
+        self.visit(k.id)
 
-    def visit_field_value(self, e: Object, f: Field):
-        del e, f
+    def visit_computed_key(self, f: Field, k: ComputedKey):
+        del f
+        self.visit(k.expr)
+
+    def visit_field_value(self, f: Field):
+        self.visit(f.value)
 
     def visit_field_access(self, e: FieldAccess):
         self.visit(e.obj)

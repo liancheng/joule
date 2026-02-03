@@ -2,7 +2,7 @@ import dataclasses as D
 from enum import StrEnum, auto
 from itertools import chain, dropwhile
 from textwrap import dedent
-from typing import Any, Callable, ClassVar, Iterable, Iterator, cast
+from typing import Any, Callable, ClassVar, Iterable, Iterator, Type, TypeVar, cast
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -19,6 +19,8 @@ def strip_comments(nodes: list[T.Node]) -> list[T.Node]:
 
 
 ParseCST = Callable[[str, T.Node], "AST"]
+
+ASTType = TypeVar("ASTType", bound="AST")
 
 
 @D.dataclass
@@ -45,7 +47,11 @@ class AST:
             return ErrorAST.from_cst(uri, node)
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_scope(cls) -> bool:
+        return False
+
+    @classmethod
+    def has_field_scope(cls) -> bool:
         return False
 
     def __post_init__(self):
@@ -55,6 +61,14 @@ class AST:
         for child in self.children:
             child.parent = self
 
+    def to(self, expect_type: Type[ASTType]) -> ASTType:
+        if not isinstance(self, expect_type):
+            raise TypeError(
+                f"Expected {expect_type.__name__}, but got {type(self).__name__}"
+            )
+
+        return self
+
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
@@ -63,16 +77,17 @@ class AST:
     def children(self) -> Iterable["AST"]:
         return []
 
-    def node_at(self, pos_or_span: L.Position | L.Range) -> "AST | None":
+    def node_at(self, target: L.Range) -> "AST | None":
+        """Returns the narrowest AST node covering the target location."""
         candidate = head_or_none(
             node
             for child in self.children
-            if location_contains(child.location, pos_or_span)
-            for node in maybe(child.node_at(pos_or_span))
+            if range_contains(child.location.range, target)
+            for node in maybe(child.node_at(target))
         )
 
         match candidate:
-            case None if location_contains(self.location, pos_or_span):
+            case None if range_contains(self.location.range, target):
                 return self
             case None:
                 return None
@@ -497,7 +512,7 @@ class Local(Expr):
         return chain(self.binds, [self.body])
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_field(cls) -> bool:
         return True
 
     @staticmethod
@@ -560,7 +575,7 @@ class Fn(Expr):
         return self.body.tails
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_field(cls) -> bool:
         return True
 
     @staticmethod
@@ -648,11 +663,11 @@ class Call(Expr):
 @D.dataclass
 class ForSpec(AST):
     id: Id
-    container: Expr
+    source: Expr
 
     @property
     def children(self) -> Iterable[AST]:
-        return [self.id, self.container]
+        return [self.id, self.source]
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ForSpec":
@@ -696,7 +711,7 @@ class ListComp(Expr):
         return chain([self.expr, self.for_spec], self.comp_spec)
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_field(cls) -> bool:
         return True
 
     @staticmethod
@@ -922,9 +937,6 @@ class Field(AST):
     visibility: Visibility = Visibility.Default
     inherited: bool = False
 
-    def __post_init__(self):
-        self.enclosing_obj: Object | None = None
-
     @property
     def children(self) -> list[AST]:
         return [self.key, self.value]
@@ -997,7 +1009,6 @@ class Object(Expr):
     fields: list[Field] = D.field(default_factory=list)
 
     def __post_init__(self):
-        # A scope holding object fields.
         self.field_scope: Scope | None = None
 
     @property
@@ -1005,7 +1016,11 @@ class Object(Expr):
         return chain(self.binds, self.assertions, self.fields)
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_field(cls) -> bool:
+        return True
+
+    @classmethod
+    def has_field_scope(cls) -> bool:
         return True
 
     @staticmethod
@@ -1038,7 +1053,8 @@ class Object(Expr):
 
 @D.dataclass
 class ObjComp(Expr):
-    field: Field
+    key: ComputedKey
+    value: Expr
     binds: list[Bind]
     asserts: list[Assert]
     for_spec: ForSpec
@@ -1046,10 +1062,16 @@ class ObjComp(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(self.binds, [self.field], [self.for_spec], self.comp_spec)
+        return chain(
+            [self.key, self.value],
+            self.binds,
+            self.asserts,
+            [self.for_spec],
+            self.comp_spec,
+        )
 
     @classmethod
-    def is_binder(cls) -> bool:
+    def has_var_field(cls) -> bool:
         return True
 
     @staticmethod
@@ -1079,8 +1101,22 @@ class ObjComp(Expr):
                 case "compspec":
                     maybe_comp_spec.append(child)
 
-        [field] = fields
-        [for_spec] = for_specs
+        match [Field.from_cst(uri, f) for f in fields]:
+            case [Field(_, ComputedKey() as key, value)]:
+                pass
+            case _:
+                raise ValueError(
+                    "An object comprehension must have exactly 1 field with a computed key."
+                )
+
+        match [ForSpec.from_cst(uri, s) for s in for_specs]:
+            case [for_spec]:
+                pass
+            case _:
+                raise ValueError(
+                    "An object comprehension must have exactly 1 for-spec."
+                )
+
         assert len(maybe_comp_spec) <= 1
 
         def local_bind_from_cst(node: T.Node) -> Bind:
@@ -1090,10 +1126,11 @@ class ObjComp(Expr):
 
         return ObjComp(
             location=location_of(uri, node),
-            field=Field.from_cst(uri, field),
+            key=key,
+            value=value,
             binds=[local_bind_from_cst(local) for local in obj_locals],
             asserts=[Assert.from_cst(uri, assertion) for assertion in asserts],
-            for_spec=ForSpec.from_cst(uri, for_spec),
+            for_spec=for_spec,
             comp_spec=[
                 ForSpec.from_cst(uri, spec)
                 if spec.type == "forspec"
@@ -1241,16 +1278,8 @@ def location_of(uri: URI, node: T.Node) -> L.Location:
     return L.Location(uri, range_of(node))
 
 
-def range_contains(outer: L.Range, inner: L.Position | L.Range):
-    match inner:
-        case L.Position():
-            return outer.start <= inner <= outer.end
-        case L.Range():
-            return outer.start <= inner.start and inner.end <= outer.end
-
-
-def location_contains(outer: L.Location, inner: L.Position | L.Range):
-    return range_contains(outer.range, inner)
+def range_contains(outer: L.Range, inner: L.Range):
+    return outer.start <= inner.start and inner.end <= outer.end
 
 
 RangeLike = L.Range | T.Range | T.Node | AST

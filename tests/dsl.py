@@ -78,73 +78,6 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
-class LocationDSL(L.Location):
-    @property
-    def start(self):
-        return self.range.start
-
-    @property
-    def end(self):
-        return self.range.end
-
-    def slice(
-        self,
-        expr: Expr,
-        begin: Expr,
-        end: Expr | None = None,
-        step: Expr | None = None,
-    ) -> Slice:
-        return Slice(self, expr, begin, end, step)
-
-    def array(self, *values: Expr) -> Array:
-        return Array(self, list(values))
-
-    def object(self, *objinside: Bind | Assert | Field) -> Object:
-        binds = []
-        asserts = []
-        fields = []
-
-        for ast in objinside:
-            match ast:
-                case Bind():
-                    binds.append(ast)
-                case Assert():
-                    asserts.append(ast)
-                case Field():
-                    fields.append(ast)
-
-        return Object(self, binds, asserts, fields)
-
-    def if_(self, condition: Expr) -> IfSpec:
-        return IfSpec(self, condition)
-
-    def for_(self, id: Id, container: Expr) -> ForSpec:
-        return ForSpec(self, id, container)
-
-    def assert_(self, condition: Expr, message: Expr | None = None) -> Assert:
-        return Assert(self, condition, message)
-
-    def local(self, binds: list[Bind], body: Expr) -> Local:
-        return Local(self, binds, body)
-
-    def import_(self, path: Str) -> Import:
-        return Import(self, "import", path)
-
-    def importbin(self, path: Str) -> Import:
-        return Import(self, "importbin", path)
-
-    def importstr(self, path: Str) -> Import:
-        return Import(self, "importstr", path)
-
-    def list_comp(
-        self,
-        expr: Expr,
-        for_spec: ForSpec,
-        *comp_spec: ForSpec | IfSpec,
-    ) -> ListComp:
-        return ListComp(self, expr, for_spec, list(comp_spec))
-
-
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
@@ -204,12 +137,11 @@ class FakeDocument:
         return "\n".join(source_lines), locations
 
     @property
-    def location(self) -> LocationDSL:
-        return LocationDSL(self.body.location.uri, self.body.location.range)
+    def location(self) -> L.Location:
+        return self.body.location
 
-    def at(self, mark: str) -> LocationDSL:
-        location = self.locations[mark]
-        return LocationDSL(location.uri, location.range)
+    def at(self, mark: str) -> L.Location:
+        return self.locations[mark]
 
     def query_one(self, query: T.Query, capture: str) -> AST:
         node = head(T.QueryCursor(query).captures(self.root).get(capture, []))
@@ -219,8 +151,8 @@ class FakeDocument:
         match target:
             case str() as mark:
                 target = self.locations[mark].range
-            case _:
-                pass
+            case L.Position() as pos:
+                target = L.Range(pos, pos)
 
         return head(maybe(self.body.node_at(target)))
 
@@ -356,3 +288,64 @@ class FakeDocument:
 
     def call(self, *, at: str, fn: Expr, args: list[Arg]) -> Call:
         return Call(self.at(at), fn, args)
+
+    def array(self, at: str, *values: Expr) -> Array:
+        return Array(self.at(at), list(values))
+
+    def object(self, at: str, *objinside: Bind | Assert | Field) -> Object:
+        binds = []
+        asserts = []
+        fields = []
+
+        for ast in objinside:
+            match ast:
+                case Bind():
+                    binds.append(ast)
+                case Assert():
+                    asserts.append(ast)
+                case Field():
+                    fields.append(ast)
+
+        return Object(self.at(at), binds, asserts, fields)
+
+    def if_(self, *, at: str, condition: Expr) -> IfSpec:
+        return IfSpec(self.at(at), condition)
+
+    def for_(self, *, at: str, id: Id, source: Expr) -> ForSpec:
+        return ForSpec(self.at(at), id, source)
+
+    def assert_(
+        self, *, at: str, condition: Expr, message: Expr | None = None
+    ) -> Assert:
+        return Assert(self.at(at), condition, message)
+
+    def local(self, *, at: str, binds: list[Bind], body: Expr) -> Local:
+        return Local(self.at(at), binds, body)
+
+    def import_(self, *, at: str, path: Str) -> Import:
+        return Import(self.at(at), "import", path)
+
+    def importbin(self, *, at: str, path: Str) -> Import:
+        return Import(self.at(at), "importbin", path)
+
+    def importstr(self, *, at: str, path: Str) -> Import:
+        return Import(self.at(at), "importstr", path)
+
+    def list_comp(
+        self,
+        at: str,
+        expr: Expr,
+        for_spec: ForSpec,
+        *comp_spec: ForSpec | IfSpec,
+    ) -> ListComp:
+        return ListComp(self.at(at), expr, for_spec, list(comp_spec))
+
+    def slice(
+        self,
+        at: str,
+        expr: Expr,
+        begin: Expr,
+        end: Expr | None = None,
+        step: Expr | None = None,
+    ) -> Slice:
+        return Slice(self.at(at), expr, begin, end, step)
