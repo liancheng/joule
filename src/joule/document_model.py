@@ -237,7 +237,7 @@ class DocumentIndex(Visitor):
             case Local():
                 return head_or_none(
                     self.find_self_scope(t.body, local_scope)
-                    for local_scope in maybe(t.scope)
+                    for local_scope in maybe(t.var_scope)
                 )
             case Binary(_, Operator.Plus, _, rhs):
                 return self.find_self_scope(rhs, scope)
@@ -253,7 +253,7 @@ class DocumentIndex(Visitor):
             self.visit_bind(b)
 
         with self.var_scope(self.current_var_scope.nest()) as nested:
-            e.scope = nested
+            e.var_scope = nested
             self.visit(e.body)
 
     def visit_bind(self, b: Bind):
@@ -288,7 +288,9 @@ class DocumentIndex(Visitor):
         # This requires all parameters to be bound before traversing any parameter
         # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-        with self.var_scope(self.current_var_scope.nest()):
+        with self.var_scope(self.current_var_scope.nest()) as scope:
+            e.var_scope = scope
+
             for p in e.params:
                 self.current_var_scope.bind(p.id.name, p.id.location, p.default)
 

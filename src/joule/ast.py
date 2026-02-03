@@ -44,8 +44,13 @@ class AST:
         except Exception:
             return ErrorAST.from_cst(uri, node)
 
+    @classmethod
+    def is_binder(cls) -> bool:
+        return False
+
     def __post_init__(self):
         self.parent: AST | None = None
+        self.var_scope: Scope | None = None
 
         for child in self.children:
             child.parent = self
@@ -483,9 +488,6 @@ class Local(Expr):
     binds: list[Bind]
     body: Expr
 
-    def __post_init__(self):
-        self.scope: Scope | None = None
-
     @property
     def tails(self) -> list[Expr]:
         return self.body.tails
@@ -493,6 +495,10 @@ class Local(Expr):
     @property
     def children(self) -> Iterable[AST]:
         return chain(self.binds, [self.body])
+
+    @classmethod
+    def is_binder(cls) -> bool:
+        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Local":
@@ -552,6 +558,10 @@ class Fn(Expr):
     @property
     def tails(self) -> list[Expr]:
         return self.body.tails
+
+    @classmethod
+    def is_binder(cls) -> bool:
+        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Fn":
@@ -684,6 +694,10 @@ class ListComp(Expr):
     @property
     def children(self) -> Iterable[AST]:
         return chain([self.expr, self.for_spec], self.comp_spec)
+
+    @classmethod
+    def is_binder(cls) -> bool:
+        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ListComp":
@@ -983,13 +997,16 @@ class Object(Expr):
     fields: list[Field] = D.field(default_factory=list)
 
     def __post_init__(self):
-        self.var_scope: Scope | None = None
         self.super_scope: Scope | None = None
         self.self_scope: Scope | None = None
 
     @property
     def children(self) -> Iterable[AST]:
         return chain(self.binds, self.assertions, self.fields)
+
+    @classmethod
+    def is_binder(cls) -> bool:
+        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Object | ObjComp":
@@ -1030,6 +1047,10 @@ class ObjComp(Expr):
     @property
     def children(self) -> Iterable[AST]:
         return chain(self.binds, [self.field], [self.for_spec], self.comp_spec)
+
+    @classmethod
+    def is_binder(cls) -> bool:
+        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ObjComp":
