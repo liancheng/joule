@@ -6,14 +6,10 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from joule.ast import (
-    AST,
-    PrettyAST,
-    PrettyCST,
-)
+from joule.ast import AST, Document, PrettyAST, PrettyCST
+from joule.model import ScopeBuilder
 from joule.parsing import parse_jsonnet
 from joule.server import server
-from joule.document_model import WorkspaceIndex
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -94,4 +90,6 @@ def index(
         ),
     ],
 ):
-    WorkspaceIndex(workspace_root.as_uri()).load(path.as_uri(), path.read_text())
+    cst = parse_jsonnet(path.read_text())
+    ast = Document.from_cst(path.as_uri(), cst)
+    ScopeBuilder(ast).build()

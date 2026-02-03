@@ -1,14 +1,13 @@
 import logging
-from itertools import chain
 from pathlib import Path
-from typing import Iterator
 
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
-from joule.ast import URI, location_contains
-from joule.util import head_or_none, maybe
-from joule.workspace_model import WorkspaceIndex
+from joule.ast import AST, URI, Document
+from joule.parsing import parse_jsonnet
+from joule.util import maybe
+from joule.model import ScopeBuilder
 
 log = logging.root
 
@@ -19,7 +18,12 @@ class JouleLanguageServer(LanguageServer):
 
     def set_workspace_root(self, root_path: str, root_uri: URI):
         self.workspace.add_folder(L.WorkspaceFolder(root_path, root_uri))
-        self.workspace_index = WorkspaceIndex(root_uri)
+        self.trees: dict[URI, AST] = {}
+
+    def load(self, uri: URI, source: str):
+        cst = parse_jsonnet(source)
+        tree = Document.from_cst(uri, cst)
+        self.trees[uri] = ScopeBuilder(tree).build()
 
 
 server = JouleLanguageServer("joule", "v0.1")
@@ -64,81 +68,10 @@ def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
         root = Path.from_uri(doc.uri).absolute().parent
         ls.set_workspace_root(root.as_posix(), root.as_uri())
 
-    ls.workspace_index.load(doc.uri, doc.text)
+    ls.load(doc.uri, doc.text)
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
-    # TODO: Patch the AST incrementally.
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    ls.workspace_index.load(doc.uri, doc.source)
-
-
-@server.feature(L.WORKSPACE_SYMBOL)
-def workspace_symbol(ls: JouleLanguageServer, _: L.WorkspaceSymbolParams):
-    def offsprings(symbol: L.DocumentSymbol) -> Iterator[L.DocumentSymbol]:
-        return iter(
-            offspring
-            for children in maybe(symbol.children)
-            for child in children
-            for offspring in chain([child], offsprings(child))
-        )
-
-    return [
-        L.WorkspaceSymbol(
-            location=L.Location(doc.uri, symbol.range),
-            name=symbol.name,
-            kind=symbol.kind,
-        )
-        for doc in ls.workspace_index.docs.values()
-        for top_level_symbol in doc.document_symbols
-        for symbol in offsprings(top_level_symbol)
-    ]
-
-
-@server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
-def document_symbol(ls: JouleLanguageServer, params: L.DocumentColorParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    return ls.workspace_index.get_or_load(doc.uri, doc.source).document_symbols
-
-
-@server.feature(L.TEXT_DOCUMENT_DEFINITION)
-def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
-    return ls.workspace_index.definitions(params.text_document.uri, params.position)
-
-
-@server.feature(L.TEXT_DOCUMENT_REFERENCES)
-def references(ls: JouleLanguageServer, params: L.ReferenceParams):
-    return ls.workspace_index.references(params.text_document.uri, params.position)
-
-
-@server.feature(L.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
-def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
-    return doc_index.highlight(params.position)
-
-
-@server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
-def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
-    return list(doc_index.inlay_hints.values())
-
-
-@server.feature(L.TEXT_DOCUMENT_DOCUMENT_LINK)
-def document_link(ls: JouleLanguageServer, params: L.DocumentLinkParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
-    return doc_index.links
-
-
-@server.feature(L.TEXT_DOCUMENT_HOVER)
-def hover(ls: JouleLanguageServer, params: L.HoverParams):
-    doc = ls.workspace.get_text_document(params.text_document.uri)
-    doc_index = ls.workspace_index.get_or_load(doc.uri, doc.source)
-    return head_or_none(
-        hover
-        for key, hover in doc_index.hovers.items()
-        if location_contains(key.location, params.position)
-    )
+    ls.load(doc.uri, doc.source)

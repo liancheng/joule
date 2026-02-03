@@ -997,8 +997,8 @@ class Object(Expr):
     fields: list[Field] = D.field(default_factory=list)
 
     def __post_init__(self):
-        self.super_scope: Scope | None = None
-        self.self_scope: Scope | None = None
+        # A scope holding object fields.
+        self.field_scope: Scope | None = None
 
     @property
     def children(self) -> Iterable[AST]:

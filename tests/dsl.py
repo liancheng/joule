@@ -1,6 +1,5 @@
 import re
 from itertools import accumulate, chain
-from pathlib import Path
 from textwrap import dedent
 
 import lsprotocol.types as L
@@ -34,7 +33,6 @@ from joule.ast import (
     Str,
 )
 from joule.parsing import parse_jsonnet
-from joule.server import WorkspaceIndex
 from joule.util import head, maybe
 
 LOCATION_MARK_PATTERN = re.compile(
@@ -88,47 +86,6 @@ class LocationDSL(L.Location):
     @property
     def end(self):
         return self.range.end
-
-    def id(self, name: str, kind: Id.Kind) -> Id:
-        return Id(self, name, kind)
-
-    def var(self, name: str) -> Id:
-        return self.id(name, Id.Kind.Var)
-
-    def var_ref(self, name: str) -> Id:
-        return self.id(name, Id.Kind.VarRef)
-
-    def arg_ref(self, name: str) -> Id:
-        return self.id(name, Id.Kind.ArgRef)
-
-    def num(self, value: float | int) -> Num:
-        return Num(self, float(value))
-
-    @property
-    def true(self) -> Bool:
-        return Bool(self, True)
-
-    @property
-    def false(self) -> Bool:
-        return Bool(self, False)
-
-    def string(self, value: str) -> Str:
-        return Str(self, value)
-
-    def fixed_id_key(self, name: str) -> FixedKey:
-        return FixedKey(self, self.id(name, Id.Kind.Field))
-
-    def fixed_str_key(self, name: str) -> FixedKey:
-        return FixedKey(self, self.string(name))
-
-    def computed_key(self, expr: Expr) -> ComputedKey:
-        return ComputedKey(self, expr)
-
-    def fn(self, params: list[Param], body: Expr) -> Fn:
-        return Fn(self, params, body)
-
-    def call(self, fn: Expr, args: list[Arg]) -> Call:
-        return Call(self, fn, args)
 
     def slice(
         self,
@@ -361,17 +318,41 @@ class FakeDocument:
 
         return Text("\n").join(rendered)
 
+    def _id(self, at: str, name: str, kind: Id.Kind) -> Id:
+        return Id(self.at(at), name, kind)
 
-class FakeWorkspace:
-    def __init__(self, root_uri: str, docs: list[FakeDocument]) -> None:
-        self.docs = {doc.uri: doc for doc in docs}
-        self.index = WorkspaceIndex(root_uri)
+    def var(self, *, at: str, name: str) -> Id:
+        return self._id(at, name, Id.Kind.Var)
 
-        for doc in docs:
-            assert doc.uri not in self.index.docs
-            self.index.load(doc.uri, doc.source)
+    def var_ref(self, *, at: str, name: str) -> Id:
+        return self._id(at, name, Id.Kind.VarRef)
 
-    @staticmethod
-    def single_doc(doc: FakeDocument) -> "FakeWorkspace":
-        root_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
-        return FakeWorkspace(root_uri, [doc])
+    def arg_ref(self, *, at: str, name: str) -> Id:
+        return self._id(at, name, Id.Kind.ArgRef)
+
+    def fixed_id_key(self, *, at: str, name: str) -> FixedKey:
+        return FixedKey(self.at(at), self._id(at, name, Id.Kind.Field))
+
+    def num(self, *, at: str, value: float | int) -> Num:
+        return Num(self.at(at), float(value))
+
+    def true(self, *, at: str) -> Bool:
+        return Bool(self.at(at), True)
+
+    def false(self, *, at: str) -> Bool:
+        return Bool(self.at(at), False)
+
+    def string(self, *, at: str, value: str) -> Str:
+        return Str(self.at(at), value)
+
+    def fixed_str_key(self, *, at: str, name: str) -> FixedKey:
+        return FixedKey(self.at(at), self.string(at=at, value=name))
+
+    def computed_key(self, *, at: str, expr: Expr) -> ComputedKey:
+        return ComputedKey(self.at(at), expr)
+
+    def fn(self, *, at: str, params: list[Param], body: Expr) -> Fn:
+        return Fn(self.at(at), params, body)
+
+    def call(self, *, at: str, fn: Expr, args: list[Arg]) -> Call:
+        return Call(self.at(at), fn, args)
