@@ -69,6 +69,10 @@ class AST:
 
         return self
 
+    def set_var_scope(self, scope: Scope):
+        self.var_scope = scope
+        scope.span = self.location.range
+
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
@@ -512,7 +516,7 @@ class Local(Expr):
         return chain(self.binds, [self.body])
 
     @classmethod
-    def has_var_field(cls) -> bool:
+    def has_var_scope(cls) -> bool:
         return True
 
     @staticmethod
@@ -575,7 +579,7 @@ class Fn(Expr):
         return self.body.tails
 
     @classmethod
-    def has_var_field(cls) -> bool:
+    def has_var_scope(cls) -> bool:
         return True
 
     @staticmethod
@@ -711,7 +715,7 @@ class ListComp(Expr):
         return chain([self.expr, self.for_spec], self.comp_spec)
 
     @classmethod
-    def has_var_field(cls) -> bool:
+    def has_var_scope(cls) -> bool:
         return True
 
     @staticmethod
@@ -897,7 +901,7 @@ class FieldKey(AST):
 
     AST.register(from_cst, "fieldname")
 
-    def with_value(
+    def map_to(
         self,
         value: Expr,
         visibility: Visibility = Visibility.Default,
@@ -915,6 +919,14 @@ class FieldKey(AST):
 @D.dataclass
 class FixedKey(FieldKey):
     id: Id | Str
+
+    @property
+    def name(self) -> str:
+        match self.id:
+            case Id(_, name, _):
+                return name
+            case Str(_, raw):
+                return raw
 
     @property
     def children(self) -> list[AST]:
@@ -1011,12 +1023,16 @@ class Object(Expr):
     def __post_init__(self):
         self.field_scope: Scope | None = None
 
+    def set_field_scope(self, scope: Scope):
+        self.field_scope = scope
+        scope.span = self.location.range
+
     @property
     def children(self) -> Iterable[AST]:
         return chain(self.binds, self.assertions, self.fields)
 
     @classmethod
-    def has_var_field(cls) -> bool:
+    def has_var_scope(cls) -> bool:
         return True
 
     @classmethod
@@ -1071,7 +1087,7 @@ class ObjComp(Expr):
         )
 
     @classmethod
-    def has_var_field(cls) -> bool:
+    def has_var_scope(cls) -> bool:
         return True
 
     @staticmethod
@@ -1337,7 +1353,7 @@ class Binding:
     scope: "Scope"
     name: str
     location: L.Location
-    target: AST | None = None
+    bound_to: AST | None = None
 
 
 @D.dataclass
@@ -1345,6 +1361,7 @@ class Scope:
     bindings: list[Binding] = D.field(default_factory=list)
     parent: "Scope | None" = None
     children: list["Scope"] = D.field(default_factory=list)
+    span: L.Range | None = None
 
     def bind(self, name: str, location: L.Location, target: AST | None = None):
         self.bindings.insert(0, Binding(self, name, location, target))
@@ -1382,8 +1399,10 @@ class PrettyScope(PrettyTree):
                 repr = "Scope"
             case Binding(_, name, _, None):
                 repr = name
-            case Binding(_, name, _, value):
-                repr = f'"{name}" <- {value.__class__.__name__}'
+            case Binding(_, name, _, AST() as bound_to):
+                bound_to_class = bound_to.__class__.__name__
+                bound_to_range = bound_to.location.range
+                repr = f'"{name}" <- {bound_to_class} @ {bound_to_range}'
             case []:
                 repr = "[]"
             case list():

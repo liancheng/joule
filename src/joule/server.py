@@ -7,7 +7,7 @@ from pygls.lsp.server import LanguageServer
 from joule.ast import AST, URI, Document
 from joule.parsing import parse_jsonnet
 from joule.util import maybe
-from joule.model import ScopeBuilder
+from joule.model import ScopeResolver
 
 log = logging.root
 
@@ -23,7 +23,7 @@ class JouleLanguageServer(LanguageServer):
     def load(self, uri: URI, source: str):
         cst = parse_jsonnet(source)
         tree = Document.from_cst(uri, cst)
-        self.trees[uri] = ScopeBuilder(tree).build()
+        self.trees[uri] = ScopeResolver(tree).build()
 
 
 server = JouleLanguageServer("joule", "v0.1")

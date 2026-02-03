@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from joule.ast import AST, Document, PrettyAST, PrettyCST
-from joule.model import ScopeBuilder
+from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.server import server
 
@@ -92,4 +92,4 @@ def index(
 ):
     cst = parse_jsonnet(path.read_text())
     ast = Document.from_cst(path.as_uri(), cst)
-    ScopeBuilder(ast).build()
+    ScopeResolver(ast).build()

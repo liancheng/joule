@@ -1,3 +1,4 @@
+import dataclasses as D
 import re
 from itertools import accumulate, chain
 from textwrap import dedent
@@ -31,7 +32,9 @@ from joule.ast import (
     Param,
     Slice,
     Str,
+    Visibility,
 )
+from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.util import head, maybe
 
@@ -78,20 +81,38 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
+@D.dataclass
+class VarBinding:
+    location: L.Location
+    name: str
+    bound_to: Expr
+
+
+@D.dataclass
+class FieldBinding:
+    location: L.Location
+    key: FixedKey
+    value: Expr
+    visibility: Visibility
+    inherited: bool
+
+
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
         self.source, self.locations = self._preprocess(source)
-        self.root = parse_jsonnet(self.source)
-        self.body = Document.from_cst(self.uri, self.root).body
+        self.cst = parse_jsonnet(self.source)
+        self.ast = ScopeResolver().resolve(Document.from_cst(self.uri, self.cst))
+        self.body = self.ast.body
         self.lines = self.source.splitlines(keepends=True)
 
-        # Appends the last empty line if needed.
+        # When the source ends with a newline, `str.splitlines` does not preserve the
+        # last empty line.
         if source.endswith("\n"):
             self.lines.append("")
 
         # Computes the character offset of the first character in each line, used for
-        # converting line-character positions to offsets.
+        # converting 2D positions to 1D offsets.
         self.line_offsets: list[int] = list(
             accumulate(chain([0], map(len, self.lines)))
         )
@@ -144,7 +165,7 @@ class FakeDocument:
         return self.locations[mark]
 
     def query_one(self, query: T.Query, capture: str) -> AST:
-        node = head(T.QueryCursor(query).captures(self.root).get(capture, []))
+        node = head(T.QueryCursor(query).captures(self.cst).get(capture, []))
         return AST.from_cst(self.uri, node)
 
     def node_at(self, target: str | L.Position | L.Range) -> AST:
@@ -349,3 +370,17 @@ class FakeDocument:
         step: Expr | None = None,
     ) -> Slice:
         return Slice(self.at(at), expr, begin, end, step)
+
+    def bind_var(self, *, at: str, name: str, to: Expr) -> VarBinding:
+        return VarBinding(self.at(at), name, to)
+
+    def bind_field(
+        self,
+        *,
+        at: str,
+        key: FixedKey,
+        value: Expr,
+        visibility: Visibility = Visibility.Default,
+        inherited: bool = False,
+    ) -> FieldBinding:
+        return FieldBinding(self.at(at), key, value, visibility, inherited)

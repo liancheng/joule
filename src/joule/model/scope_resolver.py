@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 
 from joule.ast import (
-    AST,
     Bind,
     Document,
     Field,
@@ -9,7 +8,9 @@ from joule.ast import (
     Fn,
     ForSpec,
     Id,
+    ListComp,
     Local,
+    ObjComp,
     Object,
     Scope,
     Str,
@@ -17,14 +18,13 @@ from joule.ast import (
 from joule.visitor import Visitor
 
 
-class ScopeBuilder(Visitor):
-    def __init__(self, tree: Document) -> None:
-        self.tree: Document = tree
+class ScopeResolver(Visitor):
+    def __init__(self) -> None:
         self.var_scope: Scope = Scope()
 
-    def build(self) -> AST:
-        self.visit(self.tree)
-        return self.tree
+    def resolve(self, tree: Document) -> Document:
+        self.visit(tree)
+        return tree
 
     @contextmanager
     def activate_var_scope(self, scope: Scope):
@@ -38,6 +38,7 @@ class ScopeBuilder(Visitor):
     def visit_local(self, e: Local):
         with self.activate_var_scope(self.var_scope.nest()) as scope:
             e.var_scope = scope
+            scope.span = e.location.range
 
             for b in e.binds:
                 self.visit_bind(b)
@@ -63,6 +64,7 @@ class ScopeBuilder(Visitor):
         # `visit_fn` instead of `visit_param`.
         with self.activate_var_scope(self.var_scope.nest()) as scope:
             e.var_scope = scope
+            scope.span = e.location.range
 
             for p in e.params:
                 self.var_scope.bind(p.id.name, p.id.location, p.default)
@@ -73,9 +75,19 @@ class ScopeBuilder(Visitor):
 
             self.visit(e.body)
 
+    def visit_list_comp(self, e: ListComp):
+        with self.activate_var_scope(self.var_scope.nest()) as scope:
+            e.set_var_scope(scope)
+            super().visit_list_comp(e)
+
+    def visit_obj_comp(self, e: ObjComp):
+        with self.activate_var_scope(self.var_scope.nest()) as scope:
+            e.set_var_scope(scope)
+            super().visit_obj_comp(e)
+
     def visit_for_spec(self, s: ForSpec):
-        self.var_scope.bind(s.id.name, s.id.location, s.source)
         self.visit(s.source)
+        self.var_scope.bind(s.id.name, s.id.location, s.source)
 
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None
@@ -89,6 +101,7 @@ class ScopeBuilder(Visitor):
         e.field_scope.bind(name, k.location, f)
 
     def visit_object(self, e: Object):
-        e.var_scope = self.var_scope
-        e.field_scope = Scope.empty()
-        super().visit_object(e)
+        with self.activate_var_scope(self.var_scope.nest()) as scope:
+            e.set_var_scope(scope)
+            e.set_field_scope(Scope.empty())
+            super().visit_object(e)

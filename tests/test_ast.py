@@ -634,7 +634,7 @@ class TestAST(unittest.TestCase):
     def assertAstEqualByQuery(
         self, doc: FakeDocument, query: T.Query, capture: str, expected: AST
     ):
-        captures = T.QueryCursor(query).captures(doc.root)
+        captures = T.QueryCursor(query).captures(doc.cst)
         [node] = captures[capture]
         self.assertAstEqual(AST.from_cst(doc.uri, node), expected)
 
@@ -697,7 +697,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at("1"),
-            t.fixed_id_key(at="2", name="x").with_value(t.num(at="3", value=1)),
+            t.fixed_id_key(at="2", name="x").map_to(t.num(at="3", value=1)),
         )
 
     def test_hidden_field(self):
@@ -713,7 +713,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at("1"),
-            t.fixed_id_key(at="2", name="x").with_value(
+            t.fixed_id_key(at="2", name="x").map_to(
                 t.num(at="3", value=1),
                 visibility=Visibility.Forced,
                 inherited=True,
@@ -734,7 +734,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at("1"),
-            t.fixed_id_key(at="3", name="f").with_value(
+            t.fixed_id_key(at="3", name="f").map_to(
                 t.fn(
                     at="2",
                     params=[
@@ -761,7 +761,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at("f"),
-            t.fixed_id_key(at="k", name="f").with_value(
+            t.fixed_id_key(at="k", name="f").map_to(
                 t.fn(
                     at="fn",
                     params=[],
@@ -851,7 +851,7 @@ class TestAST(unittest.TestCase):
         var = t.var(at="4", name="x")
         bind = var.bind(t.num(at="7", value=1))
         local = t.local(at="2", binds=[bind], body=t.var_ref(at="8", name="x"))
-        field = t.fixed_id_key(at="1", name="f").with_value(local)
+        field = t.fixed_id_key(at="1", name="f").map_to(local)
 
         self.assertAstEqual(t.node_at(t.at("2").range.start), local)
         self.assertAstEqual(t.node_at(t.at("3").range.end), field)

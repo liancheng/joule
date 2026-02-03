@@ -1,5 +1,5 @@
-from .scope_builder import ScopeBuilder
+from .scope_resolver import ScopeResolver
 
 __all__ = [
-    "ScopeBuilder",
+    "ScopeResolver",
 ]
