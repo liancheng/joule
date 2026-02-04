@@ -164,6 +164,7 @@ class Visitor:
             self.visit(e.alternative)
 
     def visit_obj_comp(self, e: ObjComp):
+        self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
         self.visit_for_spec(e.for_spec)
 
         for s in e.comp_spec:
@@ -179,7 +180,18 @@ class Visitor:
         for a in e.asserts:
             self.visit_assert(a)
 
+        self.visit(e.field.value)
+
     def visit_object(self, e: Object):
+        # THe following traversal order is important:
+        #
+        #  * Field keys
+        #  * Object local bindings
+        #  * Object local assertions
+        #  * Field values
+        #
+        # This is because the scope of Jsonnet object local bindings does not cover
+        # computed field keys, but covers assertions and field values.
         for f in e.fields:
             match f.key:
                 case FixedKey() as key:

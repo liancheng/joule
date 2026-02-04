@@ -1069,17 +1069,19 @@ class Object(Expr):
 
 @D.dataclass
 class ObjComp(Expr):
-    key: ComputedKey
-    value: Expr
+    field: Field
     binds: list[Bind]
     asserts: list[Assert]
     for_spec: ForSpec
     comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
 
+    def __post_init__(self):
+        assert isinstance(self.field.key, ComputedKey)
+
     @property
     def children(self) -> Iterable[AST]:
         return chain(
-            [self.key, self.value],
+            [self.field],
             self.binds,
             self.asserts,
             [self.for_spec],
@@ -1118,7 +1120,7 @@ class ObjComp(Expr):
                     maybe_comp_spec.append(child)
 
         match [Field.from_cst(uri, f) for f in fields]:
-            case [Field(_, ComputedKey() as key, value)]:
+            case [Field(_, ComputedKey(), _) as field]:
                 pass
             case _:
                 raise ValueError(
@@ -1142,8 +1144,7 @@ class ObjComp(Expr):
 
         return ObjComp(
             location=location_of(uri, node),
-            key=key,
-            value=value,
+            field=field,
             binds=[local_bind_from_cst(local) for local in obj_locals],
             asserts=[Assert.from_cst(uri, assertion) for assertion in asserts],
             for_spec=for_spec,

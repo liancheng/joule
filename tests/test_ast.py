@@ -778,8 +778,8 @@ class TestAST(unittest.TestCase):
                 {
                     local x = 1,
                           ^1  ^2
-                    ['f' + y]: x + y,
-                     ^^^3  ^4  ^5  ^6
+                    ['f' + y]:: x + y,
+                     ^^^3  ^4   ^5  ^6
                     ^^^^^^^^^7
                     assert true,
                            ^^^^8
@@ -795,6 +795,13 @@ class TestAST(unittest.TestCase):
                 """
             )
         )
+
+        key = t.computed_key(
+            at="7",
+            expr=t.string(at="3", value="f") + t.var_ref(at="4", name="y"),
+        )
+
+        value = t.var_ref(at="5", name="x") + t.var_ref(at="6", name="y")
 
         array = t.array(
             "13",
@@ -820,11 +827,7 @@ class TestAST(unittest.TestCase):
             t.body,
             ObjComp(
                 location=t.body.location,
-                key=t.computed_key(
-                    at="7",
-                    expr=t.string(at="3", value="f") + t.var_ref(at="4", name="y"),
-                ),
-                value=t.var_ref(at="5", name="x") + t.var_ref(at="6", name="y"),
+                field=key.map_to(value, Visibility.Hidden),
                 binds=[
                     t.var(at="1", name="x").bind(t.num(at="2", value=1)),
                 ],
