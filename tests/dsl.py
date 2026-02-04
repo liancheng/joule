@@ -164,6 +164,12 @@ class FakeDocument:
     def at(self, mark: str) -> L.Location:
         return self.locations[mark]
 
+    def start_of(self, mark: str) -> L.Position:
+        return self.locations[mark].range.start
+
+    def end_of(self, mark: str) -> L.Position:
+        return self.locations[mark].range.end
+
     def query_one(self, query: T.Query, capture: str) -> AST:
         node = head(T.QueryCursor(query).captures(self.cst).get(capture, []))
         return AST.from_cst(self.uri, node)
@@ -180,7 +186,7 @@ class FakeDocument:
     def offset_of(self, pos: L.Position) -> int:
         return self.line_offsets[pos.line] + pos.character
 
-    def highlight(self, ranges: list[L.Range], style: str):
+    def highlight(self, ranges: list[L.Range], style: str) -> Text:
         """Renders the Jsonnet document with given text ranges highlighted.
 
         The document is rendered with its URI, a top ruler, an optional bottom ruler
@@ -310,10 +316,10 @@ class FakeDocument:
     def call(self, *, at: str, fn: Expr, args: list[Arg]) -> Call:
         return Call(self.at(at), fn, args)
 
-    def array(self, at: str, *values: Expr) -> Array:
-        return Array(self.at(at), list(values))
+    def array(self, *, at: str, values: list[Expr]) -> Array:
+        return Array(self.at(at), values)
 
-    def object(self, at: str, *objinside: Bind | Assert | Field) -> Object:
+    def object(self, *, at: str, objinside: list[Bind | Assert | Field] = []) -> Object:
         binds = []
         asserts = []
         fields = []
@@ -371,10 +377,10 @@ class FakeDocument:
     ) -> Slice:
         return Slice(self.at(at), expr, begin, end, step)
 
-    def bind_var(self, *, at: str, name: str, to: Expr) -> VarBinding:
+    def var_binding(self, *, at: str, name: str, to: Expr) -> VarBinding:
         return VarBinding(self.at(at), name, to)
 
-    def bind_field(
+    def field_binding(
         self,
         *,
         at: str,

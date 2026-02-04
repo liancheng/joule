@@ -18,7 +18,7 @@ class DocumentSymbolProvider(Visitor):
         )
         self.breadcrumb = [self.root_symbol]
 
-    def collect(self, tree: Document) -> Sequence[L.DocumentSymbol]:
+    def serve(self, tree: Document) -> Sequence[L.DocumentSymbol]:
         self.visit(tree)
         return self.root_symbol.children or []
 

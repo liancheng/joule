@@ -319,10 +319,12 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.array(
-                "1",
-                t.num(at="2", value=1),
-                t.true(at="3"),
-                t.string(at="4", value="3"),
+                at="1",
+                values=[
+                    t.num(at="2", value=1),
+                    t.true(at="3"),
+                    t.string(at="4", value="3"),
+                ],
             ),
         )
 
@@ -430,7 +432,7 @@ class TestAST(unittest.TestCase):
             t.list_comp(
                 "10",
                 x_ref1,
-                t.for_(at="9", id=x, source=t.array("6", _1, _2)),
+                t.for_(at="9", id=x, source=t.array(at="6", values=[_1, _2])),
                 t.if_(at="8", condition=x_ref2 > _3),
             ),
         )
@@ -804,9 +806,11 @@ class TestAST(unittest.TestCase):
         value = t.var_ref(at="5", name="x") + t.var_ref(at="6", name="y")
 
         array = t.array(
-            "13",
-            t.num(at="11", value=2),
-            t.num(at="12", value=3),
+            at="13",
+            values=[
+                t.num(at="11", value=2),
+                t.num(at="12", value=3),
+            ],
         )
 
         for_spec = t.for_(

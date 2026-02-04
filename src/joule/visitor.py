@@ -164,23 +164,23 @@ class Visitor:
             self.visit(e.alternative)
 
     def visit_obj_comp(self, e: ObjComp):
-        self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
-        self.visit_for_spec(e.for_spec)
+        self.visit_comp_spec(e, [e.for_spec] + e.comp_spec)
 
-        for s in e.comp_spec:
-            match s:
-                case IfSpec():
-                    self.visit_if_spec(s)
-                case ForSpec():
-                    self.visit_for_spec(s)
-
-        for b in e.binds:
-            self.visit_bind(b)
-
-        for a in e.asserts:
-            self.visit_assert(a)
-
-        self.visit(e.field.value)
+    def visit_comp_spec(self, e: ObjComp, specs: list[ForSpec | IfSpec]):
+        match specs:
+            case []:
+                self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
+                for b in e.binds:
+                    self.visit_bind(b)
+                for a in e.asserts:
+                    self.visit_assert(a)
+                self.visit(e.field.value)
+            case ForSpec() as first, *rest:
+                self.visit_for_spec(first)
+                self.visit_comp_spec(e, rest)
+            case IfSpec() as first, *rest:
+                self.visit_if_spec(first)
+                self.visit_comp_spec(e, rest)
 
     def visit_object(self, e: Object):
         # THe following traversal order is important:

@@ -19,10 +19,9 @@ from joule.visitor import Visitor
 
 
 class ScopeResolver(Visitor):
-    def __init__(self) -> None:
-        self.var_scope: Scope = Scope()
-
     def resolve(self, tree: Document) -> Document:
+        self.var_scope: Scope = Scope(tree)
+        tree.set_var_scope(self.var_scope)
         self.visit(tree)
         return tree
 
@@ -36,9 +35,8 @@ class ScopeResolver(Visitor):
             self.var_scope = prev
 
     def visit_local(self, e: Local):
-        with self.activate_var_scope(self.var_scope.nest()) as scope:
-            e.var_scope = scope
-            scope.span = e.location.range
+        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
+            e.set_var_scope(scope)
 
             for b in e.binds:
                 self.visit_bind(b)
@@ -46,9 +44,10 @@ class ScopeResolver(Visitor):
             self.visit(e.body)
 
     def visit_bind(self, b: Bind):
+        super().visit_id(b.id)
         self.var_scope.bind(b.id.name, b.id.location, b.value)
 
-        with self.activate_var_scope(self.var_scope.nest()):
+        with self.activate_var_scope(self.var_scope.nest(b)):
             self.visit(b.value)
 
     def visit_fn(self, e: Fn):
@@ -62,9 +61,8 @@ class ScopeResolver(Visitor):
         # This requires all parameters to be bound before traversing any parameter
         # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-        with self.activate_var_scope(self.var_scope.nest()) as scope:
-            e.var_scope = scope
-            scope.span = e.location.range
+        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
+            e.set_var_scope(scope)
 
             for p in e.params:
                 self.var_scope.bind(p.id.name, p.id.location, p.default)
@@ -76,12 +74,12 @@ class ScopeResolver(Visitor):
             self.visit(e.body)
 
     def visit_list_comp(self, e: ListComp):
-        with self.activate_var_scope(self.var_scope.nest()) as scope:
+        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
             e.set_var_scope(scope)
             super().visit_list_comp(e)
 
     def visit_obj_comp(self, e: ObjComp):
-        with self.activate_var_scope(self.var_scope.nest()) as scope:
+        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
             e.set_var_scope(scope)
             super().visit_obj_comp(e)
 
@@ -101,7 +99,7 @@ class ScopeResolver(Visitor):
         e.field_scope.bind(name, k.location, f)
 
     def visit_object(self, e: Object):
-        with self.activate_var_scope(self.var_scope.nest()) as scope:
+        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
             e.set_var_scope(scope)
-            e.set_field_scope(Scope.empty())
+            e.set_field_scope(Scope.empty(e))
             super().visit_object(e)

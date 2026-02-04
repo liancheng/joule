@@ -2,12 +2,21 @@ import dataclasses as D
 from enum import StrEnum, auto
 from itertools import chain, dropwhile
 from textwrap import dedent
-from typing import Any, Callable, ClassVar, Iterable, Iterator, Type, TypeVar, cast
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Iterable,
+    Iterator,
+    Type,
+    TypeVar,
+    cast,
+)
 
 import lsprotocol.types as L
 import tree_sitter as T
 
-from typing import Annotated
 from joule.pretty import PrettyTree
 from joule.util import head_or_none, maybe
 
@@ -71,7 +80,6 @@ class AST:
 
     def set_var_scope(self, scope: Scope):
         self.var_scope = scope
-        scope.span = self.location.range
 
     @property
     def pretty_tree(self) -> str:
@@ -81,8 +89,14 @@ class AST:
     def children(self) -> Iterable["AST"]:
         return []
 
-    def node_at(self, target: L.Range) -> "AST | None":
+    def node_at(self, target: L.Position | L.Range) -> "AST | None":
         """Returns the narrowest AST node covering the target location."""
+        match target:
+            case L.Position():
+                target = L.Range(target, target)
+            case _:
+                pass
+
         candidate = head_or_none(
             node
             for child in self.children
@@ -272,6 +286,10 @@ class Super(Expr):
 class Document(Expr):
     body: Expr
 
+    @classmethod
+    def has_var_scope(cls) -> bool:
+        return True
+
     @property
     def children(self) -> list[AST]:
         return [self.body]
@@ -316,15 +334,11 @@ class Id(Expr):
 
     def param(self, default: Expr | None = None) -> "Param":
         location = merge_locations(self, default) if default else self.location
-        return Param(location, self.into(Id.Kind.Var), default)
+        return Param(location, self.with_kind(Id.Kind.Var), default)
 
-    def into(self, kind: Kind) -> "Id":
+    def with_kind(self, kind: Kind) -> "Id":
         self.kind = kind
         return self
-
-    @property
-    def is_variable(self) -> bool:
-        return self.kind in [Id.Kind.VarRef, Id.Kind.FieldRef]
 
     AST.register(from_cst, "id")
 
@@ -488,14 +502,14 @@ class Bind(AST):
 
             return Bind(
                 location=fn.location,
-                id=Id.from_cst(uri, fn_name).into(Id.Kind.Var),
+                id=Id.from_cst(uri, fn_name).with_kind(Id.Kind.Var),
                 value=fn,
             )
         else:
             id, value, *_ = children
             return Bind(
                 location=location_of(uri, node),
-                id=Id.from_cst(uri, id).into(Id.Kind.Var),
+                id=Id.from_cst(uri, id).with_kind(Id.Kind.Var),
                 value=Expr.from_cst(uri, value),
             )
 
@@ -558,7 +572,7 @@ class Param(AST):
         id, *maybe_default = children
         return Param(
             location=location_of(uri, node),
-            id=Id.from_cst(uri, id).into(Id.Kind.Var),
+            id=Id.from_cst(uri, id).with_kind(Id.Kind.Var),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
 
@@ -622,7 +636,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                name=Id.from_cst(uri, name).into(Id.Kind.ArgRef),
+                name=Id.from_cst(uri, name).with_kind(Id.Kind.ArgRef),
             )
         else:
             return Arg(
@@ -680,7 +694,7 @@ class ForSpec(AST):
 
         return ForSpec(
             location_of(uri, node),
-            Id.from_cst(uri, id).into(Id.Kind.Var),
+            Id.from_cst(uri, id).with_kind(Id.Kind.Var),
             Expr.from_cst(uri, expr),
         )
 
@@ -895,7 +909,7 @@ class FieldKey(AST):
             e, *_ = tail
             return ComputedKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
-            return FixedKey(location, Id.from_cst(uri, head).into(Id.Kind.Field))
+            return FixedKey(location, Id.from_cst(uri, head).with_kind(Id.Kind.Field))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
@@ -1025,7 +1039,6 @@ class Object(Expr):
 
     def set_field_scope(self, scope: Scope):
         self.field_scope = scope
-        scope.span = self.location.range
 
     @property
     def children(self) -> Iterable[AST]:
@@ -1076,6 +1089,7 @@ class ObjComp(Expr):
     comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
 
     def __post_init__(self):
+        super().__post_init__()
         assert isinstance(self.field.key, ComputedKey)
 
     @property
@@ -1174,7 +1188,7 @@ class FieldAccess(Expr):
         return FieldAccess(
             location=location_of(uri, node),
             obj=Expr.from_cst(uri, expr),
-            field=Id.from_cst(uri, field).into(Id.Kind.FieldRef),
+            field=Id.from_cst(uri, field).with_kind(Id.Kind.FieldRef),
         )
 
     AST.register(from_cst, "fieldaccess_super", "fieldaccess")
@@ -1359,22 +1373,22 @@ class Binding:
 
 @D.dataclass
 class Scope:
+    owner: AST
     bindings: list[Binding] = D.field(default_factory=list)
     parent: "Scope | None" = None
     children: list["Scope"] = D.field(default_factory=list)
-    span: L.Range | None = None
 
     def bind(self, name: str, location: L.Location, target: AST | None = None):
         self.bindings.insert(0, Binding(self, name, location, target))
 
-    def get(self, id: Id) -> Binding | None:
+    def get(self, name: str) -> Binding | None:
         return next(
-            iter(b for b in self.bindings if b.name == id.name),
-            None if self.parent is None else self.parent.get(id),
+            iter(b for b in self.bindings if b.name == name),
+            None if self.parent is None else self.parent.get(name),
         )
 
-    def nest(self) -> "Scope":
-        child = Scope([], parent=self)
+    def nest(self, owner: AST) -> "Scope":
+        child = Scope(owner, [], parent=self)
         self.children.append(child)
         return child
 
@@ -1383,8 +1397,8 @@ class Scope:
         return str(PrettyScope(self))
 
     @staticmethod
-    def empty() -> "Scope":
-        return Scope()
+    def empty(owner: AST) -> "Scope":
+        return Scope(owner)
 
 
 @D.dataclass

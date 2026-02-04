@@ -1,15 +1,18 @@
 import logging
 import sys
+from enum import StrEnum
 from pathlib import Path
+from textwrap import dedent
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
-from joule.ast import AST, Document, PrettyAST, PrettyCST
+from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.server import server
+from joule.util import maybe, head
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -28,6 +31,12 @@ def serve():
     server.start_io()
 
 
+class TreeType(StrEnum):
+    Jsonnet = "j"
+    TreeSitter = "t"
+    Scope = "s"
+
+
 @app.command()
 def tree(
     path: Annotated[
@@ -42,14 +51,21 @@ def tree(
             allow_dash=True,
         ),
     ],
-    tree_sitter: Annotated[
-        bool,
+    tree_type: Annotated[
+        TreeType,
         typer.Option(
             "-t",
-            "--tree-sitter",
-            help="Print the tree-sitter tree.",
+            "--tree-type",
+            help=dedent(
+                """\
+                The type of tree to print:
+                - `j`: The Jsonnet AST
+                - `t`: The tree-sitter CST
+                - `s`: The Jsonnet variable scope tree
+                """
+            ),
         ),
-    ] = False,
+    ] = TreeType.Jsonnet,
 ):
     if path == Path("-"):
         uri = "/dev/stdin"
@@ -59,8 +75,17 @@ def tree(
         source = path.read_text()
 
     cst = parse_jsonnet(source)
-    ast = AST.from_cst(uri, cst)
-    tree = PrettyCST(cst) if tree_sitter else PrettyAST(ast)
+    ast = Document.from_cst(uri, cst)
+    ScopeResolver().resolve(ast)
+
+    match tree_type:
+        case TreeType.Jsonnet:
+            tree = PrettyAST(ast)
+        case TreeType.TreeSitter:
+            tree = PrettyCST(cst)
+        case TreeType.Scope:
+            scope = head(maybe(ast.var_scope))
+            tree = PrettyScope(scope)
 
     Console(markup=False).print(tree)
 
@@ -90,6 +115,7 @@ def index(
         ),
     ],
 ):
+    del workspace_root
     cst = parse_jsonnet(path.read_text())
     ast = Document.from_cst(path.as_uri(), cst)
-    ScopeResolver(ast).build()
+    ScopeResolver().resolve(ast)

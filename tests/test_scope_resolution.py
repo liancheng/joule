@@ -15,10 +15,11 @@ from joule.ast import (
     merge_locations,
 )
 from joule.util import head, maybe
-from tests.dsl import FakeDocument, FieldBinding, VarBinding
+
+from .dsl import FakeDocument, FieldBinding, VarBinding
 
 
-class TestScoping(unittest.TestCase):
+class TestScopeResolution(unittest.TestCase):
     def checkBinding(
         self,
         scope: Scope,
@@ -47,22 +48,30 @@ class TestScoping(unittest.TestCase):
             message(),
         )
 
-    def checkVarBindings(self, owner: AST, *bindings: VarBinding):
+    def assertVarsBound(self, owner: AST, bindings: VarBinding | list[VarBinding]):
+        if isinstance(bindings, VarBinding):
+            bindings = [bindings]
+
         self.assertTrue(owner.has_var_scope())
 
         scope = head(maybe(owner.var_scope))
-        span = head(maybe(scope.span))
-        self.assertEqual(span, owner.location.range)
+        self.assertEqual(scope.owner.location, owner.location)
 
         for b in bindings:
             self.checkBinding(scope, b.location, b.name, b.bound_to)
 
-    def checkFieldBindings(self, owner: Object, *bindings: FieldBinding):
+    def checkFieldBindings(
+        self,
+        owner: Object,
+        bindings: FieldBinding | list[FieldBinding],
+    ):
+        if isinstance(bindings, FieldBinding):
+            bindings = [bindings]
+
         self.assertTrue(owner.has_field_scope())
 
         scope = head(maybe(owner.field_scope))
-        span = head(maybe(scope.span))
-        self.assertEqual(span, owner.location.range)
+        self.assertEqual(scope.owner.location, owner.location)
 
         for b in bindings:
             self.checkBinding(
@@ -88,10 +97,12 @@ class TestScoping(unittest.TestCase):
             )
         )
 
-        self.checkVarBindings(
+        self.assertVarsBound(
             t.node_at("0").to(Local),
-            t.bind_var(at="1", name="x", to=t.num(at="2", value=1)),
-            t.bind_var(at="3", name="x", to=t.num(at="4", value=2)),
+            [
+                t.var_binding(at="1", name="x", to=t.num(at="2", value=1)),
+                t.var_binding(at="3", name="x", to=t.num(at="4", value=2)),
+            ],
         )
 
     def test_object(self):
@@ -116,23 +127,27 @@ class TestScoping(unittest.TestCase):
 
         self.checkFieldBindings(
             obj,
-            t.bind_field(
-                at="1",
-                key=t.fixed_id_key(at="1", name="f1"),
-                value=t.var_ref(at="2", name="v1"),
-            ),
-            t.bind_field(
-                at="3",
-                key=t.fixed_str_key(at="3", name="f2"),
-                value=t.var_ref(at="4", name="v2"),
-                visibility=Visibility.Hidden,
-            ),
+            [
+                t.field_binding(
+                    at="1",
+                    key=t.fixed_id_key(at="1", name="f1"),
+                    value=t.var_ref(at="2", name="v1"),
+                ),
+                t.field_binding(
+                    at="3",
+                    key=t.fixed_str_key(at="3", name="f2"),
+                    value=t.var_ref(at="4", name="v2"),
+                    visibility=Visibility.Hidden,
+                ),
+            ],
         )
 
-        self.checkVarBindings(
+        self.assertVarsBound(
             obj,
-            t.bind_var(at="5", name="v1", to=t.num(at="6", value=3)),
-            t.bind_var(at="7", name="v2", to=t.num(at="8", value=4)),
+            [
+                t.var_binding(at="5", name="v1", to=t.num(at="6", value=3)),
+                t.var_binding(at="7", name="v2", to=t.num(at="8", value=4)),
+            ],
         )
 
     def test_list_comp(self):
@@ -150,20 +165,22 @@ class TestScoping(unittest.TestCase):
             )
         )
 
-        self.checkVarBindings(
+        self.assertVarsBound(
             t.node_at("1").to(Local),
-            t.bind_var(at="2", name="x", to=t.num(at="3", value=1)),
+            t.var_binding(at="2", name="x", to=t.num(at="3", value=1)),
         )
 
-        self.checkVarBindings(
+        self.assertVarsBound(
             t.ast.body.to(ListComp),
-            t.bind_var(
+            t.var_binding(
                 at="4",
                 name="i",
                 to=t.array(
-                    "5",
-                    t.num(at="6", value=1),
-                    t.num(at="7", value=2),
+                    at="5",
+                    values=[
+                        t.num(at="6", value=1),
+                        t.num(at="7", value=2),
+                    ],
                 ),
             ),
         )
@@ -184,17 +201,21 @@ class TestScoping(unittest.TestCase):
             """
         )
 
-        self.checkVarBindings(
+        self.assertVarsBound(
             t.body.to(ObjComp),
-            t.bind_var(at="1", name="v1", to=t.num(at="2", value=1)),
-            t.bind_var(at="3", name="v2", to=t.num(at="4", value=2)),
-            t.bind_var(
-                at="5",
-                name="i",
-                to=t.array(
-                    "6",
-                    t.num(at="7", value=3),
-                    t.num(at="8", value=4),
+            [
+                t.var_binding(at="1", name="v1", to=t.num(at="2", value=1)),
+                t.var_binding(at="3", name="v2", to=t.num(at="4", value=2)),
+                t.var_binding(
+                    at="5",
+                    name="i",
+                    to=t.array(
+                        at="6",
+                        values=[
+                            t.num(at="7", value=3),
+                            t.num(at="8", value=4),
+                        ],
+                    ),
                 ),
-            ),
+            ],
         )

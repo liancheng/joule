@@ -7,7 +7,7 @@ from pygls.lsp.server import LanguageServer
 from joule.ast import URI, Document
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
-from joule.providers import DocumentSymbolProvider
+from joule.providers import DefinitionProvider, DocumentSymbolProvider
 from joule.util import maybe
 
 log = logging.root
@@ -79,4 +79,12 @@ def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return DocumentSymbolProvider().collect(ls.load(doc.uri, doc.source))
+    tree = ls.load(doc.uri, doc.source)
+    return DocumentSymbolProvider().serve(tree)
+
+
+@server.feature(L.TEXT_DOCUMENT_DEFINITION)
+def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return DefinitionProvider.serve(tree, params.position)
