@@ -25,6 +25,11 @@ dev = [
     "pytest>=9.0.2",
 ]
 
+[tool.ruff]
+exclude = [
+    "vendor"
+]
+
 [tool.uv.workspace]
 members = [
     "vendor/tree-sitter-jsonnet",
