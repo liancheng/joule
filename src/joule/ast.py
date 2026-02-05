@@ -318,6 +318,10 @@ class Id:
             assert node.text is not None
             return Id.Var(location_of(uri, node), node.text.decode())
 
+        def __post_init__(self):
+            super().__post_init__()
+            self.bound_in: Scope | None = None
+
         def bind(self, value: Expr) -> "Bind":
             return Bind(merge_locations(self, value), self, value)
 
@@ -1393,7 +1397,7 @@ class Binding:
     scope: "Scope"
     name: str
     location: L.Location
-    bound_to: AST | None = None
+    bound_to: AST
 
 
 @D.dataclass
@@ -1403,8 +1407,15 @@ class Scope:
     parent: "Scope | None" = None
     children: list["Scope"] = D.field(default_factory=list)
 
-    def bind(self, name: str, location: L.Location, target: AST | None = None):
-        self.bindings.insert(0, Binding(self, name, location, target))
+    def bind_var(self, var: Id.Var, to: AST):
+        self._bind(var.name, var.location, to)
+        var.bound_in = self
+
+    def bind_field(self, key: FixedKey, to: Field):
+        self._bind(key.name, key.location, to)
+
+    def _bind(self, name: str, location: L.Location, to: AST):
+        self.bindings.insert(0, Binding(self, name, location, to))
 
     def get(self, name: str) -> Binding | None:
         return next(

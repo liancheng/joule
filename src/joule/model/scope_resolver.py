@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 
 from joule.ast import (
-    Id,
     Bind,
     Document,
     Field,
@@ -13,7 +12,6 @@ from joule.ast import (
     ObjComp,
     Object,
     Scope,
-    Str,
 )
 from joule.visitor import Visitor
 
@@ -44,9 +42,7 @@ class ScopeResolver(Visitor):
             self.visit(e.body)
 
     def visit_bind(self, b: Bind):
-        super().visit_var(b.id)
-        self.var_scope.bind(b.id.name, b.id.location, b.value)
-
+        self.var_scope.bind_var(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(b)):
             self.visit(b.value)
 
@@ -65,7 +61,7 @@ class ScopeResolver(Visitor):
             e.set_var_scope(scope)
 
             for p in e.params:
-                self.var_scope.bind(p.id.name, p.id.location, p.default)
+                self.var_scope.bind_var(p.id, p)
 
             for p in e.params:
                 if p.default is not None:
@@ -85,18 +81,11 @@ class ScopeResolver(Visitor):
 
     def visit_for_spec(self, s: ForSpec):
         self.visit(s.source)
-        self.var_scope.bind(s.id.name, s.id.location, s.source)
+        self.var_scope.bind_var(s.id, s.source)
 
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None
-
-        match k.id:
-            case Id.Field():
-                name = k.id.name
-            case Str():
-                name = k.id.raw
-
-        e.field_scope.bind(name, k.location, f)
+        e.field_scope.bind_field(k, f)
 
     def visit_object(self, e: Object):
         with self.activate_var_scope(self.var_scope.nest(e)) as scope:

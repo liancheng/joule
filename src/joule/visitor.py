@@ -1,6 +1,5 @@
 from joule.ast import (
     AST,
-    Id,
     Arg,
     Array,
     Assert,
@@ -16,6 +15,7 @@ from joule.ast import (
     FixedKey,
     Fn,
     ForSpec,
+    Id,
     If,
     IfSpec,
     Import,
