@@ -1,5 +1,5 @@
 import dataclasses as D
-from enum import StrEnum, auto
+from enum import StrEnum
 from itertools import chain, dropwhile
 from textwrap import dedent
 from typing import (
@@ -41,6 +41,7 @@ class AST:
     @staticmethod
     def register(fn: ParseCST, *node_types: str):
         for node_type in node_types:
+            assert node_type not in AST.registry, f'"{node_type}" already registered.'
             AST.registry[node_type] = fn
 
     @staticmethod
@@ -73,7 +74,7 @@ class AST:
     def to(self, expect_type: Type[ASTType]) -> ASTType:
         if not isinstance(self, expect_type):
             raise TypeError(
-                f"Expected {expect_type.__name__}, but got {type(self).__name__}"
+                f"Expected {expect_type.__qualname__}, but got {type(self).__name__}"
             )
 
         return self
@@ -142,10 +143,10 @@ class PrettyAST(PrettyTree):
         match self.node:
             case Document() as doc:
                 # For the top-level `Document` node, prints the full location with URI.
-                repr = f"{doc.__class__.__name__} [{doc.location}]"
+                repr = f"{doc.__class__.__qualname__} [{doc.location}]"
             case AST() as ast:
                 # For all other nodes, only prints the range.
-                repr = f"{ast.__class__.__name__} [{ast.location.range}]"
+                repr = f"{ast.__class__.__qualname__} [{ast.location.range}]"
             case _, *_:
                 # For lists, print a placeholder as all the elements are printed
                 # separately as child nodes.
@@ -216,8 +217,7 @@ class Expr(AST):
     def tails(self) -> list["Expr"]:
         return [self]
 
-    def arg(self, name: "Id | None" = None) -> "Arg":
-        assert name is None or name.kind == Id.Kind.ArgRef
+    def arg(self, name: "Id.ParamRef | None" = None) -> "Arg":
         location = merge_locations(name, self) if name else self.location
         return Arg(location, self, name)
 
@@ -307,40 +307,65 @@ class Document(Expr):
     AST.register(from_cst, "document")
 
 
-@D.dataclass
-class Id(Expr):
-    class Kind(StrEnum):
-        Var = auto()
-        VarRef = auto()
-        Field = auto()
-        FieldRef = auto()
-        ArgRef = auto()
+class Id:
+    @D.dataclass
+    class Var(Expr):
+        name: str
 
-    name: str
-    kind: Kind
+        @staticmethod
+        def from_cst(uri: URI, node: T.Node) -> "Id.Var":
+            assert node.type == "id"
+            assert node.text is not None
+            return Id.Var(location_of(uri, node), node.text.decode())
 
-    @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Id":
-        assert node.type == "id"
-        assert node.text is not None
+        def bind(self, value: Expr) -> "Bind":
+            return Bind(merge_locations(self, value), self, value)
 
-        # By default, an ID is a variable reference. IDs of other kinds are always
-        # parsed while parsing other specific AST nodes, where the `IdKind` is
-        # explicitly specified.
-        return Id(location_of(uri, node), node.text.decode(), Id.Kind.VarRef)
+        def param(self, default: Expr | None = None) -> "Param":
+            location = merge_locations(self, default) if default else self.location
+            return Param(location, self, default)
 
-    def bind(self, value: Expr) -> "Bind":
-        return Bind(merge_locations(self, value), self, value)
+    @D.dataclass
+    class VarRef(Expr):
+        name: str
 
-    def param(self, default: Expr | None = None) -> "Param":
-        location = merge_locations(self, default) if default else self.location
-        return Param(location, self.with_kind(Id.Kind.Var), default)
+        @staticmethod
+        def from_cst(uri: URI, node: T.Node) -> "Id.VarRef":
+            assert node.type == "id"
+            assert node.text is not None
+            return Id.VarRef(location_of(uri, node), node.text.decode())
 
-    def with_kind(self, kind: Kind) -> "Id":
-        self.kind = kind
-        return self
+        AST.register(from_cst, "id")
 
-    AST.register(from_cst, "id")
+    @D.dataclass
+    class Field(Expr):
+        name: str
+
+        @staticmethod
+        def from_cst(uri: URI, node: T.Node) -> "Id.Field":
+            assert node.type == "id"
+            assert node.text is not None
+            return Id.Field(location_of(uri, node), node.text.decode())
+
+    @D.dataclass
+    class FieldRef(Expr):
+        name: str
+
+        @staticmethod
+        def from_cst(uri: URI, node: T.Node) -> "Id.FieldRef":
+            assert node.type == "id"
+            assert node.text is not None
+            return Id.FieldRef(location_of(uri, node), node.text.decode())
+
+    @D.dataclass
+    class ParamRef(Expr):
+        name: str
+
+        @staticmethod
+        def from_cst(uri: URI, node: T.Node) -> "Id.ParamRef":
+            assert node.type == "id"
+            assert node.text is not None
+            return Id.ParamRef(location_of(uri, node), node.text.decode())
 
 
 @D.dataclass
@@ -473,7 +498,7 @@ class Binary(Expr):
 
 @D.dataclass
 class Bind(AST):
-    id: Id
+    id: Id.Var
     value: Expr
 
     @property
@@ -502,14 +527,14 @@ class Bind(AST):
 
             return Bind(
                 location=fn.location,
-                id=Id.from_cst(uri, fn_name).with_kind(Id.Kind.Var),
+                id=Id.Var.from_cst(uri, fn_name),
                 value=fn,
             )
         else:
             id, value, *_ = children
             return Bind(
                 location=location_of(uri, node),
-                id=Id.from_cst(uri, id).with_kind(Id.Kind.Var),
+                id=Id.Var.from_cst(uri, id),
                 value=Expr.from_cst(uri, value),
             )
 
@@ -555,7 +580,7 @@ class Local(Expr):
 
 @D.dataclass
 class Param(AST):
-    id: Id
+    id: Id.Var
     default: Expr | None = None
 
     @property
@@ -572,7 +597,7 @@ class Param(AST):
         id, *maybe_default = children
         return Param(
             location=location_of(uri, node),
-            id=Id.from_cst(uri, id).with_kind(Id.Kind.Var),
+            id=Id.Var.from_cst(uri, id),
             default=head_or_none(Expr.from_cst(uri, value) for value in maybe_default),
         )
 
@@ -622,7 +647,7 @@ class Fn(Expr):
 @D.dataclass
 class Arg(AST):
     value: Expr
-    name: Id | None = None
+    name: Id.ParamRef | None = None
 
     @property
     def children(self) -> Iterable[AST]:
@@ -636,7 +661,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                name=Id.from_cst(uri, name).with_kind(Id.Kind.ArgRef),
+                name=Id.ParamRef.from_cst(uri, name),
             )
         else:
             return Arg(
@@ -680,7 +705,7 @@ class Call(Expr):
 
 @D.dataclass
 class ForSpec(AST):
-    id: Id
+    id: Id.Var
     source: Expr
 
     @property
@@ -694,7 +719,7 @@ class ForSpec(AST):
 
         return ForSpec(
             location_of(uri, node),
-            Id.from_cst(uri, id).with_kind(Id.Kind.Var),
+            Id.Var.from_cst(uri, id),
             Expr.from_cst(uri, expr),
         )
 
@@ -909,7 +934,7 @@ class FieldKey(AST):
             e, *_ = tail
             return ComputedKey(location, Expr.from_cst(uri, e))
         elif head.type == "id":
-            return FixedKey(location, Id.from_cst(uri, head).with_kind(Id.Kind.Field))
+            return FixedKey(location, Id.Field.from_cst(uri, head))
         else:
             return FixedKey(location, Str.from_cst(uri, head))
 
@@ -932,12 +957,12 @@ class FieldKey(AST):
 
 @D.dataclass
 class FixedKey(FieldKey):
-    id: Id | Str
+    id: Id.Field | Str
 
     @property
     def name(self) -> str:
         match self.id:
-            case Id(_, name, _):
+            case Id.Field(_, name):
                 return name
             case Str(_, raw):
                 return raw
@@ -1175,7 +1200,7 @@ class ObjComp(Expr):
 @D.dataclass
 class FieldAccess(Expr):
     obj: Expr
-    field: Id
+    field: Id.FieldRef
 
     @property
     def children(self) -> Iterable[AST]:
@@ -1188,7 +1213,7 @@ class FieldAccess(Expr):
         return FieldAccess(
             location=location_of(uri, node),
             obj=Expr.from_cst(uri, expr),
-            field=Id.from_cst(uri, field).with_kind(Id.Kind.FieldRef),
+            field=Id.FieldRef.from_cst(uri, field),
         )
 
     AST.register(from_cst, "fieldaccess_super", "fieldaccess")
@@ -1415,7 +1440,7 @@ class PrettyScope(PrettyTree):
             case Binding(_, name, _, None):
                 repr = name
             case Binding(_, name, _, AST() as bound_to):
-                bound_to_class = bound_to.__class__.__name__
+                bound_to_class = bound_to.__class__.__qualname__
                 bound_to_range = bound_to.location.range
                 repr = f'"{name}" <- {bound_to_class} @ {bound_to_range}'
             case []:

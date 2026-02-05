@@ -83,16 +83,14 @@ class TestAST(unittest.TestCase):
                 Local [0:0-0:18]
                 |-- binds=[...]
                 |   `-- [0]=Bind [0:6-0:11]
-                |   .   |-- id=Id [0:6-0:7]
-                |   .   |   |-- name="x"
-                |   .   |   `-- kind="var"
+                |   .   |-- id=Id.Var [0:6-0:7]
+                |   .   |   `-- name="x"
                 |   .   `-- value=Num [0:10-0:11]
                 |   .   .   `-- value=1.0
                 `-- body=Binary [0:13-0:18]
                 .   |-- op="+"
-                .   |-- lhs=Id [0:13-0:14]
-                .   |   |-- name="x"
-                .   |   `-- kind="varref"
+                .   |-- lhs=Id.VarRef [0:13-0:14]
+                .   |   `-- name="x"
                 .   `-- rhs=Num [0:17-0:18]
                 .   .   `-- value=2.0
                 """
@@ -260,7 +258,7 @@ class TestAST(unittest.TestCase):
             fn=t.var_ref(at="g1", name="g"),
             args=[
                 call_g.arg(),
-                t.num(at="4", value=4).arg(t.arg_ref(at="z2", name="z")),
+                t.num(at="4", value=4).arg(t.param_ref(at="z2", name="z")),
             ],
         )
 

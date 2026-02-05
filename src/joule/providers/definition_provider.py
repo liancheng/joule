@@ -1,6 +1,6 @@
 import lsprotocol.types as L
 
-from joule.ast import AST, Document, Id
+from joule.ast import AST, Id, Document
 from joule.util import maybe
 from joule.visitor import Visitor
 
@@ -17,9 +17,9 @@ class DefinitionProvider(Visitor):
     @staticmethod
     def find_definition(node: AST) -> list[L.Location]:
         match node:
-            case Id(_, name, Id.Kind.VarRef):
+            case Id.VarRef(_, name):
                 return DefinitionProvider.find_var_definition(name, node.parent)
-            case Id(_, name, Id.Kind.FieldRef):
+            case Id.FieldRef(_, name):
                 return DefinitionProvider.find_field_definition(name, node.parent)
             case _:
                 return []

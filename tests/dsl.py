@@ -9,6 +9,7 @@ from rich.text import Text
 
 from joule.ast import (
     AST,
+    Id,
     Arg,
     Array,
     Assert,
@@ -22,7 +23,6 @@ from joule.ast import (
     FixedKey,
     Fn,
     ForSpec,
-    Id,
     IfSpec,
     Import,
     ListComp,
@@ -277,20 +277,17 @@ class FakeDocument:
 
         return Text("\n").join(rendered)
 
-    def _id(self, at: str, name: str, kind: Id.Kind) -> Id:
-        return Id(self.at(at), name, kind)
+    def var(self, *, at: str, name: str) -> Id.Var:
+        return Id.Var(self.at(at), name)
 
-    def var(self, *, at: str, name: str) -> Id:
-        return self._id(at, name, Id.Kind.Var)
+    def var_ref(self, *, at: str, name: str) -> Id.VarRef:
+        return Id.VarRef(self.at(at), name)
 
-    def var_ref(self, *, at: str, name: str) -> Id:
-        return self._id(at, name, Id.Kind.VarRef)
-
-    def arg_ref(self, *, at: str, name: str) -> Id:
-        return self._id(at, name, Id.Kind.ArgRef)
+    def param_ref(self, *, at: str, name: str) -> Id.ParamRef:
+        return Id.ParamRef(self.at(at), name)
 
     def fixed_id_key(self, *, at: str, name: str) -> FixedKey:
-        return FixedKey(self.at(at), self._id(at, name, Id.Kind.Field))
+        return FixedKey(self.at(at), Id.Field(self.at(at), name))
 
     def num(self, *, at: str, value: float | int) -> Num:
         return Num(self.at(at), float(value))
@@ -338,7 +335,7 @@ class FakeDocument:
     def if_(self, *, at: str, condition: Expr) -> IfSpec:
         return IfSpec(self.at(at), condition)
 
-    def for_(self, *, at: str, id: Id, source: Expr) -> ForSpec:
+    def for_(self, *, at: str, id: Id.Var, source: Expr) -> ForSpec:
         return ForSpec(self.at(at), id, source)
 
     def assert_(

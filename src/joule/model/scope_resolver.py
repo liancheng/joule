@@ -1,13 +1,13 @@
 from contextlib import contextmanager
 
 from joule.ast import (
+    Id,
     Bind,
     Document,
     Field,
     FixedKey,
     Fn,
     ForSpec,
-    Id,
     ListComp,
     Local,
     ObjComp,
@@ -44,7 +44,7 @@ class ScopeResolver(Visitor):
             self.visit(e.body)
 
     def visit_bind(self, b: Bind):
-        super().visit_id(b.id)
+        super().visit_var(b.id)
         self.var_scope.bind(b.id.name, b.id.location, b.value)
 
         with self.activate_var_scope(self.var_scope.nest(b)):
@@ -91,7 +91,7 @@ class ScopeResolver(Visitor):
         assert e.field_scope is not None
 
         match k.id:
-            case Id():
+            case Id.Field():
                 name = k.id.name
             case Str():
                 name = k.id.raw
