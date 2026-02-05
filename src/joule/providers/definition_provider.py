@@ -18,28 +18,15 @@ class DefinitionProvider(Visitor):
     def find_definition(node: AST) -> list[L.Location]:
         match node:
             case Id.VarRef(_, name):
-                return DefinitionProvider.find_var_definition(name, node.parent)
+                return [
+                    binding.location
+                    for scope in maybe(node.bound_in)
+                    for binding in maybe(scope.get(name))
+                ]
             case Id.FieldRef(_, name):
                 return DefinitionProvider.find_field_definition(name, node.parent)
             case _:
                 return []
-
-    @staticmethod
-    def find_var_definition(name: str, ancestor: AST | None) -> list[L.Location]:
-        if ancestor is None:
-            return []
-
-        return next(
-            (
-                [binding.location]
-                for scope in maybe(ancestor.var_scope)
-                for binding in maybe(scope.get(name))
-            ),
-            # Falls back to the ancestor's parent when:
-            #  * The ancestor does not have a variable scope, or
-            #  * `name` is not bound in the ancestor's variable scope.
-            DefinitionProvider.find_var_definition(name, ancestor.parent),
-        )
 
     @staticmethod
     def find_field_definition(name: str, ancestor: AST | None) -> list[L.Location]:

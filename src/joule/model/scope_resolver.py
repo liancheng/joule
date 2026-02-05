@@ -7,6 +7,7 @@ from joule.ast import (
     FixedKey,
     Fn,
     ForSpec,
+    Id,
     ListComp,
     Local,
     ObjComp,
@@ -45,6 +46,9 @@ class ScopeResolver(Visitor):
         self.var_scope.bind_var(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(b)):
             self.visit(b.value)
+
+    def visit_var_ref(self, e: Id.VarRef):
+        e.bound_in = self.var_scope
 
     def visit_fn(self, e: Fn):
         # NOTE: In a Jsonnet function, any parameter's default value expression can

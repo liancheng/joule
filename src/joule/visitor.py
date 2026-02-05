@@ -37,8 +37,8 @@ class Visitor:
         match tree:
             case Document():
                 self.visit_document(tree)
-            case Id.Var():
-                self.visit_var(tree)
+            case Id.VarRef():
+                self.visit_var_ref(tree)
             case Str():
                 self.visit_str(tree)
             case Num():
@@ -77,7 +77,7 @@ class Visitor:
     def visit_document(self, e: Document):
         self.visit(e.body)
 
-    def visit_var(self, e: Id.Var):
+    def visit_var_ref(self, e: Id.VarRef):
         del e
 
     def visit_str(self, e: Str):
@@ -103,7 +103,6 @@ class Visitor:
         self.visit(e.body)
 
     def visit_bind(self, b: Bind):
-        self.visit_var(b.id)
         self.visit(b.value)
 
     def visit_fn(self, e: Fn):
@@ -112,7 +111,6 @@ class Visitor:
         self.visit(e.body)
 
     def visit_param(self, p: Param):
-        self.visit_var(p.id)
         if p.default is not None:
             self.visit(p.default)
 
@@ -140,7 +138,6 @@ class Visitor:
 
     def visit_for_spec(self, s: ForSpec):
         self.visit(s.source)
-        self.visit_var(s.id)
 
     def visit_if_spec(self, s: IfSpec):
         self.visit(s.condition)

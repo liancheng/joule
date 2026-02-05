@@ -318,10 +318,6 @@ class Id:
             assert node.text is not None
             return Id.Var(location_of(uri, node), node.text.decode())
 
-        def __post_init__(self):
-            super().__post_init__()
-            self.bound_in: Scope | None = None
-
         def bind(self, value: Expr) -> "Bind":
             return Bind(merge_locations(self, value), self, value)
 
@@ -332,6 +328,10 @@ class Id:
     @D.dataclass
     class VarRef(Expr):
         name: str
+
+        def __post_init__(self):
+            super().__post_init__()
+            self.bound_in: Scope | None = None
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.VarRef":
@@ -1409,7 +1409,6 @@ class Scope:
 
     def bind_var(self, var: Id.Var, to: AST):
         self._bind(var.name, var.location, to)
-        var.bound_in = self
 
     def bind_field(self, key: FixedKey, to: Field):
         self._bind(key.name, key.location, to)
