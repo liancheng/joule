@@ -6,7 +6,7 @@ import lsprotocol.types as L
 from joule.ast import (
     AST,
     Field,
-    ListComp,
+    ForSpec,
     Local,
     ObjComp,
     Object,
@@ -60,7 +60,7 @@ class TestScopeResolution(unittest.TestCase):
         for b in bindings:
             self.checkBinding(scope, b.location, b.name, b.bound_to)
 
-    def checkFieldBindings(
+    def assertFieldsBound(
         self,
         owner: Object,
         bindings: FieldBinding | list[FieldBinding],
@@ -125,7 +125,7 @@ class TestScopeResolution(unittest.TestCase):
 
         obj = t.body.to(Object)
 
-        self.checkFieldBindings(
+        self.assertFieldsBound(
             obj,
             [
                 t.field_binding(
@@ -158,8 +158,7 @@ class TestScopeResolution(unittest.TestCase):
                     local x = 1;
                     ^1    ^2  ^3
                     x + i for i in [1, 2]
-                              ^4   ^^^^^^5
-                                    ^6 ^7
+                          ^4: ^5        ^:4
                 ]
                 """
             )
@@ -167,21 +166,15 @@ class TestScopeResolution(unittest.TestCase):
 
         self.assertVarsBound(
             t.node_at("1").to(Local),
-            t.var_binding(at="2", name="x", to=t.num(at="3", value=1)),
+            t.var_binding(at="2", name="x", to=t.node_at("3")),
         )
 
         self.assertVarsBound(
-            t.ast.body.to(ListComp),
+            t.node_at("4").to(ForSpec),
             t.var_binding(
-                at="4",
+                at="5",
                 name="i",
-                to=t.array(
-                    at="5",
-                    values=[
-                        t.num(at="6", value=1),
-                        t.num(at="7", value=2),
-                    ],
-                ),
+                to=t.node_at("4"),
             ),
         )
 
@@ -195,8 +188,7 @@ class TestScopeResolution(unittest.TestCase):
                 local v2 = 2,
                       ^^3  ^4
                 for i in [3, 4]
-                    ^5   ^^^^^^6
-                          ^7 ^8
+                ^5: ^6        ^:5
             }
             """
         )
@@ -204,18 +196,12 @@ class TestScopeResolution(unittest.TestCase):
         self.assertVarsBound(
             t.body.to(ObjComp),
             [
-                t.var_binding(at="1", name="v1", to=t.num(at="2", value=1)),
-                t.var_binding(at="3", name="v2", to=t.num(at="4", value=2)),
-                t.var_binding(
-                    at="5",
-                    name="i",
-                    to=t.array(
-                        at="6",
-                        values=[
-                            t.num(at="7", value=3),
-                            t.num(at="8", value=4),
-                        ],
-                    ),
-                ),
+                t.var_binding(at="1", name="v1", to=t.node_at("2")),
+                t.var_binding(at="3", name="v2", to=t.node_at("4")),
             ],
+        )
+
+        self.assertVarsBound(
+            t.node_at("5"),
+            t.var_binding(at="6", name="i", to=t.node_at("5")),
         )

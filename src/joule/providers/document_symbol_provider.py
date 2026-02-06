@@ -1,9 +1,17 @@
 from contextlib import contextmanager
-from typing import Sequence, cast
+from typing import Callable, Sequence, cast
 
 import lsprotocol.types as L
 
-from joule.ast import Bind, ComputedKey, Document, FixedKey, ForSpec, Object, Param
+from joule.ast import (
+    Bind,
+    ComputedKey,
+    Document,
+    FixedKey,
+    ForSpec,
+    Object,
+    Param,
+)
 from joule.visitor import Visitor
 
 
@@ -87,7 +95,7 @@ class DocumentSymbolProvider(Visitor):
         for a in e.assertions:
             self.visit_assert(a)
 
-    def visit_for_spec(self, s: ForSpec):
+    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
         symbol = L.DocumentSymbol(
             name=s.id.name,
             kind=L.SymbolKind.Variable,
@@ -96,4 +104,4 @@ class DocumentSymbolProvider(Visitor):
         )
 
         self.add_symbol(symbol)
-        self.visit(s.source)
+        next()

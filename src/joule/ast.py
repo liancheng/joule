@@ -92,11 +92,8 @@ class AST:
 
     def node_at(self, target: L.Position | L.Range) -> "AST | None":
         """Returns the narrowest AST node covering the target location."""
-        match target:
-            case L.Position():
-                target = L.Range(target, target)
-            case _:
-                pass
+        if isinstance(target, L.Position):
+            target = L.Range(target, target)
 
         candidate = head_or_none(
             node
@@ -716,6 +713,10 @@ class ForSpec(AST):
     def children(self) -> Iterable[AST]:
         return [self.id, self.source]
 
+    @classmethod
+    def has_var_scope(cls) -> bool:
+        return True
+
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ForSpec":
         assert node.type == "forspec"
@@ -747,11 +748,14 @@ class IfSpec(AST):
     AST.register(from_cst, "ifspec")
 
 
+CompSpec = list[ForSpec | IfSpec]
+
+
 @D.dataclass
 class ListComp(Expr):
     expr: Expr
     for_spec: ForSpec
-    comp_spec: list[ForSpec | IfSpec]
+    comp_spec: CompSpec
 
     @property
     def children(self) -> Iterable[AST]:
@@ -1115,7 +1119,7 @@ class ObjComp(Expr):
     binds: list[Bind]
     asserts: list[Assert]
     for_spec: ForSpec
-    comp_spec: list[ForSpec | IfSpec] = D.field(default_factory=list)
+    comp_spec: CompSpec = D.field(default_factory=list)
 
     def __post_init__(self):
         super().__post_init__()
@@ -1457,6 +1461,8 @@ class PrettyScope(PrettyTree):
                 repr = "[]"
             case list():
                 repr = "[...]"
+            case AST() as owner:
+                repr = f"{owner.__class__.__qualname__} [{owner.location.range}]"
             case _:
                 repr = str(self.node)
 
@@ -1464,8 +1470,9 @@ class PrettyScope(PrettyTree):
 
     def children(self) -> list["PrettyTree"]:
         match self.node:
-            case Scope(bindings, _, children):
+            case Scope(owner, bindings, _, children):
                 return [
+                    PrettyScope(owner, "owner"),
                     PrettyScope(bindings, "bindings"),
                     PrettyScope(children, "children"),
                 ]

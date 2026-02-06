@@ -1,14 +1,15 @@
 from contextlib import contextmanager
+from typing import Callable
 
 from joule.ast import (
     Bind,
+    ComputedKey,
     Document,
     Field,
     FixedKey,
     Fn,
     ForSpec,
     Id,
-    ListComp,
     Local,
     ObjComp,
     Object,
@@ -34,7 +35,7 @@ class ScopeResolver(Visitor):
             self.var_scope = prev
 
     def visit_local(self, e: Local):
-        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
+        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
             e.set_var_scope(scope)
 
             for b in e.binds:
@@ -44,7 +45,7 @@ class ScopeResolver(Visitor):
 
     def visit_bind(self, b: Bind):
         self.var_scope.bind_var(b.id, b.value)
-        with self.activate_var_scope(self.var_scope.nest(b)):
+        with self.activate_var_scope(self.var_scope.nest(owner=b)):
             self.visit(b.value)
 
     def visit_var_ref(self, e: Id.VarRef):
@@ -61,7 +62,7 @@ class ScopeResolver(Visitor):
         # This requires all parameters to be bound before traversing any parameter
         # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
+        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
             e.set_var_scope(scope)
 
             for p in e.params:
@@ -73,26 +74,33 @@ class ScopeResolver(Visitor):
 
             self.visit(e.body)
 
-    def visit_list_comp(self, e: ListComp):
-        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
-            e.set_var_scope(scope)
-            super().visit_list_comp(e)
-
-    def visit_obj_comp(self, e: ObjComp):
-        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
-            e.set_var_scope(scope)
-            super().visit_obj_comp(e)
-
-    def visit_for_spec(self, s: ForSpec):
-        self.visit(s.source)
-        self.var_scope.bind_var(s.id, s.source)
-
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None
         e.field_scope.bind_field(k, f)
 
     def visit_object(self, e: Object):
-        with self.activate_var_scope(self.var_scope.nest(e)) as scope:
+        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
             e.set_var_scope(scope)
             e.set_field_scope(Scope.empty(e))
             super().visit_object(e)
+
+    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+        self.visit(s.source)
+        with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
+            s.set_var_scope(scope)
+            scope.bind_var(s.id, s)
+            next()
+
+    def visit_obj_comp(self, e: ObjComp):
+        def next():
+            self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
+
+            with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
+                e.set_var_scope(scope)
+                for b in e.binds:
+                    self.visit_bind(b)
+                for a in e.asserts:
+                    self.visit_assert(a)
+                self.visit(e.field.value)
+
+        self.visit_comp_spec([e.for_spec] + e.comp_spec, next)

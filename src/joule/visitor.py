@@ -1,3 +1,5 @@
+from typing import Callable
+
 from joule.ast import (
     AST,
     Arg,
@@ -8,6 +10,7 @@ from joule.ast import (
     Bind,
     Bool,
     Call,
+    CompSpec,
     ComputedKey,
     Document,
     Field,
@@ -124,24 +127,6 @@ class Visitor:
             self.visit(a.name)
         self.visit(a.value)
 
-    def visit_list_comp(self, e: ListComp):
-        self.visit_for_spec(e.for_spec)
-
-        for s in e.comp_spec:
-            match s:
-                case ForSpec() as f:
-                    self.visit_for_spec(f)
-                case IfSpec() as i:
-                    self.visit_if_spec(i)
-
-        self.visit(e.expr)
-
-    def visit_for_spec(self, s: ForSpec):
-        self.visit(s.source)
-
-    def visit_if_spec(self, s: IfSpec):
-        self.visit(s.condition)
-
     def visit_import(self, e: Import):
         self.visit_str(e.path)
 
@@ -160,27 +145,42 @@ class Visitor:
         if e.alternative is not None:
             self.visit(e.alternative)
 
-    def visit_obj_comp(self, e: ObjComp):
-        self.visit_comp_spec(e, [e.for_spec] + e.comp_spec)
+    def visit_list_comp(self, e: ListComp):
+        self.visit_comp_spec(
+            [e.for_spec] + e.comp_spec,
+            lambda: self.visit(e.expr),
+        )
 
-    def visit_comp_spec(self, e: ObjComp, specs: list[ForSpec | IfSpec]):
-        match specs:
+    def visit_obj_comp(self, e: ObjComp):
+        def next():
+            self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
+            for b in e.binds:
+                self.visit_bind(b)
+            for a in e.asserts:
+                self.visit_assert(a)
+            self.visit(e.field.value)
+
+        self.visit_comp_spec([e.for_spec] + e.comp_spec, next)
+
+    def visit_comp_spec(self, s: CompSpec, next: Callable[[], None]):
+        match s:
             case []:
-                self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
-                for b in e.binds:
-                    self.visit_bind(b)
-                for a in e.asserts:
-                    self.visit_assert(a)
-                self.visit(e.field.value)
+                next()
             case ForSpec() as first, *rest:
-                self.visit_for_spec(first)
-                self.visit_comp_spec(e, rest)
+                self.visit_for_spec(first, lambda: self.visit_comp_spec(rest, next))
             case IfSpec() as first, *rest:
-                self.visit_if_spec(first)
-                self.visit_comp_spec(e, rest)
+                self.visit_if_spec(first, lambda: self.visit_comp_spec(rest, next))
+
+    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+        self.visit(s.source)
+        next()
+
+    def visit_if_spec(self, s: IfSpec, next: Callable[[], None]):
+        self.visit(s.condition)
+        next()
 
     def visit_object(self, e: Object):
-        # THe following traversal order is important:
+        # The following traversal order is important:
         #
         #  * Field keys
         #  * Object local bindings

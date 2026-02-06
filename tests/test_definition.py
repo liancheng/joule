@@ -19,7 +19,7 @@ class TestDefinition(unittest.TestCase):
         for ref_mark in ref_marks:
             self.assertSequenceEqual(
                 DefinitionProvider.serve(doc.ast, doc.start_of(ref_mark)),
-                [doc.at(def_mark)],
+                [doc.node_at(doc.start_of(def_mark)).location],
             )
 
     def assertNotDefined(
@@ -68,16 +68,33 @@ class TestDefinition(unittest.TestCase):
             dedent(
                 """
                 function(p1=p2, p2, p3=p1)
-                         ^^1^^2 ^^3 ^^4^^5
+                         ^1 ^2  ^3  ^4 ^5
                     p1 + p2 + p3
-                    ^^6  ^^7  ^^8
+                    ^6   ^7   ^8
                 """
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks=["5", "6"])  # p1
-        self.assertDefined(t, def_mark="3", ref_marks=["2", "7"])  # p2
-        self.assertDefined(t, def_mark="4", ref_marks=["8"])  # p3
+        self.assertDefined(t, def_mark="1", ref_marks=["5", "6"])
+        self.assertDefined(t, def_mark="3", ref_marks=["2", "7"])
+        self.assertDefined(t, def_mark="4", ref_marks=["8"])
+
+    def test_list_comp(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                [
+                    local v = 0;
+                          ^1
+                    i + v for i in [2, 3]
+                    ^2  ^3    ^4
+                ]
+                """
+            )
+        )
+
+        self.assertDefined(t, def_mark="1", ref_marks="3")
+        self.assertDefined(t, def_mark="4", ref_marks="2")
 
     def test_obj_comp(self):
         t = FakeDocument(
@@ -98,7 +115,6 @@ class TestDefinition(unittest.TestCase):
         self.assertDefined(t, def_mark="1", ref_marks="3")
         self.assertDefined(t, def_mark="4", ref_marks="2")
 
-    @unittest.skip("TODO")
     def test_obj_comp_obj_local_in_key(self):
         t = FakeDocument(
             dedent(
@@ -107,12 +123,16 @@ class TestDefinition(unittest.TestCase):
                       ^1
                 {
                     local v = 2,
+                          ^2
                     ['f' + i + v]: v,
-                               ^2
+                           ^3  ^4  ^5
                     for i in [1, 2]
+                        ^6
                 }
                 """
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks="2")
+        self.assertDefined(t, def_mark="1", ref_marks="4")
+        self.assertDefined(t, def_mark="2", ref_marks="5")
+        self.assertDefined(t, def_mark="6", ref_marks="3")

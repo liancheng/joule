@@ -9,7 +9,6 @@ from rich.text import Text
 
 from joule.ast import (
     AST,
-    Id,
     Arg,
     Array,
     Assert,
@@ -23,6 +22,7 @@ from joule.ast import (
     FixedKey,
     Fn,
     ForSpec,
+    Id,
     IfSpec,
     Import,
     ListComp,
@@ -85,7 +85,7 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
 class VarBinding:
     location: L.Location
     name: str
-    bound_to: Expr
+    bound_to: AST
 
 
 @D.dataclass
@@ -175,12 +175,8 @@ class FakeDocument:
         return AST.from_cst(self.uri, node)
 
     def node_at(self, target: str | L.Position | L.Range) -> AST:
-        match target:
-            case str() as mark:
-                target = self.locations[mark].range
-            case L.Position() as pos:
-                target = L.Range(pos, pos)
-
+        if isinstance(target, str):
+            target = self.at(target).range
         return head(maybe(self.body.node_at(target)))
 
     def offset_of(self, pos: L.Position) -> int:
@@ -374,7 +370,7 @@ class FakeDocument:
     ) -> Slice:
         return Slice(self.at(at), expr, begin, end, step)
 
-    def var_binding(self, *, at: str, name: str, to: Expr) -> VarBinding:
+    def var_binding(self, *, at: str, name: str, to: AST) -> VarBinding:
         return VarBinding(self.at(at), name, to)
 
     def field_binding(
