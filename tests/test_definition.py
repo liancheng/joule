@@ -4,7 +4,7 @@ from textwrap import dedent, indent
 from rich.console import Console
 from rich.text import Text
 
-from joule.ast import Id
+from joule.ast import AST, Id, Object, Scope
 from joule.providers import DefinitionProvider
 from joule.util import head, maybe
 
@@ -12,6 +12,35 @@ from .dsl import FakeDocument
 
 
 class TestDefinition(unittest.TestCase):
+    def report(self, doc: FakeDocument, scope: Scope, defn: AST, ref: AST) -> str:
+        console = Console()
+        with console.capture() as capture:
+            console.print(Text("Variable not defined:"))
+            console.print(
+                Text(", ").join(
+                    [
+                        Text(" Scope ", "black on yellow"),
+                        Text(" Variable ", "black on red"),
+                        Text(" Reference ", "black on blue"),
+                    ]
+                ),
+            )
+            console.print(
+                doc.highlight(
+                    [
+                        (scope.owner.location.range, "black on yellow"),
+                        (defn.location.range, "black on red"),
+                        (ref.location.range, "black on blue"),
+                    ]
+                ),
+            )
+            console.print("\nScope:\n")
+            console.print(indent(scope.pretty_tree, " " * 4))
+            console.print("\nScope owner AST:\n")
+            console.print(indent(scope.owner.pretty_tree, " " * 4))
+
+        return capture.get()
+
     def assertVarDefined(
         self,
         doc: FakeDocument,
@@ -21,45 +50,40 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, str):
             ref_marks = [ref_marks]
 
-        def report(var: Id.Var, var_ref: Id.VarRef) -> str:
-            console = Console()
-            with console.capture() as capture:
-                scope = head(maybe(var.bound_in))
-
-                console.print(Text("Variable not defined:"))
-                console.print(
-                    Text(", ").join(
-                        [
-                            Text(" Scope ", "black on yellow"),
-                            Text(" Variable ", "black on red"),
-                            Text(" Reference ", "black on blue"),
-                        ]
-                    ),
-                )
-                console.print(
-                    doc.highlight(
-                        [
-                            (scope.owner.location.range, "black on yellow"),
-                            (var.location.range, "black on red"),
-                            (var_ref.location.range, "black on blue"),
-                        ]
-                    ),
-                )
-                console.print("\nScope:\n")
-                console.print(indent(scope.pretty_tree, " " * 4))
-                console.print("\nScope owner AST:\n")
-                console.print(indent(scope.owner.pretty_tree, " " * 4))
-
-            return capture.get()
+        provider = DefinitionProvider(doc.ast)
 
         for ref_mark in ref_marks:
             var = doc.node_at(def_mark).to(Id.Var)
             var_ref = doc.node_at(ref_mark).to(Id.VarRef)
 
             self.assertSequenceEqual(
-                DefinitionProvider(doc.ast).serve(doc.start_of(ref_mark)),
+                provider.serve(doc.start_of(ref_mark)),
                 [var.location],
-                report(var, var_ref),
+                self.report(doc, head(maybe(var.bound_in)), var, var_ref),
+            )
+
+    def assertFieldDefined(
+        self,
+        doc: FakeDocument,
+        obj_mark: str,
+        key_mark: str,
+        ref_marks: str | list[str],
+    ):
+        if isinstance(ref_marks, str):
+            ref_marks = [ref_marks]
+
+        provider = DefinitionProvider(doc.ast)
+        obj = doc.node_at(obj_mark).to(Object)
+
+        for ref_mark in ref_marks:
+            key = doc.node_at(key_mark).to(Id.Field)
+            field_scope = head(maybe(obj.field_scope))
+            ref = doc.node_at(ref_mark).to(Id.FieldRef)
+
+            self.assertSequenceEqual(
+                provider.serve(doc.start_of(ref_mark)),
+                [key.location],
+                self.report(doc, field_scope, key, ref),
             )
 
     def test_local(self):
@@ -164,7 +188,7 @@ class TestDefinition(unittest.TestCase):
                 """\
                 local f = 'f';
                       ^1
-                local v = { 'f': 0 };
+                local v = { f: 0 };
                       ^2
                 v[f]
                 ^3^4
@@ -174,3 +198,17 @@ class TestDefinition(unittest.TestCase):
 
         self.assertVarDefined(t, def_mark="1", ref_marks="4")
         self.assertVarDefined(t, def_mark="2", ref_marks="3")
+
+    def test_field(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = { f: 0 };
+                          ^1^2
+                v.f
+                  ^3
+                """
+            )
+        )
+
+        self.assertFieldDefined(t, obj_mark="1", key_mark="2", ref_marks="3")

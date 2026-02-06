@@ -1,6 +1,6 @@
 import lsprotocol.types as L
 
-from joule.ast import AST, Binding, Document, FieldAccess, Id, Object
+from joule.ast import AST, Binding, Document, FieldAccess, Id, Object, Scope
 from joule.util import maybe
 from joule.visitor import Visitor
 
@@ -21,10 +21,7 @@ class DefinitionProvider(Visitor):
             case Id.VarRef():
                 return [binding.location for binding in self.find_var_binding(node)]
             case Id.FieldRef():
-                return [
-                    binding.location
-                    for binding in self.find_field_binding(node, node.parent)
-                ]
+                return [binding.location for binding in self.find_field_binding(node)]
             case _:
                 return []
 
@@ -35,22 +32,26 @@ class DefinitionProvider(Visitor):
             for binding in maybe(scope.get(id.name))
         ]
 
-    def find_field_binding(
-        self, field_ref: Id.FieldRef, ancestor: AST | None
-    ) -> list[Binding]:
-        match ancestor:
-            case FieldAccess(_, Object() as obj, _):
+    def find_field_binding(self, field_ref: Id.FieldRef) -> list[Binding]:
+        match field_ref.parent:
+            case FieldAccess() as parent:
                 return [
                     binding
-                    for scope in maybe(obj.field_scope)
+                    for scope in self.find_field_scope(parent.obj)
                     for binding in maybe(scope.get(field_ref.name))
                 ]
-            case FieldAccess(_, Id.VarRef() as var_ref, _):
-                (
-                    location
-                    for binding in self.find_var_binding(var_ref)
-                    for location in self.find_field_binding(field_ref, binding.to)
-                )
+            case _:
                 return []
+
+    def find_field_scope(self, node: AST) -> list[Scope]:
+        match node:
+            case Object():
+                return [scope for scope in maybe(node.field_scope)]
+            case Id.VarRef() as var_ref:
+                return [
+                    scope
+                    for binding in self.find_var_binding(var_ref)
+                    for scope in self.find_field_scope(binding.to)
+                ]
             case _:
                 return []
