@@ -43,7 +43,7 @@ class TestScopeResolution(unittest.TestCase):
 
         self.assertTrue(
             any(
-                b.name == name and b.location == location and b.to == to
+                b.name == name and b.location == location and b.target == to
                 for b in scope.bindings
             ),
             message(),

@@ -1,6 +1,15 @@
 import lsprotocol.types as L
 
-from joule.ast import AST, Binding, Document, FieldAccess, Id, Object, Scope
+from joule.ast import (
+    AST,
+    Binding,
+    Document,
+    Field,
+    FieldAccess,
+    Id,
+    Object,
+    Scope,
+)
 from joule.util import maybe
 from joule.visitor import Visitor
 
@@ -33,15 +42,12 @@ class DefinitionProvider(Visitor):
         ]
 
     def find_field_binding(self, field_ref: Id.FieldRef) -> list[Binding]:
-        match field_ref.parent:
-            case FieldAccess() as parent:
-                return [
-                    binding
-                    for scope in self.find_field_scope(parent.obj)
-                    for binding in maybe(scope.get(field_ref.name))
-                ]
-            case _:
-                return []
+        return [
+            binding
+            for parent in maybe(field_ref.parent)
+            for scope in self.find_field_scope(parent.to(FieldAccess).obj)
+            for binding in maybe(scope.get(field_ref.name))
+        ]
 
     def find_field_scope(self, node: AST) -> list[Scope]:
         match node:
@@ -51,7 +57,13 @@ class DefinitionProvider(Visitor):
                 return [
                     scope
                     for binding in self.find_var_binding(var_ref)
-                    for scope in self.find_field_scope(binding.to)
+                    for scope in self.find_field_scope(binding.target)
+                ]
+            case FieldAccess() as f:
+                return [
+                    scope
+                    for binding in self.find_field_binding(f.field)
+                    for scope in self.find_field_scope(binding.target.to(Field).value)
                 ]
             case _:
                 return []
