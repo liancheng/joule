@@ -87,4 +87,4 @@ def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
 def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
-    return DefinitionProvider.serve(tree, params.position)
+    return DefinitionProvider(tree).serve(params.position)

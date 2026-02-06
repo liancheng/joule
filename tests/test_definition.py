@@ -1,14 +1,18 @@
 import unittest
-from textwrap import dedent
+from textwrap import dedent, indent
+
+from rich.console import Console
+from rich.text import Text
 
 from joule.ast import Id
 from joule.providers import DefinitionProvider
+from joule.util import head, maybe
 
 from .dsl import FakeDocument
 
 
 class TestDefinition(unittest.TestCase):
-    def assertDefined(
+    def assertVarDefined(
         self,
         doc: FakeDocument,
         def_mark: str,
@@ -17,26 +21,45 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, str):
             ref_marks = [ref_marks]
 
+        def report(var: Id.Var, var_ref: Id.VarRef) -> str:
+            console = Console()
+            with console.capture() as capture:
+                scope = head(maybe(var.bound_in))
+
+                console.print(Text("Variable not defined:"))
+                console.print(
+                    Text(", ").join(
+                        [
+                            Text(" Scope ", "black on yellow"),
+                            Text(" Variable ", "black on red"),
+                            Text(" Reference ", "black on blue"),
+                        ]
+                    ),
+                )
+                console.print(
+                    doc.highlight(
+                        [
+                            (scope.owner.location.range, "black on yellow"),
+                            (var.location.range, "black on red"),
+                            (var_ref.location.range, "black on blue"),
+                        ]
+                    ),
+                )
+                console.print("\nScope:\n")
+                console.print(indent(scope.pretty_tree, " " * 4))
+                console.print("\nScope owner AST:\n")
+                console.print(indent(scope.owner.pretty_tree, " " * 4))
+
+            return capture.get()
+
         for ref_mark in ref_marks:
-            pos = doc.start_of(def_mark)
-            var = doc.node_at(pos).to(Id.Var)
+            var = doc.node_at(def_mark).to(Id.Var)
+            var_ref = doc.node_at(ref_mark).to(Id.VarRef)
+
             self.assertSequenceEqual(
-                DefinitionProvider.serve(doc.ast, doc.start_of(ref_mark)),
+                DefinitionProvider(doc.ast).serve(doc.start_of(ref_mark)),
                 [var.location],
-            )
-
-    def assertNotDefined(
-        self,
-        doc: FakeDocument,
-        ref_marks: str | list[str],
-    ):
-        if isinstance(ref_marks, str):
-            ref_marks = [ref_marks]
-
-        for ref_mark in ref_marks:
-            self.assertSequenceEqual(
-                DefinitionProvider.serve(doc.ast, doc.start_of(ref_mark)),
-                [],
+                report(var, var_ref),
             )
 
     def test_local(self):
@@ -49,7 +72,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks="2")
+        self.assertVarDefined(t, def_mark="1", ref_marks="2")
 
     def test_local_shadowing(self):
         t = FakeDocument(
@@ -64,7 +87,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks="2")
+        self.assertVarDefined(t, def_mark="1", ref_marks="2")
 
     def test_fn_params(self):
         t = FakeDocument(
@@ -78,9 +101,9 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks=["5", "6"])
-        self.assertDefined(t, def_mark="3", ref_marks=["2", "7"])
-        self.assertDefined(t, def_mark="4", ref_marks=["8"])
+        self.assertVarDefined(t, def_mark="1", ref_marks=["5", "6"])
+        self.assertVarDefined(t, def_mark="3", ref_marks=["2", "7"])
+        self.assertVarDefined(t, def_mark="4", ref_marks=["8"])
 
     def test_list_comp(self):
         t = FakeDocument(
@@ -96,8 +119,8 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks="3")
-        self.assertDefined(t, def_mark="4", ref_marks="2")
+        self.assertVarDefined(t, def_mark="1", ref_marks="3")
+        self.assertVarDefined(t, def_mark="4", ref_marks="2")
 
     def test_obj_comp(self):
         t = FakeDocument(
@@ -117,6 +140,37 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertDefined(t, def_mark="1", ref_marks="4")
-        self.assertDefined(t, def_mark="2", ref_marks="5")
-        self.assertDefined(t, def_mark="6", ref_marks="3")
+        self.assertVarDefined(t, def_mark="1", ref_marks="4")
+        self.assertVarDefined(t, def_mark="2", ref_marks="5")
+        self.assertVarDefined(t, def_mark="6", ref_marks="3")
+
+    def test_field_access(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = { f: 1 };
+                      ^1
+                v.f
+                ^2
+                """
+            )
+        )
+
+        self.assertVarDefined(t, def_mark="1", ref_marks="2")
+
+    def test_slice_var_index(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local f = 'f';
+                      ^1
+                local v = { 'f': 0 };
+                      ^2
+                v[f]
+                ^3^4
+                """
+            )
+        )
+
+        self.assertVarDefined(t, def_mark="1", ref_marks="4")
+        self.assertVarDefined(t, def_mark="2", ref_marks="3")

@@ -178,7 +178,9 @@ class FakeDocument:
     def offset_of(self, pos: L.Position) -> int:
         return self.line_offsets[pos.line] + pos.character
 
-    def highlight(self, ranges: list[L.Range], style: str) -> Text:
+    def highlight(
+        self, ranges: tuple[L.Range, str] | list[tuple[L.Range, str]]
+    ) -> Text:
         """Renders the Jsonnet document with given text ranges highlighted.
 
         The document is rendered with its URI, a top ruler, an optional bottom ruler
@@ -195,6 +197,9 @@ class FakeDocument:
           Line number gutter
         ```
         """
+        if isinstance(ranges, tuple):
+            ranges = [ranges]
+
         styled = Text.styled
         rendered = []
 
@@ -203,11 +208,11 @@ class FakeDocument:
 
         # Renders the ranges.
         rendered_source = styled(self.source, "default")
-        for r in ranges:
+        for span, style in ranges:
             rendered_source.stylize(
                 style,
-                start=self.offset_of(r.start),
-                end=self.offset_of(r.end),
+                start=self.offset_of(span.start),
+                end=self.offset_of(span.end),
             )
 
         raw_lines = self.source.splitlines()

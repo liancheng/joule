@@ -38,42 +38,44 @@ from joule.ast import (
 class Visitor:
     def visit(self, tree: AST):
         match tree:
-            case Document():
-                self.visit_document(tree)
-            case Id.VarRef():
-                self.visit_var_ref(tree)
-            case Str():
-                self.visit_str(tree)
-            case Num():
-                self.visit_num(tree)
-            case Bool():
-                self.visit_bool(tree)
             case Array():
                 self.visit_array(tree)
-            case Binary():
-                self.visit_binary(tree)
-            case Local():
-                self.visit_local(tree)
-            case Fn():
-                self.visit_fn(tree)
-            case Call():
-                self.visit_call(tree)
-            case ListComp():
-                self.visit_list_comp(tree)
-            case Import():
-                self.visit_import(tree)
             case AssertExpr():
                 self.visit_assert_expr(tree)
+            case Binary():
+                self.visit_binary(tree)
+            case Bool():
+                self.visit_bool(tree)
+            case Call():
+                self.visit_call(tree)
+            case Document():
+                self.visit_document(tree)
+            case FieldAccess():
+                self.visit_field_access(tree)
+            case Fn():
+                self.visit_fn(tree)
+            case Id.VarRef():
+                self.visit_var_ref(tree)
             case If():
                 self.visit_if(tree)
+            case Import():
+                self.visit_import(tree)
+            case ListComp():
+                self.visit_list_comp(tree)
+            case Local():
+                self.visit_local(tree)
+            case Num():
+                self.visit_num(tree)
             case ObjComp():
                 self.visit_obj_comp(tree)
             case Object():
                 self.visit_object(tree)
-            case FieldAccess():
-                self.visit_field_access(tree)
             case Self():
                 self.visit_self(tree)
+            case Slice():
+                self.visit_slice(tree)
+            case Str():
+                self.visit_str(tree)
             case Super():
                 self.visit_super(tree)
 
