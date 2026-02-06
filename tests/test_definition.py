@@ -228,3 +228,15 @@ class TestDefinition(unittest.TestCase):
         self.assertVarDefined(t, var_mark="1", ref_marks="5")
         self.assertFieldDefined(t, obj_mark="2", key_mark="3", ref_marks="6")
         self.assertFieldDefined(t, obj_mark="2", key_mark="4", ref_marks="7")
+
+    def test_dollar(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                { f: 1, g: { h: $.i, i: 2 }, i: 3 }
+                ^1                ^2         ^3
+                """
+            )
+        )
+
+        self.assertFieldDefined(t, obj_mark="1", key_mark="3", ref_marks="2")

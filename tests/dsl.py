@@ -17,6 +17,7 @@ from joule.ast import (
     Call,
     ComputedKey,
     Document,
+    Dollar,
     Expr,
     Field,
     FixedKey,
@@ -280,6 +281,9 @@ class FakeDocument:
     def var_ref(self, *, at: str, name: str) -> Id.VarRef:
         return Id.VarRef(self.at(at), name)
 
+    def field_ref(self, *, at: str, name: str) -> Id.FieldRef:
+        return Id.FieldRef(self.at(at), name)
+
     def param_ref(self, *, at: str, name: str) -> Id.ParamRef:
         return Id.ParamRef(self.at(at), name)
 
@@ -313,12 +317,12 @@ class FakeDocument:
     def array(self, *, at: str, values: list[Expr]) -> Array:
         return Array(self.at(at), values)
 
-    def object(self, *, at: str, objinside: list[Bind | Assert | Field] = []) -> Object:
+    def object(self, *, at: str, members: list[Bind | Assert | Field] = []) -> Object:
         binds = []
         asserts = []
         fields = []
 
-        for ast in objinside:
+        for ast in members:
             match ast:
                 case Bind():
                     binds.append(ast)
@@ -363,6 +367,7 @@ class FakeDocument:
 
     def slice(
         self,
+        *,
         at: str,
         expr: Expr,
         begin: Expr,
@@ -370,3 +375,15 @@ class FakeDocument:
         step: Expr | None = None,
     ) -> Slice:
         return Slice(self.at(at), expr, begin, end, step)
+
+    def element_at(
+        self,
+        *,
+        at: str,
+        collection: Expr,
+        key: Expr,
+    ) -> Slice:
+        return Slice(self.at(at), collection, key)
+
+    def dollar(self, *, at: str) -> Dollar:
+        return Dollar(self.at(at))

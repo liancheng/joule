@@ -881,9 +881,27 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at("1").to(Slice),
-            t.slice(
-                "1",
-                t.var_ref(at="2", name="x"),
-                t.string(at="3", value="f"),
+            t.element_at(
+                at="1",
+                collection=t.var_ref(at="2", name="x"),
+                key=t.string(at="3", value="f"),
+            ),
+        )
+
+    def test_dollar(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                { f: 1, g: $.f }
+                        ^^^^^^1
+                        ^2 ^3^4
+                """
+            )
+        )
+
+        self.assertAstEqual(
+            t.node_at("1").to(Field),
+            t.fixed_id_key(at="2", name="g").map_to(
+                t.dollar(at="3").get(t.field_ref(at="4", name="f")),
             ),
         )

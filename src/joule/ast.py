@@ -240,12 +240,22 @@ class Expr(AST):
     def not_eq(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.NotEq, rhs)
 
+    def get(self, field_ref: Id.FieldRef) -> FieldAccess:
+        return FieldAccess(merge_locations(self, field_ref), self, field_ref)
+
+
+@D.dataclass
+class Dollar(Expr):
+    @staticmethod
+    def from_cst(uri: URI, node: T.Node) -> "Expr":
+        assert node.type == "dollar"
+        return Dollar(location_of(uri, node))
+
+    AST.register(from_cst, "dollar")
+
 
 @D.dataclass
 class Self(Expr):
-    def __post_init__(self):
-        self.scope: Scope | None = None
-
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Self":
         assert node.type == "self"
@@ -256,9 +266,6 @@ class Self(Expr):
 
 @D.dataclass
 class Super(Expr):
-    def __post_init__(self):
-        self.scope: Scope | None = None
-
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Super":
         assert node.type == "super"
@@ -1040,6 +1047,7 @@ class Object(Expr):
     fields: list[Field] = D.field(default_factory=list)
 
     def __post_init__(self):
+        super().__post_init__()
         self.field_scope: Scope | None = None
 
     def set_field_scope(self, scope: Scope):
