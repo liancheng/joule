@@ -7,10 +7,13 @@ from joule.ast import (
     AST,
     Array,
     Binary,
+    ComputedKey,
+    Field,
     Local,
     Num,
     ObjComp,
     Operator,
+    Slice,
     Str,
     Visibility,
 )
@@ -652,7 +655,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("k"),
+            t.node_at("k").to(ComputedKey),
             t.computed_key(at="k", expr=t.var_ref(at="x", name="x")),
         )
 
@@ -696,7 +699,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("1"),
+            t.node_at("1").to(Field),
             t.fixed_id_key(at="2", name="x").map_to(t.num(at="3", value=1)),
         )
 
@@ -712,7 +715,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("1"),
+            t.node_at("1").to(Field),
             t.fixed_id_key(at="2", name="x").map_to(
                 t.num(at="3", value=1),
                 visibility=Visibility.Forced,
@@ -733,7 +736,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("1"),
+            t.node_at("1").to(Field),
             t.fixed_id_key(at="3", name="f").map_to(
                 t.fn(
                     at="2",
@@ -760,7 +763,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("f"),
+            t.node_at("f").to(Field),
             t.fixed_id_key(at="k", name="f").map_to(
                 t.fn(
                     at="fn",
@@ -845,24 +848,25 @@ class TestAST(unittest.TestCase):
                 """\
                 {
                   f: local x = 1; x
-                  ^1 ^^^^^^^^^^^^^^2
-                   ^3      ^4^5 ^6
-                               ^7 ^8
+                  ^1 ^2:   ^4^5 ^6^:2
+                   ^3          ^7 ^8
                 }
                 """
             )
         )
 
         var = t.var(at="4", name="x")
-        bind = var.bind(t.num(at="7", value=1))
-        local = t.local(at="2", binds=[bind], body=t.var_ref(at="8", name="x"))
-        field = t.fixed_id_key(at="1", name="f").map_to(local)
+        self.assertAstEqual(t.node_at(t.start_of("4")), var)
 
-        self.assertAstEqual(t.node_at(t.at("2").range.start), local)
-        self.assertAstEqual(t.node_at(t.at("3").range.end), field)
-        self.assertAstEqual(t.node_at(t.at("4").range.start), var)
-        self.assertAstEqual(t.node_at(t.at("5").range.start), bind)
-        self.assertAstEqual(t.node_at(t.at("6").range.end), local)
+        bind = var.bind(t.num(at="7", value=1))
+        self.assertAstEqual(t.node_at(t.start_of("5")), bind)
+
+        local = t.local(at="2", binds=[bind], body=t.var_ref(at="8", name="x"))
+        self.assertAstEqual(t.node_at(t.start_of("2")), local)
+        self.assertAstEqual(t.node_at(t.end_of("6")), local)
+
+        field = t.fixed_id_key(at="1", name="f").map_to(local)
+        self.assertAstEqual(t.node_at(t.end_of("3")), field)
 
     def test_slice(self):
         t = FakeDocument(
@@ -876,7 +880,7 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at("1"),
+            t.node_at("1").to(Slice),
             t.slice(
                 "1",
                 t.var_ref(at="2", name="x"),

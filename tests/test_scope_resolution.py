@@ -6,26 +6,27 @@ import lsprotocol.types as L
 from joule.ast import (
     AST,
     Field,
+    FixedKey,
     ForSpec,
+    Id,
     Local,
+    Num,
     ObjComp,
     Object,
     Scope,
-    Visibility,
-    merge_locations,
 )
 from joule.util import head, maybe
 
-from .dsl import FakeDocument, FieldBinding, VarBinding
+from .dsl import FakeDocument, VarBinding
 
 
 class TestScopeResolution(unittest.TestCase):
-    def checkBinding(
+    def assertBinding(
         self,
         scope: Scope,
         location: L.Location,
         name: str,
-        bound_to: AST,
+        to: AST,
     ):
         def message():
             return "\n".join(
@@ -34,7 +35,7 @@ class TestScopeResolution(unittest.TestCase):
                     f"* Name: {name}",
                     f"* Location: {location}",
                     "* Bound to:",
-                    indent(bound_to.pretty_tree, " " * 4),
+                    indent(to.pretty_tree, " " * 4),
                     "* With in:",
                     indent(scope.pretty_tree, " " * 4),
                 ]
@@ -42,50 +43,30 @@ class TestScopeResolution(unittest.TestCase):
 
         self.assertTrue(
             any(
-                b.name == name and b.location == location and b.bound_to == bound_to
+                b.name == name and b.location == location and b.to == to
                 for b in scope.bindings
             ),
             message(),
         )
 
-    def assertVarsBound(self, owner: AST, bindings: VarBinding | list[VarBinding]):
-        if isinstance(bindings, VarBinding):
+    def assertVarBindings(self, owner: AST, bindings: VarBinding | list[VarBinding]):
+        if isinstance(bindings, tuple):
             bindings = [bindings]
 
-        self.assertTrue(owner.has_var_scope())
+        for var, to in bindings:
+            scope = head(maybe(var.bound_in))
+            self.assertEqual(scope.owner, owner)
+            self.assertBinding(scope, var.location, var.name, to)
 
-        scope = head(maybe(owner.var_scope))
-        self.assertEqual(scope.owner.location, owner.location)
-
-        for b in bindings:
-            self.checkBinding(scope, b.location, b.name, b.bound_to)
-
-    def assertFieldsBound(
-        self,
-        owner: Object,
-        bindings: FieldBinding | list[FieldBinding],
-    ):
-        if isinstance(bindings, FieldBinding):
-            bindings = [bindings]
-
-        self.assertTrue(owner.has_field_scope())
+    def assertFieldBindings(self, owner: Object, fields: Field | list[Field]):
+        if isinstance(fields, Field):
+            fields = [fields]
 
         scope = head(maybe(owner.field_scope))
-        self.assertEqual(scope.owner.location, owner.location)
+        self.assertEqual(scope.owner, owner)
 
-        for b in bindings:
-            self.checkBinding(
-                scope,
-                b.location,
-                b.key.name,
-                Field(
-                    merge_locations(b.key, b.value),
-                    b.key,
-                    b.value,
-                    b.visibility,
-                    b.inherited,
-                ),
-            )
+        for f in fields:
+            self.assertBinding(scope, f.key.location, f.key.to(FixedKey).name, f)
 
     def test_local(self):
         t = FakeDocument(
@@ -97,11 +78,11 @@ class TestScopeResolution(unittest.TestCase):
             )
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             t.node_at("0").to(Local),
             [
-                t.var_binding(at="1", name="x", to=t.num(at="2", value=1)),
-                t.var_binding(at="3", name="x", to=t.num(at="4", value=2)),
+                (t.node_at("1").to(Id.Var), t.node_at("2").to(Num)),
+                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
             ],
         )
 
@@ -111,13 +92,13 @@ class TestScopeResolution(unittest.TestCase):
                 """\
                 {
                     f1: v1,
-                    ^^1 ^^2
+                    ^^^^^^1
                     "f2":: v2,
-                    ^^^^3  ^^4
+                    ^^^^^^^^^2
                     local v1 = 3,
-                          ^^5  ^6
+                          ^3   ^4
                     local v2 = 4,
-                          ^^7  ^8
+                          ^5   ^6
                 }
                 """
             )
@@ -125,28 +106,19 @@ class TestScopeResolution(unittest.TestCase):
 
         obj = t.body.to(Object)
 
-        self.assertFieldsBound(
+        self.assertFieldBindings(
             obj,
             [
-                t.field_binding(
-                    at="1",
-                    key=t.fixed_id_key(at="1", name="f1"),
-                    value=t.var_ref(at="2", name="v1"),
-                ),
-                t.field_binding(
-                    at="3",
-                    key=t.fixed_str_key(at="3", name="f2"),
-                    value=t.var_ref(at="4", name="v2"),
-                    visibility=Visibility.Hidden,
-                ),
+                t.node_at("1").to(Field),
+                t.node_at("2").to(Field),
             ],
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             obj,
             [
-                t.var_binding(at="5", name="v1", to=t.num(at="6", value=3)),
-                t.var_binding(at="7", name="v2", to=t.num(at="8", value=4)),
+                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
+                (t.node_at("5").to(Id.Var), t.node_at("6").to(Num)),
             ],
         )
 
@@ -164,18 +136,14 @@ class TestScopeResolution(unittest.TestCase):
             )
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             t.node_at("1").to(Local),
-            t.var_binding(at="2", name="x", to=t.node_at("3")),
+            (t.node_at("2").to(Id.Var), t.node_at("3").to(Num)),
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             t.node_at("4").to(ForSpec),
-            t.var_binding(
-                at="5",
-                name="i",
-                to=t.node_at("4"),
-            ),
+            (t.node_at("5").to(Id.Var), t.node_at("4").to(ForSpec)),
         )
 
     def test_obj_comp(self):
@@ -193,15 +161,15 @@ class TestScopeResolution(unittest.TestCase):
             """
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             t.body.to(ObjComp),
             [
-                t.var_binding(at="1", name="v1", to=t.node_at("2")),
-                t.var_binding(at="3", name="v2", to=t.node_at("4")),
+                (t.node_at("1").to(Id.Var), t.node_at("2").to(Num)),
+                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
             ],
         )
 
-        self.assertVarsBound(
+        self.assertVarBindings(
             t.node_at("5"),
-            t.var_binding(at="6", name="i", to=t.node_at("5")),
+            (t.node_at("6").to(Id.Var), t.node_at("5").to(ForSpec)),
         )

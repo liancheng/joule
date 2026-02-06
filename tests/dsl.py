@@ -81,11 +81,7 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
-@D.dataclass
-class VarBinding:
-    location: L.Location
-    name: str
-    bound_to: AST
+VarBinding = tuple[Id.Var, AST]
 
 
 @D.dataclass
@@ -369,17 +365,3 @@ class FakeDocument:
         step: Expr | None = None,
     ) -> Slice:
         return Slice(self.at(at), expr, begin, end, step)
-
-    def var_binding(self, *, at: str, name: str, to: AST) -> VarBinding:
-        return VarBinding(self.at(at), name, to)
-
-    def field_binding(
-        self,
-        *,
-        at: str,
-        key: FixedKey,
-        value: Expr,
-        visibility: Visibility = Visibility.Default,
-        inherited: bool = False,
-    ) -> FieldBinding:
-        return FieldBinding(self.at(at), key, value, visibility, inherited)

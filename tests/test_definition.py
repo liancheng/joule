@@ -1,6 +1,7 @@
 import unittest
 from textwrap import dedent
 
+from joule.ast import Id
 from joule.providers import DefinitionProvider
 
 from .dsl import FakeDocument
@@ -17,9 +18,11 @@ class TestDefinition(unittest.TestCase):
             ref_marks = [ref_marks]
 
         for ref_mark in ref_marks:
+            pos = doc.start_of(def_mark)
+            var = doc.node_at(pos).to(Id.Var)
             self.assertSequenceEqual(
                 DefinitionProvider.serve(doc.ast, doc.start_of(ref_mark)),
-                [doc.node_at(doc.start_of(def_mark)).location],
+                [var.location],
             )
 
     def assertNotDefined(
@@ -97,25 +100,6 @@ class TestDefinition(unittest.TestCase):
         self.assertDefined(t, def_mark="4", ref_marks="2")
 
     def test_obj_comp(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                {
-                    local v = 0,
-                          ^1
-                    ['f' + i]: v,
-                           ^2  ^3
-                    for i in [1, 2]
-                        ^4
-                }
-                """
-            )
-        )
-
-        self.assertDefined(t, def_mark="1", ref_marks="3")
-        self.assertDefined(t, def_mark="4", ref_marks="2")
-
-    def test_obj_comp_obj_local_in_key(self):
         t = FakeDocument(
             dedent(
                 """\

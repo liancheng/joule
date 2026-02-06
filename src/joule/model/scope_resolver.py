@@ -21,7 +21,6 @@ from joule.visitor import Visitor
 class ScopeResolver(Visitor):
     def resolve(self, tree: Document) -> Document:
         self.var_scope: Scope = Scope(tree)
-        tree.set_var_scope(self.var_scope)
         self.visit(tree)
         return tree
 
@@ -35,9 +34,7 @@ class ScopeResolver(Visitor):
             self.var_scope = prev
 
     def visit_local(self, e: Local):
-        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
-            e.set_var_scope(scope)
-
+        with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for b in e.binds:
                 self.visit_bind(b)
 
@@ -62,9 +59,7 @@ class ScopeResolver(Visitor):
         # This requires all parameters to be bound before traversing any parameter
         # default value expressions. This is also why parameters must be handled in
         # `visit_fn` instead of `visit_param`.
-        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
-            e.set_var_scope(scope)
-
+        with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for p in e.params:
                 self.var_scope.bind_var(p.id, p)
 
@@ -79,15 +74,13 @@ class ScopeResolver(Visitor):
         e.field_scope.bind_field(k, f)
 
     def visit_object(self, e: Object):
-        with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
-            e.set_var_scope(scope)
+        with self.activate_var_scope(self.var_scope.nest(owner=e)):
             e.set_field_scope(Scope.empty(e))
             super().visit_object(e)
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
         self.visit(s.source)
         with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
-            s.set_var_scope(scope)
             scope.bind_var(s.id, s)
             next()
 
@@ -95,8 +88,7 @@ class ScopeResolver(Visitor):
         def next():
             self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
 
-            with self.activate_var_scope(self.var_scope.nest(owner=e)) as scope:
-                e.set_var_scope(scope)
+            with self.activate_var_scope(self.var_scope.nest(owner=e)):
                 for b in e.binds:
                     self.visit_bind(b)
                 for a in e.asserts:

@@ -56,17 +56,8 @@ class AST:
         except Exception:
             return ErrorAST.from_cst(uri, node)
 
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return False
-
-    @classmethod
-    def has_field_scope(cls) -> bool:
-        return False
-
     def __post_init__(self):
         self.parent: AST | None = None
-        self.var_scope: Scope | None = None
 
         for child in self.children:
             child.parent = self
@@ -78,9 +69,6 @@ class AST:
             )
 
         return self
-
-    def set_var_scope(self, scope: Scope):
-        self.var_scope = scope
 
     @property
     def pretty_tree(self) -> str:
@@ -283,10 +271,6 @@ class Super(Expr):
 class Document(Expr):
     body: Expr
 
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
-
     @property
     def children(self) -> list[AST]:
         return [self.body]
@@ -308,6 +292,10 @@ class Id:
     @D.dataclass
     class Var(Expr):
         name: str
+
+        def __post_init__(self):
+            super().__post_init__()
+            self.bound_in: Scope | None = None
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Var":
@@ -555,10 +543,6 @@ class Local(Expr):
     def children(self) -> Iterable[AST]:
         return chain(self.binds, [self.body])
 
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
-
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Local":
         assert node.type == "local_bind"
@@ -617,10 +601,6 @@ class Fn(Expr):
     @property
     def tails(self) -> list[Expr]:
         return self.body.tails
-
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Fn":
@@ -713,10 +693,6 @@ class ForSpec(AST):
     def children(self) -> Iterable[AST]:
         return [self.id, self.source]
 
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
-
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ForSpec":
         assert node.type == "forspec"
@@ -760,10 +736,6 @@ class ListComp(Expr):
     @property
     def children(self) -> Iterable[AST]:
         return chain([self.expr, self.for_spec], self.comp_spec)
-
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ListComp":
@@ -1078,10 +1050,6 @@ class Object(Expr):
         return chain(self.binds, self.assertions, self.fields)
 
     @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
-
-    @classmethod
     def has_field_scope(cls) -> bool:
         return True
 
@@ -1134,10 +1102,6 @@ class ObjComp(Expr):
             [self.for_spec],
             self.comp_spec,
         )
-
-    @classmethod
-    def has_var_scope(cls) -> bool:
-        return True
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ObjComp":
@@ -1401,7 +1365,7 @@ class Binding:
     scope: "Scope"
     name: str
     location: L.Location
-    bound_to: AST
+    to: AST
 
 
 @D.dataclass
@@ -1412,6 +1376,7 @@ class Scope:
     children: list["Scope"] = D.field(default_factory=list)
 
     def bind_var(self, var: Id.Var, to: AST):
+        var.bound_in = self
         self._bind(var.name, var.location, to)
 
     def bind_field(self, key: FixedKey, to: Field):
@@ -1453,16 +1418,17 @@ class PrettyScope(PrettyTree):
                 repr = "Scope"
             case Binding(_, name, _, None):
                 repr = name
-            case Binding(_, name, _, AST() as bound_to):
-                bound_to_class = bound_to.__class__.__qualname__
-                bound_to_range = bound_to.location.range
-                repr = f'"{name}" <- {bound_to_class} @ {bound_to_range}'
+            case Binding(_, name, _, AST() as to):
+                to_class = to.__class__.__qualname__
+                to_range = to.location.range
+                repr = f'"{name}" <- {to_class} @ {to_range}'
             case []:
                 repr = "[]"
             case list():
                 repr = "[...]"
             case AST() as owner:
-                repr = f"{owner.__class__.__qualname__} [{owner.location.range}]"
+                owner_class = owner.__class__.__qualname__
+                repr = f"{owner_class} [{owner.location.range}]"
             case _:
                 repr = str(self.node)
 
