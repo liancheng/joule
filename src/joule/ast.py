@@ -65,7 +65,7 @@ class AST:
     def to(self, expect_type: Type[ASTType]) -> ASTType:
         if not isinstance(self, expect_type):
             raise TypeError(
-                f"Expected {expect_type.__qualname__}, but got {type(self).__name__}"
+                f"Expected {expect_type.__qualname__}, but got {type(self).__qualname__}"
             )
 
         return self
@@ -946,6 +946,10 @@ class FieldKey(AST):
 class FixedKey(FieldKey):
     id: Id.Field | Str
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.bound_in: Scope | None = None
+
     @property
     def name(self) -> str:
         match self.id:
@@ -1049,9 +1053,6 @@ class Object(Expr):
     def __post_init__(self):
         super().__post_init__()
         self.field_scope: Scope | None = None
-
-    def set_field_scope(self, scope: Scope):
-        self.field_scope = scope
 
     @property
     def children(self) -> Iterable[AST]:
@@ -1257,6 +1258,14 @@ class If(Expr):
     @property
     def children(self) -> Iterable[AST]:
         return chain([self.condition, self.consequence], maybe(self.alternative))
+
+    @property
+    def branches(self) -> Iterable[Expr]:
+        return (
+            [self.consequence, self.alternative]
+            if self.alternative
+            else [self.consequence]
+        )
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "If":

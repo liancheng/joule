@@ -8,6 +8,7 @@ from joule.ast import (
     Field,
     FieldAccess,
     Id,
+    If,
     Object,
     Scope,
 )
@@ -49,39 +50,48 @@ class DefinitionProvider:
             for binding in maybe(scope.get(field_ref.name))
         ]
 
-    def find_outer_most_object(self, node: AST | None) -> Object | None:
-        def walk(node: AST | None, sofar: Object | None) -> Object | None:
-            match node:
-                case None:
-                    return sofar
-                case Object():
-                    return walk(node.parent, node)
-                case _:
-                    return walk(node.parent, sofar)
-
-        return walk(node, None)
-
     def find_field_scope(self, node: AST) -> list[Scope]:
         match node:
             case Dollar():
+
+                def outer_most_object(
+                    node: AST | None, so_far: Object | None = None
+                ) -> Object | None:
+                    match node:
+                        case None:
+                            return so_far
+                        case Object():
+                            return outer_most_object(node.parent, node)
+                        case _:
+                            return outer_most_object(node.parent, so_far)
+
                 return [
                     scope
-                    for obj in maybe(self.find_outer_most_object(node))
+                    for obj in maybe(outer_most_object(node))
                     for scope in maybe(obj.field_scope)
                 ]
-            case FieldAccess() as f:
+
+            case FieldAccess():
                 return [
                     scope
-                    for binding in self.find_field_binding(f.field)
+                    for binding in self.find_field_binding(node.field)
                     for scope in self.find_field_scope(binding.target.to(Field).value)
                 ]
-            case Id.VarRef() as var_ref:
+
+            case Id.VarRef():
                 return [
                     scope
-                    for binding in self.find_var_binding(var_ref)
+                    for binding in self.find_var_binding(node)
                     for scope in self.find_field_scope(binding.target)
                 ]
+
+            case If():
+                return [
+                    scope for e in node.branches for scope in self.find_field_scope(e)
+                ]
+
             case Object():
                 return [scope for scope in maybe(node.field_scope)]
+
             case _:
                 return []

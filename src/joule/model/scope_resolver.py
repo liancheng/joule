@@ -41,6 +41,7 @@ class ScopeResolver(Visitor):
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None
         e.field_scope.bind_field(k, f)
+        k.bound_in = e.field_scope
 
     def visit_fn(self, e: Fn):
         # NOTE: In a Jsonnet function, any parameter's default value expression can
@@ -91,7 +92,7 @@ class ScopeResolver(Visitor):
 
     def visit_object(self, e: Object):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
-            e.set_field_scope(Scope.empty(e))
+            e.field_scope = Scope.empty(e)
             super().visit_object(e)
 
     def visit_var_ref(self, e: Id.VarRef):
