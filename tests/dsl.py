@@ -9,12 +9,14 @@ from rich.text import Text
 
 from joule.ast import (
     AST,
+    URI,
     Arg,
     Array,
     Assert,
     Bind,
     Bool,
     Call,
+    CompSpec,
     ComputedKey,
     Document,
     Dollar,
@@ -44,7 +46,7 @@ LOCATION_MARK_PATTERN = re.compile(
         """\
         (?P<indent>[ ]*)
         (?P<range>\\^+)
-        (?P<mark>:?[a-zA-Z0-9-_.]+:?)
+        (?P<mark>:?[0-9]+:?)
         """
     ),
     re.VERBOSE,
@@ -82,6 +84,49 @@ def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
     )
 
 
+def parse_location_marks(source: str, uri: URI) -> tuple[str, dict[int, L.Location]]:
+    line_no = -1
+    source_lines: list[str] = []
+    open_marks: dict[int, L.Position] = {}
+    locations: dict[int, L.Location] = {}
+
+    for line in source.splitlines():
+        if not re.fullmatch(LOCATION_MARK_LINE_PATTERN, line):
+            line_no += 1
+            source_lines.append(line)
+        else:
+            for m in list(re.finditer(LOCATION_MARK_PATTERN, line)):
+                start_char, end_char = m.span("range")
+                raw_mark: str = m.group("mark")
+                mark: int = int(raw_mark.strip(":"))
+
+                match raw_mark.endswith(":"), raw_mark.startswith(":"):
+                    # Opening marks like `x:`
+                    case True, False:
+                        assert mark not in open_marks, f"Duplicate mark: {mark}"
+                        start = L.Position(line_no, start_char)
+                        open_marks[mark] = start
+
+                    # Closing marks like `:x`
+                    case False, True:
+                        assert mark in open_marks, f"No matching open mark: {mark}"
+                        start = open_marks.pop(mark)
+                        end = L.Position(line_no, end_char)
+                        locations[mark] = L.Location(uri, L.Range(start, end))
+
+                    # `x` and `:x:` are equivalent
+                    case _:
+                        start = L.Position(line_no, start_char)
+                        end = L.Position(line_no, end_char)
+                        locations[mark] = L.Location(uri, L.Range(start, end))
+
+    assert len(open_marks) == 0, (
+        f"Closing mark(s) missing: {', '.join([str(k) for k in open_marks.keys()])}"
+    )
+
+    return "\n".join(source_lines), locations
+
+
 VarBinding = tuple[Id.Var, AST]
 
 
@@ -97,7 +142,7 @@ class FieldBinding:
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
-        self.source, self.locations = self._preprocess(source)
+        self.source, self.locations = parse_location_marks(source, uri)
         self.cst = parse_jsonnet(self.source)
         self.ast = ScopeResolver().resolve(Document.from_cst(self.uri, self.cst))
         self.body = self.ast.body
@@ -114,65 +159,25 @@ class FakeDocument:
             accumulate(chain([0], map(len, self.lines)))
         )
 
-    def _preprocess(self, source: str) -> tuple[str, dict[str, L.Location]]:
-        line_no = -1
-        source_lines: list[str] = []
-        open_marks: dict[str, L.Position] = {}
-        locations: dict[str, L.Location] = {}
-
-        for line in source.splitlines():
-            if not re.fullmatch(LOCATION_MARK_LINE_PATTERN, line):
-                line_no += 1
-                source_lines.append(line)
-            else:
-                for m in list(re.finditer(LOCATION_MARK_PATTERN, line)):
-                    start_char, end_char = m.span("range")
-                    raw_mark: str = m.group("mark")
-                    mark: str = raw_mark.strip(":")
-
-                    match raw_mark.endswith(":"), raw_mark.startswith(":"):
-                        # Opening marks like `x:`
-                        case True, False:
-                            assert mark not in open_marks, f"Duplicate mark: {mark}"
-                            start = L.Position(line_no, start_char)
-                            open_marks[mark] = start
-                        # Closing marks like `:x`
-                        case False, True:
-                            assert mark in open_marks, f"No matching open mark: {mark}"
-                            start = open_marks.pop(mark)
-                            end = L.Position(line_no, end_char)
-                            locations[mark] = L.Location(self.uri, L.Range(start, end))
-                        # `x` and `:x:` are equivalent
-                        case _:
-                            start = L.Position(line_no, start_char)
-                            end = L.Position(line_no, end_char)
-                            locations[mark] = L.Location(self.uri, L.Range(start, end))
-
-        assert len(open_marks) == 0, (
-            f"Closing mark(s) missing: {', '.join(open_marks.keys())}"
-        )
-
-        return "\n".join(source_lines), locations
-
     @property
     def location(self) -> L.Location:
         return self.body.location
 
-    def at(self, mark: str) -> L.Location:
+    def at(self, mark: int) -> L.Location:
         return self.locations[mark]
 
-    def start_of(self, mark: str) -> L.Position:
-        return self.locations[mark].range.start
+    def start_of(self, mark: int) -> L.Position:
+        return self.at(mark).range.start
 
-    def end_of(self, mark: str) -> L.Position:
-        return self.locations[mark].range.end
+    def end_of(self, mark: int) -> L.Position:
+        return self.at(mark).range.end
 
     def query_one(self, query: T.Query, capture: str) -> AST:
         node = head(T.QueryCursor(query).captures(self.cst).get(capture, []))
         return AST.from_cst(self.uri, node)
 
-    def node_at(self, target: str | L.Position | L.Range) -> AST:
-        if isinstance(target, str):
+    def node_at(self, target: int | L.Position | L.Range) -> AST:
+        if isinstance(target, int):
             target = self.at(target).range
         return head(maybe(self.body.node_at(target)))
 
@@ -275,49 +280,49 @@ class FakeDocument:
 
         return Text("\n").join(rendered)
 
-    def var(self, *, at: str, name: str) -> Id.Var:
+    def var(self, *, at: int, name: str) -> Id.Var:
         return Id.Var(self.at(at), name)
 
-    def var_ref(self, *, at: str, name: str) -> Id.VarRef:
+    def var_ref(self, *, at: int, name: str) -> Id.VarRef:
         return Id.VarRef(self.at(at), name)
 
-    def field_ref(self, *, at: str, name: str) -> Id.FieldRef:
+    def field_ref(self, *, at: int, name: str) -> Id.FieldRef:
         return Id.FieldRef(self.at(at), name)
 
-    def param_ref(self, *, at: str, name: str) -> Id.ParamRef:
+    def param_ref(self, *, at: int, name: str) -> Id.ParamRef:
         return Id.ParamRef(self.at(at), name)
 
-    def fixed_id_key(self, *, at: str, name: str) -> FixedKey:
+    def fixed_id_key(self, *, at: int, name: str) -> FixedKey:
         return FixedKey(self.at(at), Id.Field(self.at(at), name))
 
-    def num(self, *, at: str, value: float | int) -> Num:
+    def num(self, *, at: int, value: float | int) -> Num:
         return Num(self.at(at), float(value))
 
-    def true(self, *, at: str) -> Bool:
+    def true(self, *, at: int) -> Bool:
         return Bool(self.at(at), True)
 
-    def false(self, *, at: str) -> Bool:
+    def false(self, *, at: int) -> Bool:
         return Bool(self.at(at), False)
 
-    def string(self, *, at: str, value: str) -> Str:
+    def string(self, *, at: int, value: str) -> Str:
         return Str(self.at(at), value)
 
-    def fixed_str_key(self, *, at: str, name: str) -> FixedKey:
+    def fixed_str_key(self, *, at: int, name: str) -> FixedKey:
         return FixedKey(self.at(at), self.string(at=at, value=name))
 
-    def computed_key(self, *, at: str, expr: Expr) -> ComputedKey:
+    def computed_key(self, *, at: int, expr: Expr) -> ComputedKey:
         return ComputedKey(self.at(at), expr)
 
-    def fn(self, *, at: str, params: list[Param], body: Expr) -> Fn:
+    def fn(self, *, at: int, params: list[Param], body: Expr) -> Fn:
         return Fn(self.at(at), params, body)
 
-    def call(self, *, at: str, fn: Expr, args: list[Arg]) -> Call:
+    def call(self, *, at: int, fn: Expr, args: list[Arg]) -> Call:
         return Call(self.at(at), fn, args)
 
-    def array(self, *, at: str, values: list[Expr]) -> Array:
+    def array(self, *, at: int, values: list[Expr]) -> Array:
         return Array(self.at(at), values)
 
-    def object(self, *, at: str, members: list[Bind | Assert | Field] = []) -> Object:
+    def object(self, *, at: int, members: list[Bind | Assert | Field] = []) -> Object:
         binds = []
         asserts = []
         fields = []
@@ -333,42 +338,43 @@ class FakeDocument:
 
         return Object(self.at(at), binds, asserts, fields)
 
-    def if_(self, *, at: str, condition: Expr) -> IfSpec:
+    def if_(self, *, at: int, condition: Expr) -> IfSpec:
         return IfSpec(self.at(at), condition)
 
-    def for_(self, *, at: str, id: Id.Var, source: Expr) -> ForSpec:
+    def for_(self, *, at: int, id: Id.Var, source: Expr) -> ForSpec:
         return ForSpec(self.at(at), id, source)
 
     def assert_(
-        self, *, at: str, condition: Expr, message: Expr | None = None
+        self, *, at: int, condition: Expr, message: Expr | None = None
     ) -> Assert:
         return Assert(self.at(at), condition, message)
 
-    def local(self, *, at: str, binds: list[Bind], body: Expr) -> Local:
+    def local(self, *, at: int, binds: list[Bind], body: Expr) -> Local:
         return Local(self.at(at), binds, body)
 
-    def import_(self, *, at: str, path: Str) -> Import:
+    def import_(self, *, at: int, path: Str) -> Import:
         return Import(self.at(at), "import", path)
 
-    def importbin(self, *, at: str, path: Str) -> Import:
+    def importbin(self, *, at: int, path: Str) -> Import:
         return Import(self.at(at), "importbin", path)
 
-    def importstr(self, *, at: str, path: Str) -> Import:
+    def importstr(self, *, at: int, path: Str) -> Import:
         return Import(self.at(at), "importstr", path)
 
     def list_comp(
         self,
-        at: str,
+        *,
+        at: int,
         expr: Expr,
         for_spec: ForSpec,
-        *comp_spec: ForSpec | IfSpec,
+        comp_spec: CompSpec = [],
     ) -> ListComp:
-        return ListComp(self.at(at), expr, for_spec, list(comp_spec))
+        return ListComp(self.at(at), expr, for_spec, comp_spec)
 
     def slice(
         self,
         *,
-        at: str,
+        at: int,
         expr: Expr,
         begin: Expr,
         end: Expr | None = None,
@@ -379,11 +385,11 @@ class FakeDocument:
     def element_at(
         self,
         *,
-        at: str,
+        at: int,
         collection: Expr,
         key: Expr,
     ) -> Slice:
         return Slice(self.at(at), collection, key)
 
-    def dollar(self, *, at: str) -> Dollar:
+    def dollar(self, *, at: int) -> Dollar:
         return Dollar(self.at(at))

@@ -79,10 +79,10 @@ class TestScopeResolution(unittest.TestCase):
         )
 
         self.assertVarBindings(
-            t.node_at("0").to(Local),
+            t.node_at(0).to(Local),
             [
-                (t.node_at("1").to(Id.Var), t.node_at("2").to(Num)),
-                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
+                (t.node_at(1).to(Id.Var), t.node_at(2).to(Num)),
+                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
             ],
         )
 
@@ -109,16 +109,16 @@ class TestScopeResolution(unittest.TestCase):
         self.assertFieldBindings(
             obj,
             [
-                t.node_at("1").to(Field),
-                t.node_at("2").to(Field),
+                t.node_at(1).to(Field),
+                t.node_at(2).to(Field),
             ],
         )
 
         self.assertVarBindings(
             obj,
             [
-                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
-                (t.node_at("5").to(Id.Var), t.node_at("6").to(Num)),
+                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
+                (t.node_at(5).to(Id.Var), t.node_at(6).to(Num)),
             ],
         )
 
@@ -137,13 +137,13 @@ class TestScopeResolution(unittest.TestCase):
         )
 
         self.assertVarBindings(
-            t.node_at("1").to(Local),
-            (t.node_at("2").to(Id.Var), t.node_at("3").to(Num)),
+            t.node_at(1).to(Local),
+            (t.node_at(2).to(Id.Var), t.node_at(3).to(Num)),
         )
 
         self.assertVarBindings(
-            t.node_at("4").to(ForSpec),
-            (t.node_at("5").to(Id.Var), t.node_at("4").to(ForSpec)),
+            t.node_at(4).to(ForSpec),
+            (t.node_at(5).to(Id.Var), t.node_at(4).to(ForSpec)),
         )
 
     def test_obj_comp(self):
@@ -164,12 +164,12 @@ class TestScopeResolution(unittest.TestCase):
         self.assertVarBindings(
             t.body.to(ObjComp),
             [
-                (t.node_at("1").to(Id.Var), t.node_at("2").to(Num)),
-                (t.node_at("3").to(Id.Var), t.node_at("4").to(Num)),
+                (t.node_at(1).to(Id.Var), t.node_at(2).to(Num)),
+                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
             ],
         )
 
         self.assertVarBindings(
-            t.node_at("5"),
-            (t.node_at("6").to(Id.Var), t.node_at("5").to(ForSpec)),
+            t.node_at(5),
+            (t.node_at(6).to(Id.Var), t.node_at(5).to(ForSpec)),
         )

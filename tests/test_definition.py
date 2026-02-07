@@ -82,10 +82,10 @@ class TestDefinition(unittest.TestCase):
     def assertVarDefined(
         self,
         doc: FakeDocument,
-        var_mark: str,
-        ref_marks: str | list[str],
+        var_mark: int,
+        ref_marks: int | list[int],
     ):
-        if isinstance(ref_marks, str):
+        if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
         provider = DefinitionProvider(doc.ast)
@@ -103,13 +103,13 @@ class TestDefinition(unittest.TestCase):
     def assertFieldDefined(
         self,
         doc: FakeDocument,
-        key_marks: str | list[str],
-        ref_marks: str | list[str],
+        key_marks: int | list[int],
+        ref_marks: int | list[int],
     ):
-        if isinstance(key_marks, str):
+        if isinstance(key_marks, int):
             key_marks = [key_marks]
 
-        if isinstance(ref_marks, str):
+        if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
         provider = DefinitionProvider(doc.ast)
@@ -134,7 +134,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="2")
+        self.assertVarDefined(t, var_mark=1, ref_marks=2)
 
     def test_local_shadowing(self):
         t = FakeDocument(
@@ -146,7 +146,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="2")
+        self.assertVarDefined(t, var_mark=1, ref_marks=2)
 
     def test_fn_params(self):
         t = FakeDocument(
@@ -158,9 +158,9 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks=["5", "6"])
-        self.assertVarDefined(t, var_mark="3", ref_marks=["2", "7"])
-        self.assertVarDefined(t, var_mark="4", ref_marks=["8"])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[5, 6])
+        self.assertVarDefined(t, var_mark=3, ref_marks=[2, 7])
+        self.assertVarDefined(t, var_mark=4, ref_marks=[8])
 
     def test_list_comp(self):
         t = FakeDocument(
@@ -172,8 +172,8 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="3")
-        self.assertVarDefined(t, var_mark="4", ref_marks="2")
+        self.assertVarDefined(t, var_mark=1, ref_marks=3)
+        self.assertVarDefined(t, var_mark=4, ref_marks=2)
 
     def test_obj_comp(self):
         t = FakeDocument(
@@ -193,9 +193,9 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="4")
-        self.assertVarDefined(t, var_mark="2", ref_marks="5")
-        self.assertVarDefined(t, var_mark="6", ref_marks="3")
+        self.assertVarDefined(t, var_mark=1, ref_marks=4)
+        self.assertVarDefined(t, var_mark=2, ref_marks=5)
+        self.assertVarDefined(t, var_mark=6, ref_marks=3)
 
     def test_field_access(self):
         t = FakeDocument(
@@ -207,7 +207,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="2")
+        self.assertVarDefined(t, var_mark=1, ref_marks=2)
 
     def test_slice_var_index(self):
         t = FakeDocument(
@@ -219,8 +219,8 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="4")
-        self.assertVarDefined(t, var_mark="2", ref_marks="3")
+        self.assertVarDefined(t, var_mark=1, ref_marks=4)
+        self.assertVarDefined(t, var_mark=2, ref_marks=3)
 
     def test_field(self):
         t = FakeDocument(
@@ -232,7 +232,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertFieldDefined(t, key_marks="1", ref_marks="2")
+        self.assertFieldDefined(t, key_marks=1, ref_marks=2)
 
     def test_nested_field(self):
         t = FakeDocument(
@@ -244,9 +244,9 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertVarDefined(t, var_mark="1", ref_marks="4")
-        self.assertFieldDefined(t, key_marks="2", ref_marks="5")
-        self.assertFieldDefined(t, key_marks="3", ref_marks="6")
+        self.assertVarDefined(t, var_mark=1, ref_marks=4)
+        self.assertFieldDefined(t, key_marks=2, ref_marks=5)
+        self.assertFieldDefined(t, key_marks=3, ref_marks=6)
 
     def test_dollar(self):
         t = FakeDocument(
@@ -258,7 +258,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertFieldDefined(t, key_marks="2", ref_marks="1")
+        self.assertFieldDefined(t, key_marks=2, ref_marks=1)
 
     def test_if(self):
         t = FakeDocument(
@@ -270,7 +270,7 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertFieldDefined(t, key_marks=["1", "2"], ref_marks="3")
+        self.assertFieldDefined(t, key_marks=[1, 2], ref_marks=3)
 
     def test_if_no_alternative(self):
         t = FakeDocument(
@@ -282,4 +282,4 @@ class TestDefinition(unittest.TestCase):
             )
         )
 
-        self.assertFieldDefined(t, key_marks="1", ref_marks="2")
+        self.assertFieldDefined(t, key_marks=1, ref_marks=2)
