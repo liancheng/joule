@@ -1,7 +1,4 @@
-import dataclasses as D
-import re
 from itertools import accumulate, chain
-from textwrap import dedent
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -9,7 +6,6 @@ from rich.text import Text
 
 from joule.ast import (
     AST,
-    URI,
     Arg,
     Array,
     Assert,
@@ -35,114 +31,20 @@ from joule.ast import (
     Param,
     Slice,
     Str,
-    Visibility,
 )
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.util import head, maybe
 
-LOCATION_MARK_PATTERN = re.compile(
-    dedent(
-        """\
-        (?P<indent>[ ]*)
-        (?P<range>\\^+)
-        (?P<mark>:?[0-9]+:?)
-        """
-    ),
-    re.VERBOSE,
-)
-
-LOCATION_MARK_LINE_PATTERN = re.compile(
-    f"({LOCATION_MARK_PATTERN.pattern})+",
-    re.VERBOSE,
-)
-
-
-def side_by_side(lhs: Text | str, rhs: Text | str) -> Text:
-    if isinstance(lhs, str):
-        lhs = Text(lhs)
-
-    if isinstance(rhs, str):
-        rhs = Text(rhs)
-
-    lhs_lines = lhs.split()
-    rhs_lines = rhs.split()
-
-    empty = Text.styled("", "default")
-    shorter = lhs_lines if len(lhs_lines) < len(rhs_lines) else rhs_lines
-    shorter.extend([empty] * abs(len(lhs_lines) - len(rhs_lines)))
-
-    max_width = max(map(len, lhs.plain.splitlines()))
-    sep = Text.styled(" : ", "grey50")
-
-    return Text("\n").join(
-        [
-            lhs_line + padding + sep + rhs_line
-            for lhs_line, rhs_line in zip(lhs_lines, rhs_lines)
-            if (padding := " " * (max_width - len(lhs_line))) is not None
-        ]
-    )
-
-
-def parse_location_marks(source: str, uri: URI) -> tuple[str, dict[int, L.Location]]:
-    line_no = -1
-    source_lines: list[str] = []
-    open_marks: dict[int, L.Position] = {}
-    locations: dict[int, L.Location] = {}
-
-    for line in source.splitlines():
-        if not re.fullmatch(LOCATION_MARK_LINE_PATTERN, line):
-            line_no += 1
-            source_lines.append(line)
-        else:
-            for m in list(re.finditer(LOCATION_MARK_PATTERN, line)):
-                start_char, end_char = m.span("range")
-                raw_mark: str = m.group("mark")
-                mark: int = int(raw_mark.strip(":"))
-
-                match raw_mark.endswith(":"), raw_mark.startswith(":"):
-                    # Opening marks like `x:`
-                    case True, False:
-                        assert mark not in open_marks, f"Duplicate mark: {mark}"
-                        start = L.Position(line_no, start_char)
-                        open_marks[mark] = start
-
-                    # Closing marks like `:x`
-                    case False, True:
-                        assert mark in open_marks, f"No matching open mark: {mark}"
-                        start = open_marks.pop(mark)
-                        end = L.Position(line_no, end_char)
-                        locations[mark] = L.Location(uri, L.Range(start, end))
-
-                    # `x` and `:x:` are equivalent
-                    case _:
-                        start = L.Position(line_no, start_char)
-                        end = L.Position(line_no, end_char)
-                        locations[mark] = L.Location(uri, L.Range(start, end))
-
-    assert len(open_marks) == 0, (
-        f"Closing mark(s) missing: {', '.join([str(k) for k in open_marks.keys()])}"
-    )
-
-    return "\n".join(source_lines), locations
-
+from .marked_range import parse_marked_locations
 
 VarBinding = tuple[Id.Var, AST]
-
-
-@D.dataclass
-class FieldBinding:
-    location: L.Location
-    key: FixedKey
-    value: Expr
-    visibility: Visibility
-    inherited: bool
 
 
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
-        self.source, self.locations = parse_location_marks(source, uri)
+        self.source, self.locations = parse_marked_locations(source, uri)
         self.cst = parse_jsonnet(self.source)
         self.ast = ScopeResolver().resolve(Document.from_cst(self.uri, self.cst))
         self.body = self.ast.body

@@ -25,6 +25,9 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.0",
 ]
+test = [
+    "parsy>=2.2",
+]
 
 [tool.ruff]
 exclude = [

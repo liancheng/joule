@@ -403,32 +403,40 @@ class TestAST(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                [x for x in [1, 2] if x > 3]
-                             ^1 ^2        ^3
-                 ^4    ^5   ^^^^^^6   ^7
-                                   ^^^^^^^^8
-                   ^^^^^^^^^^^^^^^9
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^10
+                [
+                ^1:
+                    x for x in [1, 2]
+                    ^2^3: ^4   ^5:  ^:5,:3
+                                ^6 ^7
+                    if x > 3
+                    ^8:^9  ^10,:8
+                ]
+                ^:1
                 """
             )
         )
 
-        x = t.var(at=5, name="x")
-        x_ref1 = t.var_ref(at=4, name="x")
-        x_ref2 = t.var_ref(at=7, name="x")
-
-        _1 = t.num(at=1, value=1)
-        _2 = t.num(at=2, value=2)
-        _3 = t.num(at=3, value=3)
-
         self.assertAstEqual(
             t.body,
             t.list_comp(
-                at=10,
-                expr=x_ref1,
-                for_spec=t.for_(at=9, id=x, source=t.array(at=6, values=[_1, _2])),
+                at=1,
+                expr=t.var_ref(at=2, name="x"),
+                for_spec=t.for_(
+                    at=3,
+                    id=t.var(at=4, name="x"),
+                    source=t.array(
+                        at=5,
+                        values=[
+                            t.num(at=6, value=1),
+                            t.num(at=7, value=2),
+                        ],
+                    ),
+                ),
                 comp_spec=[
-                    t.if_(at=8, condition=x_ref2 > _3),
+                    t.if_(
+                        at=8,
+                        condition=t.var_ref(at=9, name="x") > t.num(at=10, value=3),
+                    )
                 ],
             ),
         )
@@ -438,8 +446,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 function(x, y = 2) x + y
-                         ^1 ^2  ^3 ^4  ^5
-                ^^^^^^^^^^^^^^^^^^^^^^^^6
+                ^1:      ^2 ^3  ^4 ^5  ^6,:
                 """
             )
         )
@@ -447,12 +454,12 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.fn(
-                at=6,
+                at=1,
                 params=[
-                    t.var(at=1, name="x").param(),
-                    t.var(at=2, name="y").param(t.num(at=3, value=2)),
+                    t.var(at=2, name="x").param(),
+                    t.var(at=3, name="y").param(t.num(at=4, value=2)),
                 ],
-                body=t.var_ref(at=4, name="x") + t.var_ref(at=5, name="y"),
+                body=t.var_ref(at=5, name="x") + t.var_ref(at=6, name="y"),
             ),
         )
 
@@ -461,8 +468,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 function() 1
-                           ^1
-                ^^^^^^^^^^^^2
+                ^1:        ^2,:
                 """
             )
         )
@@ -470,9 +476,9 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.fn(
-                at=2,
+                at=1,
                 params=[],
-                body=t.num(at=1, value=1),
+                body=t.num(at=2, value=1),
             ),
         )
 
@@ -481,8 +487,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 import 'test.jsonnet'
-                       ^^^^^^^^^^^^^^1
-                ^^^^^^^^^^^^^^^^^^^^^2
+                ^1:    ^^^^^^^^^^^^^^2,:
                 """
             )
         )
@@ -490,8 +495,8 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.import_(
-                at=2,
-                path=t.string(at=1, value="test.jsonnet"),
+                at=1,
+                path=t.string(at=2, value="test.jsonnet"),
             ),
         )
 
@@ -500,8 +505,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 importbin 'bin'
-                          ^^^^^1
-                ^^^^^^^^^^^^^^^2
+                ^1:       ^^^^^2,:
                 """
             )
         )
@@ -509,8 +513,8 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.importbin(
-                at=2,
-                path=t.string(at=1, value="bin"),
+                at=1,
+                path=t.string(at=2, value="bin"),
             ),
         )
 
@@ -519,8 +523,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 importstr 'test.jsonnet'
-                          ^^^^^^^^^^^^^^1
-                ^^^^^^^^^^^^^^^^^^^^^^^^2
+                ^1:       ^^^^^^^^^^^^^^2,:
                 """
             )
         )
@@ -528,8 +531,8 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             t.importstr(
-                at=2,
-                path=t.string(at=1, value="test.jsonnet"),
+                at=1,
+                path=t.string(at=2, value="test.jsonnet"),
             ),
         )
 
@@ -579,13 +582,11 @@ class TestAST(unittest.TestCase):
                 local x =
                 ^1:   ^2
                     assert true;
-                    ^^^^^^^^^^^3
-                           ^^^^4
+                    ^3:    ^^^^4,:
                     false;
                     ^^^^^5
                 x
-                ^6
-                ^:1
+                ^:1,6
                 """
             )
         )
@@ -720,17 +721,16 @@ class TestAST(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                { f(p, q = 0):: p + q }
-                  ^^^^^^^^^^^^^^^^^^^1
-                   ^^^^^^^^^^^^^^^^^^2
-                  ^3^4 ^5  ^6   ^7  ^8
+                { func(p, q = 0):: p + q }
+                  ^1: ^2:              ^:2,:1
+                  ^^^^3^4 ^5  ^6   ^7  ^8
                 """
             )
         )
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=3, name="f").map_to(
+            t.fixed_id_key(at=3, name="func").map_to(
                 t.fn(
                     at=2,
                     params=[
@@ -778,12 +778,10 @@ class TestAST(unittest.TestCase):
                      ^^^3  ^4   ^5  ^6
                     ^^^^^^^^^7
                     assert true,
-                           ^^^^8
-                    ^^^^^^^^^^^9
+                    ^8:    ^^^^9,:
                     for x in [2, 3]
                         ^10   ^11^12
-                             ^^^^^^13
-                    ^^^^^^^^^^^^^^^14
+                    ^13:     ^^^^^^14,:
                     if x + y < 4
                        ^15 ^16 ^17
                     ^^^^^^^^^^^^18
@@ -800,7 +798,7 @@ class TestAST(unittest.TestCase):
         value = t.var_ref(at=5, name="x") + t.var_ref(at=6, name="y")
 
         array = t.array(
-            at=13,
+            at=14,
             values=[
                 t.num(at=11, value=2),
                 t.num(at=12, value=3),
@@ -808,7 +806,7 @@ class TestAST(unittest.TestCase):
         )
 
         for_spec = t.for_(
-            at=14,
+            at=13,
             id=t.var(at=10, name="x"),
             source=array,
         )
@@ -829,7 +827,7 @@ class TestAST(unittest.TestCase):
                 binds=[
                     t.var(at=1, name="x").bind(t.num(at=2, value=1)),
                 ],
-                asserts=[t.assert_(at=9, condition=t.true(at=8))],
+                asserts=[t.assert_(at=8, condition=t.true(at=9))],
                 for_spec=for_spec,
                 comp_spec=[if_spec],
             ),

@@ -87,30 +87,34 @@ def tree(
 
 @app.command()
 def index(
-    workspace_root: Annotated[
-        Path,
-        typer.Argument(
-            help="The workspace root directory.",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-            readable=True,
-            allow_dash=False,
-        ),
-    ],
     path: Annotated[
         Path,
         typer.Argument(
             help="The Jsonnet file to index",
             exists=True,
             file_okay=True,
-            dir_okay=False,
+            dir_okay=True,
             readable=True,
             allow_dash=False,
         ),
     ],
 ):
-    del workspace_root
-    cst = parse_jsonnet(path.read_text())
-    ast = Document.from_cst(path.as_uri(), cst)
-    ScopeResolver().resolve(ast)
+    def resolve(file: Path):
+        cst = parse_jsonnet(file.read_text())
+        ast = Document.from_cst(file.as_uri(), cst)
+        ScopeResolver().resolve(ast)
+
+    if path.is_file():
+        resolve(path)
+    else:
+        for root, dirs, files in Path.walk(path):
+            if ".git" in dirs:
+                dirs.remove(".git")
+
+            for file in files:
+                if (
+                    file.endswith(".jsonnet")
+                    or file.endswith(".libsonnet")
+                    or file.endswith(".jsonnet.TEMPLATE")
+                ):
+                    resolve(root.absolute().joinpath(file))

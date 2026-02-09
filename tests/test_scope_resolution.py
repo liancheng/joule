@@ -73,16 +73,16 @@ class TestScopeResolution(unittest.TestCase):
             dedent(
                 """\
                 local x = 1, x = 2; x + x
-                ^0    ^1  ^2 ^3  ^4
+                ^1    ^2  ^3 ^4  ^5
                 """
             )
         )
 
         self.assertVarBindings(
-            t.node_at(0).to(Local),
+            t.node_at(1).to(Local),
             [
-                (t.node_at(1).to(Id.Var), t.node_at(2).to(Num)),
-                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
+                (t.node_at(2).to(Id.Var), t.node_at(3).to(Num)),
+                (t.node_at(4).to(Id.Var), t.node_at(5).to(Num)),
             ],
         )
 
@@ -130,7 +130,7 @@ class TestScopeResolution(unittest.TestCase):
                     local x = 1;
                     ^1    ^2  ^3
                     x + i for i in [1, 2]
-                          ^4: ^5        ^:4
+                          ^4: ^5        ^:
                 ]
                 """
             )
@@ -156,7 +156,7 @@ class TestScopeResolution(unittest.TestCase):
                 local v2 = 2,
                       ^^3  ^4
                 for i in [3, 4]
-                ^5: ^6        ^:5
+                ^5: ^6        ^:
             }
             """
         )
