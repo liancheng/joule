@@ -1,6 +1,8 @@
+from typing import Callable
+
 import lsprotocol.types as L
 
-from joule.ast import Bind, Document, Id, Param
+from joule.ast import Bind, Document, ForSpec, Id, Param
 from joule.visitor import Visitor
 
 
@@ -37,3 +39,15 @@ class InlayHintProvider(Visitor):
                 ],
             )
         )
+
+    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+        self.hints.append(
+            L.InlayHint(
+                s.id.location.range.end,
+                [
+                    L.InlayHintLabelPart(""),
+                    L.InlayHintLabelPart(str(len(s.id.references))),
+                ],
+            )
+        )
+        next()
