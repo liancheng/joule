@@ -9,10 +9,11 @@ from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.providers import (
     DefinitionProvider,
+    DocumentHighlightProvider,
     DocumentSymbolProvider,
+    InlayHintProvider,
     ReferencesProvider,
 )
-from joule.providers.inlay_hint_provider import InlayHintProvider
 from joule.util import maybe
 
 log = logging.root
@@ -107,3 +108,10 @@ def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
     return InlayHintProvider(tree).serve()
+
+
+@server.feature(L.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
+def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return DocumentHighlightProvider(tree).serve(params.position)
