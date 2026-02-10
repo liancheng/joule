@@ -278,3 +278,20 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(t, key_marks=1, ref_marks=2)
+
+    def test_if_with_var_refs(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v1 = { f: 1 };
+                             ^1
+                local v2 = { f: 2 };
+                             ^2
+                local v3 = if true then v1 else v2;
+                v3.f
+                   ^3
+                """
+            )
+        )
+
+        self.assertFieldDefined(t, key_marks=[1, 2], ref_marks=3)
