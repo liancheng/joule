@@ -329,7 +329,7 @@ class Id:
 
         def __post_init__(self):
             super().__post_init__()
-            self.bound_in: Scope | None = None
+            self.var: Id.Var | None = None
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.VarRef":

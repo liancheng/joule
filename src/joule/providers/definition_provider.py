@@ -38,7 +38,8 @@ class DefinitionProvider:
     def find_var_binding(self, id: Id.VarRef) -> list[Binding]:
         return [
             binding
-            for scope in maybe(id.bound_in)
+            for var in maybe(id.var)
+            for scope in maybe(var.bound_in)
             for binding in maybe(scope.get(id.name))
         ]
 

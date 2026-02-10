@@ -98,6 +98,7 @@ class ScopeResolver(Visitor):
             super().visit_object(e)
 
     def visit_var_ref(self, e: Id.VarRef):
-        e.bound_in = self.var_scope
         for binding in maybe(self.var_scope.get(e.name)):
-            binding.id.to(Id.Var).references.append(e)
+            var = binding.id.to(Id.Var)
+            e.var = var
+            var.references.append(e)

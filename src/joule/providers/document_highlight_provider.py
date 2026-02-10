@@ -18,9 +18,7 @@ class DocumentHighlightProvider:
             case Id.VarRef() as ref:
                 return [
                     L.DocumentHighlight(ast.location.range)
-                    for scope in maybe(ref.bound_in)
-                    for binding in maybe(scope.get(ref.name))
-                    if (var := binding.id.to(Id.Var))
+                    for var in maybe(ref.var)
                     for ast in var.references + [var]
                 ]
             case _:
