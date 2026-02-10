@@ -56,7 +56,7 @@ class TestAST(unittest.TestCase):
                 Binary [0:0-0:7]
                 |-- op="+"
                 |-- lhs=Str [0:0-0:3]
-                |   `-- raw="f"
+                |   `-- value="f"
                 `-- rhs=Num [0:6-0:7]
                 .   `-- value=1.0
                 """
@@ -110,17 +110,28 @@ class TestAST(unittest.TestCase):
 
     def test_string(self):
         for literal, expected in [
-            ("'hello\\nworld'", "hello\\nworld"),
-            ('"hello\\nworld"', "hello\\nworld"),
-            ("@'hello\\nworld'", "hello\\nworld"),
-            ('@"hello\\nworld"', "hello\\nworld"),
-            ("|||\n  hello\n|||", "\n  hello\n"),
+            ("'hello\\nworld'", "hello\nworld"),
+            ('"hello\\nworld"', "hello\nworld"),
+            ("@'hello\\nworld'", "hello\nworld"),
+            ('@"hello\\nworld"', "hello\nworld"),
+            (
+                dedent(
+                    """\
+                    |||
+                        hello
+                    |||
+                    """
+                ),
+                "hello\n",
+            ),
         ]:
             t = FakeDocument(literal)
             self.assertAstEqual(
                 t.body,
                 Str(t.location, expected),
             )
+
+            self.assertEqual(t.body.to(Str).value, expected)
 
     def test_paren(self):
         t = FakeDocument(
@@ -664,7 +675,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.query_one(ts_query, "field_key"),
-            t.fixed_id_key(at=1, name="x"),
+            t.fixed_key(at=1, name="x"),
         )
 
         t = FakeDocument(
@@ -678,7 +689,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.query_one(ts_query, "field_key"),
-            t.fixed_str_key(at=1, name="x"),
+            t.fixed_key(at=1, name="x"),
         )
 
     def test_field(self):
@@ -694,7 +705,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=2, name="x").map_to(t.num(at=3, value=1)),
+            t.fixed_key(at=2, name="x").map_to(t.num(at=3, value=1)),
         )
 
     def test_hidden_field(self):
@@ -710,7 +721,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=2, name="x").map_to(
+            t.fixed_key(at=2, name="x").map_to(
                 t.num(at=3, value=1),
                 visibility=Visibility.Forced,
                 inherited=True,
@@ -730,7 +741,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=3, name="func").map_to(
+            t.fixed_key(at=3, name="func").map_to(
                 t.fn(
                     at=2,
                     params=[
@@ -757,7 +768,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=3, name="f").map_to(
+            t.fixed_key(at=3, name="f").map_to(
                 t.fn(
                     at=2,
                     params=[],
@@ -856,7 +867,7 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(t.node_at(t.start_of(2)), local)
         self.assertAstEqual(t.node_at(t.end_of(6)), local)
 
-        field = t.fixed_id_key(at=1, name="f").map_to(local)
+        field = t.fixed_key(at=1, name="f").map_to(local)
         self.assertAstEqual(t.node_at(t.end_of(3)), field)
 
     def test_slice(self):
@@ -892,7 +903,7 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(Field),
-            t.fixed_id_key(at=2, name="g").map_to(
+            t.fixed_key(at=2, name="g").map_to(
                 t.dollar(at=3).get(t.field_ref(at=4, name="f")),
             ),
         )

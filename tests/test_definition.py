@@ -4,7 +4,7 @@ from textwrap import dedent, indent
 from rich.console import Console
 from rich.text import Text
 
-from joule.ast import AST, FixedKey, Id, Scope
+from joule.ast import AST, Id, Scope
 from joule.providers import DefinitionProvider
 from joule.util import head, maybe
 
@@ -70,12 +70,7 @@ class TestDefinition(unittest.TestCase):
         if isinstance(keys, AST):
             keys = [keys]
 
-        scopes = [
-            scope
-            for key in keys
-            for parent in maybe(key.to(Id.Field).parent)
-            for scope in maybe(parent.to(FixedKey).bound_in)
-        ]
+        scopes = [scope for key in keys for scope in maybe(key.to(Id.Field).bound_in)]
 
         return self.dump_definitions(doc, scopes, keys, ref)
 

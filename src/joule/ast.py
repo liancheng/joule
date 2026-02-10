@@ -1,3 +1,4 @@
+import codecs
 import dataclasses as D
 from enum import StrEnum
 from itertools import chain, dropwhile
@@ -337,6 +338,10 @@ class Id:
     class Field(Expr):
         name: str
 
+        def __post_init__(self):
+            super().__post_init__()
+            self.bound_in: Scope | None = None
+
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Field":
             assert node.type == "id"
@@ -379,20 +384,33 @@ class Num(Expr):
 
 @D.dataclass
 class Str(Expr):
-    raw: str
+    value: str
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Str":
         assert node.type == "string"
 
-        _, content, _ = node.named_children
+        start, content, _ = node.named_children
+        assert start.text is not None
         assert content.text is not None
 
         return Str(
             location=location_of(uri, node),
             # The raw string content before escaping or indentations are handled.
-            raw=content.text.decode(),
+            value=Str.escape(start.text.decode(), content.text.decode()),
         )
+
+    @staticmethod
+    def escape(start: str, content: str) -> str:
+        match start:
+            case "|||":
+                content = dedent(content[content.index("\n") + 1 :])
+            case '@"' | "@'":
+                pass
+            case _:
+                content = codecs.decode(content, "unicode-escape")
+
+        return content
 
     AST.register(from_cst, "string")
 
@@ -923,7 +941,8 @@ class FieldKey(AST):
         elif head.type == "id":
             return FixedKey(location, Id.Field.from_cst(uri, head))
         else:
-            return FixedKey(location, Str.from_cst(uri, head))
+            name = Str.from_cst(uri, head)
+            return FixedKey(location, Id.Field(name.location, name.value))
 
     AST.register(from_cst, "fieldname")
 
@@ -944,19 +963,7 @@ class FieldKey(AST):
 
 @D.dataclass
 class FixedKey(FieldKey):
-    id: Id.Field | Str
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.bound_in: Scope | None = None
-
-    @property
-    def name(self) -> str:
-        match self.id:
-            case Id.Field(_, name):
-                return name
-            case Str(_, raw):
-                return raw
+    id: Id.Field
 
     @property
     def children(self) -> list[AST]:
@@ -1397,7 +1404,7 @@ class Scope:
         self._bind(var.name, var.location, to)
 
     def bind_field(self, key: FixedKey, to: Field):
-        self._bind(key.name, key.location, to)
+        self._bind(key.id.name, key.location, to)
 
     def _bind(self, name: str, location: L.Location, to: AST):
         self.bindings.insert(0, Binding(self, name, location, to))

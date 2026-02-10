@@ -56,6 +56,7 @@ class TestScopeResolution(unittest.TestCase):
         for var, to in bindings:
             scope = head(maybe(var.bound_in))
             self.assertEqual(scope.owner, owner)
+            self.assertEqual(var.bound_in, scope)
             self.assertBinding(scope, var.location, var.name, to)
 
     def assertFieldBindings(self, owner: Object, fields: Field | list[Field]):
@@ -66,7 +67,8 @@ class TestScopeResolution(unittest.TestCase):
         self.assertEqual(scope.owner, owner)
 
         for f in fields:
-            self.assertBinding(scope, f.key.location, f.key.to(FixedKey).name, f)
+            self.assertBinding(scope, f.key.location, f.key.to(FixedKey).id.name, f)
+            self.assertEqual(f.key.to(FixedKey).id.bound_in, scope)
 
     def test_local(self):
         t = FakeDocument(

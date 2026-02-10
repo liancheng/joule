@@ -194,7 +194,7 @@ class FakeDocument:
     def param_ref(self, *, at: int, name: str) -> Id.ParamRef:
         return Id.ParamRef(self.at(at), name)
 
-    def fixed_id_key(self, *, at: int, name: str) -> FixedKey:
+    def fixed_key(self, *, at: int, name: str) -> FixedKey:
         return FixedKey(self.at(at), Id.Field(self.at(at), name))
 
     def num(self, *, at: int, value: float | int) -> Num:
@@ -208,9 +208,6 @@ class FakeDocument:
 
     def string(self, *, at: int, value: str) -> Str:
         return Str(self.at(at), value)
-
-    def fixed_str_key(self, *, at: int, name: str) -> FixedKey:
-        return FixedKey(self.at(at), self.string(at=at, value=name))
 
     def computed_key(self, *, at: int, expr: Expr) -> ComputedKey:
         return ComputedKey(self.at(at), expr)
