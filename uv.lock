@@ -78,6 +78,7 @@ name = "joule"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "parsy" },
     { name = "pygls" },
     { name = "rich" },
     { name = "tree-sitter" },
@@ -91,12 +92,10 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
-test = [
-    { name = "parsy" },
-]
 
 [package.metadata]
 requires-dist = [
+    { name = "parsy", specifier = ">=2.2" },
     { name = "pygls", specifier = ">=2.0.0" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "tree-sitter", specifier = ">=0.25.2" },
@@ -110,7 +109,6 @@ dev = [
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "ruff", specifier = ">=0.15.0" },
 ]
-test = [{ name = "parsy", specifier = ">=2.2" }]
 
 [[package]]
 name = "lsprotocol"

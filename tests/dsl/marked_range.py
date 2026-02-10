@@ -25,8 +25,6 @@ class MarkedRange:
     marks: list[Mark]
 
 
-caret = P.string("^")
-
 uint = P.string("0").map(int) | (P.regex("[1-9]") + P.regex("[0-9]*")).map(int)
 
 open_mark = P.seq(
