@@ -15,6 +15,7 @@ from joule.ast import (
     Object,
     Scope,
 )
+from joule.util import maybe
 from joule.visitor import Visitor
 
 
@@ -98,3 +99,5 @@ class ScopeResolver(Visitor):
 
     def visit_var_ref(self, e: Id.VarRef):
         e.bound_in = self.var_scope
+        for binding in maybe(self.var_scope.get(e.name)):
+            binding.id.to(Id.Var).references.append(e)

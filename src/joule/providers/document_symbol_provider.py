@@ -75,7 +75,7 @@ class DocumentSymbolProvider(Visitor):
             match f.key:
                 case FixedKey() as k:
                     symbol = L.DocumentSymbol(
-                        name=k.name,
+                        name=k.id.name,
                         kind=L.SymbolKind.Field,
                         range=k.location.range,
                         selection_range=f.location.range,

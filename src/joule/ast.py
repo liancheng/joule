@@ -308,6 +308,7 @@ class Id:
         def __post_init__(self):
             super().__post_init__()
             self.bound_in: Scope | None = None
+            self.references: list[Id.VarRef] = []
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Var":
@@ -1391,8 +1392,7 @@ def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
 @D.dataclass
 class Binding:
     scope: "Scope"
-    name: str
-    location: L.Location
+    id: Id.Var | Id.Field
     target: AST
 
 
@@ -1405,17 +1405,17 @@ class Scope:
 
     def bind_var(self, var: Id.Var, to: AST):
         var.bound_in = self
-        self._bind(var.name, var.location, to)
+        self._bind(var, to)
 
     def bind_field(self, key: FixedKey, to: Field):
-        self._bind(key.id.name, key.location, to)
+        self._bind(key.id, to)
 
-    def _bind(self, name: str, location: L.Location, to: AST):
-        self.bindings.insert(0, Binding(self, name, location, to))
+    def _bind(self, id: Id.Var | Id.Field, to: AST):
+        self.bindings.insert(0, Binding(self, id, to))
 
     def get(self, name: str) -> Binding | None:
         return next(
-            iter(b for b in self.bindings if b.name == name),
+            iter(b for b in self.bindings if b.id.name == name),
             None if self.parent is None else self.parent.get(name),
         )
 
@@ -1444,12 +1444,10 @@ class PrettyScope(PrettyTree):
         match self.node:
             case Scope():
                 repr = "Scope"
-            case Binding(_, name, _, None):
-                repr = name
-            case Binding(_, name, _, AST() as to):
+            case Binding(_, id, AST() as to):
                 to_class = to.__class__.__qualname__
                 to_range = to.location.range
-                repr = f'"{name}" <- {to_class} @ {to_range}'
+                repr = f'"{id.name}" <- {to_class} @ {to_range}'
             case []:
                 repr = "[]"
             case list():

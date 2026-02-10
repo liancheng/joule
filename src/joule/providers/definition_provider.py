@@ -29,9 +29,9 @@ class DefinitionProvider:
     def find_definition(self, node: AST) -> list[L.Location]:
         match node:
             case Id.VarRef():
-                return [binding.location for binding in self.find_var_binding(node)]
+                return [b.id.location for b in self.find_var_binding(node)]
             case Id.FieldRef():
-                return [binding.location for binding in self.find_field_binding(node)]
+                return [b.id.location for b in self.find_field_binding(node)]
             case _:
                 return []
 

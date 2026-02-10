@@ -7,7 +7,12 @@ from pygls.lsp.server import LanguageServer
 from joule.ast import URI, Document
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
-from joule.providers import DefinitionProvider, DocumentSymbolProvider
+from joule.providers import (
+    DefinitionProvider,
+    DocumentSymbolProvider,
+    ReferencesProvider,
+)
+from joule.providers.inlay_hint_provider import InlayHintProvider
 from joule.util import maybe
 
 log = logging.root
@@ -88,3 +93,17 @@ def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
     return DefinitionProvider(tree).serve(params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_REFERENCES)
+def references(ls: JouleLanguageServer, params: L.ReferenceParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return ReferencesProvider(tree).serve(params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
+def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return InlayHintProvider(tree).serve()
