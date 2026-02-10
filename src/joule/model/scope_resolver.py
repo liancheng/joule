@@ -21,6 +21,7 @@ from joule.visitor import Visitor
 class ScopeResolver(Visitor):
     def resolve(self, tree: Document) -> Document:
         self.var_scope: Scope = Scope(tree)
+        tree.top_level_scope = self.var_scope
         self.visit(tree)
         return tree
 

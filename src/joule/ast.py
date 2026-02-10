@@ -279,6 +279,10 @@ class Super(Expr):
 class Document(Expr):
     body: Expr
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.top_level_scope: Scope | None = None
+
     @property
     def children(self) -> list[AST]:
         return [self.body]
