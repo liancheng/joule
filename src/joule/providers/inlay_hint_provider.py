@@ -1,6 +1,6 @@
 import lsprotocol.types as L
 
-from joule.ast import Bind, Document, Id
+from joule.ast import Bind, Document, Id, Param
 from joule.visitor import Visitor
 
 
@@ -23,6 +23,17 @@ class InlayHintProvider(Visitor):
                 [
                     L.InlayHintLabelPart(""),
                     L.InlayHintLabelPart(str(len(b.id.references))),
+                ],
+            )
+        )
+
+    def visit_param(self, p: Param):
+        self.hints.append(
+            L.InlayHint(
+                p.id.location.range.end,
+                [
+                    L.InlayHintLabelPart(""),
+                    L.InlayHintLabelPart(str(len(p.id.references))),
                 ],
             )
         )
