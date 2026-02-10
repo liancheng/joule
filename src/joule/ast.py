@@ -1,6 +1,6 @@
 import codecs
 import dataclasses as D
-from enum import StrEnum
+from enum import Enum, StrEnum, auto
 from itertools import chain, dropwhile
 from textwrap import dedent
 from typing import (
@@ -275,6 +275,11 @@ class Super(Expr):
     AST.register(from_cst, "super")
 
 
+class AnalysisPhase(Enum):
+    Unresolved = auto()
+    ScopeResolved = auto()
+
+
 @D.dataclass
 class Document(Expr):
     body: Expr
@@ -282,6 +287,7 @@ class Document(Expr):
     def __post_init__(self):
         super().__post_init__()
         self.top_level_scope: Scope | None = None
+        self.analysis_phase = AnalysisPhase.Unresolved
 
     @property
     def children(self) -> list[AST]:

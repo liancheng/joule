@@ -1,11 +1,12 @@
 import lsprotocol.types as L
 
-from joule.ast import Document, Id
+from joule.ast import AnalysisPhase, Document, Id
 from joule.util import maybe
 
 
 class RenameProvider:
     def __init__(self, tree: Document) -> None:
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.tree = tree
 
     def prepare(self, pos: L.Position) -> L.PrepareRenamePlaceholder | None:

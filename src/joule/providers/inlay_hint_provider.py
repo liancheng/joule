@@ -2,12 +2,13 @@ from typing import Callable
 
 import lsprotocol.types as L
 
-from joule.ast import Bind, Document, ForSpec, Id, Param
+from joule.ast import AnalysisPhase, Bind, Document, ForSpec, Id, Param
 from joule.visitor import Visitor
 
 
 class InlayHintProvider(Visitor):
     def __init__(self, tree: Document) -> None:
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.tree = tree
         self.hints: list[L.InlayHint] = []
 

@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import Callable
 
 from joule.ast import (
+    AnalysisPhase,
     Bind,
     ComputedKey,
     Document,
@@ -23,7 +24,10 @@ class ScopeResolver(Visitor):
     def resolve(self, tree: Document) -> Document:
         self.var_scope: Scope = Scope(tree)
         tree.top_level_scope = self.var_scope
+
         self.visit(tree)
+        tree.analysis_phase = AnalysisPhase.ScopeResolved
+
         return tree
 
     @contextmanager

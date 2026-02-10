@@ -86,7 +86,7 @@ def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
 def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
-    return DocumentSymbolProvider().serve(tree)
+    return DocumentSymbolProvider(tree).serve()
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)

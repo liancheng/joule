@@ -16,18 +16,18 @@ from joule.visitor import Visitor
 
 
 class DocumentSymbolProvider(Visitor):
-    def __init__(self) -> None:
-        dummy_range = L.Range(L.Position(0, 0), L.Position(0, 0))
+    def __init__(self, tree: Document) -> None:
+        self.tree = tree
         self.root_symbol = L.DocumentSymbol(
             name="__root__",
             kind=L.SymbolKind.Module,
-            range=dummy_range,
-            selection_range=dummy_range,
+            range=tree.location.range,
+            selection_range=tree.location.range,
         )
         self.breadcrumb = [self.root_symbol]
 
-    def serve(self, tree: Document) -> Sequence[L.DocumentSymbol]:
-        self.visit(tree)
+    def serve(self) -> Sequence[L.DocumentSymbol]:
+        self.visit(self.tree)
         return self.root_symbol.children or []
 
     def add_symbol(self, symbol: L.DocumentSymbol):

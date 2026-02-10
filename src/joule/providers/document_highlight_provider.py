@@ -1,11 +1,12 @@
 import lsprotocol.types as L
 
-from joule.ast import Document, Id
+from joule.ast import AnalysisPhase, Document, Id
 from joule.util import maybe
 
 
 class DocumentHighlightProvider:
     def __init__(self, tree: Document) -> None:
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.tree = tree
 
     def serve(self, pos: L.Position) -> list[L.DocumentHighlight]:

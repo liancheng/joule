@@ -2,6 +2,7 @@ import lsprotocol.types as L
 
 from joule.ast import (
     AST,
+    AnalysisPhase,
     Binding,
     Document,
     Dollar,
@@ -17,6 +18,7 @@ from joule.util import maybe
 
 class DefinitionProvider:
     def __init__(self, tree: Document) -> None:
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.tree = tree
 
     def serve(self, pos: L.Position) -> list[L.Location]:

@@ -1,11 +1,12 @@
 import lsprotocol.types as L
 
-from joule.ast import AST, Document, Id
+from joule.ast import AST, AnalysisPhase, Document, Id
 from joule.util import maybe
 
 
 class ReferencesProvider:
     def __init__(self, tree: Document) -> None:
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.tree = tree
 
     def serve(self, pos: L.Position) -> list[L.Location]:
@@ -19,7 +20,5 @@ class ReferencesProvider:
         match node:
             case Id.Var():
                 return [ref.location for ref in node.references]
-            case Id.Field():
-                return []
             case _:
                 return []
