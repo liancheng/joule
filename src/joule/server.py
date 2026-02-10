@@ -11,6 +11,7 @@ from joule.providers import (
     DefinitionProvider,
     DocumentHighlightProvider,
     DocumentSymbolProvider,
+    FoldingRangeProvider,
     InlayHintProvider,
     ReferencesProvider,
     RenameProvider,
@@ -129,3 +130,10 @@ def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
     return RenameProvider(tree).prepare(params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
+def folding_range(ls: JouleLanguageServer, params: L.PrepareRenameParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return FoldingRangeProvider(tree).serve()
