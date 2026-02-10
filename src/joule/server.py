@@ -13,6 +13,7 @@ from joule.providers import (
     DocumentSymbolProvider,
     InlayHintProvider,
     ReferencesProvider,
+    RenameProvider,
 )
 from joule.util import maybe
 
@@ -52,9 +53,8 @@ def initialize(ls: JouleLanguageServer, params: L.InitializeParams):
 
     return L.InitializeResult(
         capabilities=L.ServerCapabilities(
-            definition_provider=True,
-            document_symbol_provider=True,
             text_document_sync=L.TextDocumentSyncKind.Full,
+            rename_provider=L.RenameOptions(prepare_provider=True),
         ),
         server_info=L.ServerInfo(
             name=ls.name,
@@ -115,3 +115,17 @@ def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParam
     doc = ls.workspace.get_text_document(params.text_document.uri)
     tree = ls.load(doc.uri, doc.source)
     return DocumentHighlightProvider(tree).serve(params.position)
+
+
+@server.feature(L.TEXT_DOCUMENT_RENAME)
+def rename(ls: JouleLanguageServer, params: L.RenameParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return RenameProvider(tree).serve(params.position, params.new_name)
+
+
+@server.feature(L.TEXT_DOCUMENT_PREPARE_RENAME)
+def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    tree = ls.load(doc.uri, doc.source)
+    return RenameProvider(tree).prepare(params.position)
