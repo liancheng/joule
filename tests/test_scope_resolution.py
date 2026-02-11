@@ -15,7 +15,7 @@ from joule.ast import (
     Object,
     Scope,
 )
-from joule.util import head, maybe
+from joule.util import must
 
 from .dsl import FakeDocument, VarBinding
 
@@ -54,7 +54,7 @@ class TestScopeResolution(unittest.TestCase):
             bindings = [bindings]
 
         for var, to in bindings:
-            scope = head(maybe(var.binding)).scope
+            scope = must(var.binding).scope
             self.assertEqual(scope.owner, owner)
             self.assertBinding(scope, var.location, var.name, to)
 
@@ -62,12 +62,12 @@ class TestScopeResolution(unittest.TestCase):
         if isinstance(fields, Field):
             fields = [fields]
 
-        scope = head(maybe(owner.field_scope))
+        scope = must(owner.field_scope)
         self.assertEqual(scope.owner, owner)
 
         for f in fields:
             fixed_key = f.key.to(FixedKey)
-            field_binding = head(maybe(fixed_key.id.binding))
+            field_binding = must(fixed_key.id.binding)
             self.assertBinding(scope, f.key.location, fixed_key.id.name, f)
             self.assertEqual(field_binding.scope, scope)
 

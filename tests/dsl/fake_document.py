@@ -34,7 +34,7 @@ from joule.ast import (
 )
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
-from joule.util import head, maybe
+from joule.util import head, must
 
 from .marked_range import parse_marked_locations
 
@@ -81,7 +81,7 @@ class FakeDocument:
     def node_at(self, target: int | L.Position | L.Range) -> AST:
         if isinstance(target, int):
             target = self.at(target).range
-        return head(maybe(self.body.node_at(target)))
+        return must(self.body.node_at(target))
 
     def offset_of(self, pos: L.Position) -> int:
         return self.line_offsets[pos.line] + pos.character

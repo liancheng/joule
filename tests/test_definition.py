@@ -6,7 +6,7 @@ from rich.text import Text
 
 from joule.ast import AST, Id, Scope
 from joule.providers import DefinitionProvider
-from joule.util import head, maybe
+from joule.util import maybe, must
 
 from .dsl import FakeDocument
 
@@ -59,7 +59,7 @@ class TestDefinition(unittest.TestCase):
         return capture.get()
 
     def dump_var_definition(self, doc: FakeDocument, var: Id.Var, ref: Id.VarRef):
-        return self.dump_definitions(doc, head(maybe(var.binding)).scope, var, ref)
+        return self.dump_definitions(doc, must(var.binding).scope, var, ref)
 
     def dump_field_definitions(
         self,
