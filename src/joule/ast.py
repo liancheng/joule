@@ -313,7 +313,7 @@ class Id:
 
         def __post_init__(self):
             super().__post_init__()
-            self.bound_in: Scope | None = None
+            self.binding: Binding | None = None
             self.references: list[Id.VarRef] = []
 
         @staticmethod
@@ -351,7 +351,7 @@ class Id:
 
         def __post_init__(self):
             super().__post_init__()
-            self.bound_in: Scope | None = None
+            self.binding: Binding | None = None
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Field":
@@ -1410,14 +1410,15 @@ class Scope:
     children: list["Scope"] = D.field(default_factory=list)
 
     def bind_var(self, var: Id.Var, to: AST):
-        var.bound_in = self
-        self._bind(var, to)
+        var.binding = Binding(self, var, to)
+        self._bind(var.binding)
 
     def bind_field(self, key: FixedKey, to: Field):
-        self._bind(key.id, to)
+        key.id.binding = Binding(self, key.id, to)
+        self._bind(key.id.binding)
 
-    def _bind(self, id: Id.Var | Id.Field, to: AST):
-        self.bindings.insert(0, Binding(self, id, to))
+    def _bind(self, binding: Binding):
+        self.bindings.insert(0, binding)
 
     def get(self, name: str) -> Binding | None:
         return next(

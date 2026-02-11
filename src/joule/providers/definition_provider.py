@@ -38,12 +38,7 @@ class DefinitionProvider:
                 return []
 
     def find_var_binding(self, id: Id.VarRef) -> list[Binding]:
-        return [
-            binding
-            for var in maybe(id.var)
-            for scope in maybe(var.bound_in)
-            for binding in maybe(scope.get(id.name))
-        ]
+        return [binding for var in maybe(id.var) for binding in maybe(var.binding)]
 
     def find_field_binding(self, field_ref: Id.FieldRef) -> list[Binding]:
         return [

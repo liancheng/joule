@@ -59,7 +59,7 @@ class TestDefinition(unittest.TestCase):
         return capture.get()
 
     def dump_var_definition(self, doc: FakeDocument, var: Id.Var, ref: Id.VarRef):
-        return self.dump_definitions(doc, head(maybe(var.bound_in)), var, ref)
+        return self.dump_definitions(doc, head(maybe(var.binding)).scope, var, ref)
 
     def dump_field_definitions(
         self,
@@ -70,7 +70,9 @@ class TestDefinition(unittest.TestCase):
         if isinstance(keys, AST):
             keys = [keys]
 
-        scopes = [scope for key in keys for scope in maybe(key.to(Id.Field).bound_in)]
+        scopes = [
+            binding.scope for key in keys for binding in maybe(key.to(Id.Field).binding)
+        ]
 
         return self.dump_definitions(doc, scopes, keys, ref)
 
