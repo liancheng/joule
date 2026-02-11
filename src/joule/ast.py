@@ -19,7 +19,7 @@ import lsprotocol.types as L
 import tree_sitter as T
 
 from joule.pretty import PrettyTree
-from joule.util import head_or_none, maybe
+from joule.maybe import head_or_none, maybe
 
 URI = Annotated[str, "URI"]
 

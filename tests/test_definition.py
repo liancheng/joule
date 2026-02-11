@@ -6,7 +6,7 @@ from rich.text import Text
 
 from joule.ast import AST, Id, Scope
 from joule.providers import DefinitionProvider
-from joule.util import maybe, must
+from joule.maybe import maybe, must
 
 from .dsl import FakeDocument
 

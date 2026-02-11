@@ -34,7 +34,7 @@ from joule.ast import (
 )
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
-from joule.util import head, must
+from joule.maybe import head, must
 
 from .marked_range import parse_marked_locations
 

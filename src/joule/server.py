@@ -16,7 +16,7 @@ from joule.providers import (
     ReferencesProvider,
     RenameProvider,
 )
-from joule.util import maybe
+from joule.maybe import maybe
 
 log = logging.root
 

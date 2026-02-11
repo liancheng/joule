@@ -18,7 +18,7 @@ from joule.ast import (
     Object,
     Scope,
 )
-from joule.util import maybe
+from joule.maybe import maybe
 
 
 class DefinitionProvider:

@@ -16,7 +16,7 @@ from joule.ast import (
     Object,
     Scope,
 )
-from joule.util import maybe
+from joule.maybe import maybe
 from joule.visitor import Visitor
 
 

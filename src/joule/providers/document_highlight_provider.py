@@ -1,7 +1,7 @@
 import lsprotocol.types as L
 
 from joule.ast import AnalysisPhase, Document, Id
-from joule.util import maybe
+from joule.maybe import maybe
 
 
 class DocumentHighlightProvider:

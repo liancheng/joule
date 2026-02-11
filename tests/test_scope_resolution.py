@@ -15,7 +15,7 @@ from joule.ast import (
     Object,
     Scope,
 )
-from joule.util import must
+from joule.maybe import must
 
 from .dsl import FakeDocument, VarBinding
 
