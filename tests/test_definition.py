@@ -58,7 +58,20 @@ class TestDefinition(unittest.TestCase):
 
         return capture.get()
 
-    def dump_var_definition(self, doc: FakeDocument, var: Id.Var, ref: Id.VarRef):
+    def dump_var_definition(
+        self,
+        doc: FakeDocument,
+        var: Id.Var,
+        ref: Id.VarRef,
+    ):
+        return self.dump_definitions(doc, must(var.binding).scope, var, ref)
+
+    def dump_param_definition(
+        self,
+        doc: FakeDocument,
+        var: Id.Var,
+        ref: Id.ParamRef,
+    ):
         return self.dump_definitions(doc, must(var.binding).scope, var, ref)
 
     def dump_field_definitions(
@@ -95,6 +108,27 @@ class TestDefinition(unittest.TestCase):
                 provider.serve(doc.start_of(ref_mark)),
                 [var.location],
                 self.dump_var_definition(doc, var, var_ref),
+            )
+
+    def assertParamDefined(
+        self,
+        doc: FakeDocument,
+        param_mark: int,
+        ref_marks: int | list[int],
+    ):
+        if isinstance(ref_marks, int):
+            ref_marks = [ref_marks]
+
+        provider = DefinitionProvider(doc.ast)
+
+        for ref_mark in ref_marks:
+            var = doc.node_at(param_mark).to(Id.Var)
+            var_ref = doc.node_at(ref_mark).to(Id.ParamRef)
+
+            self.assertSequenceEqual(
+                provider.serve(doc.start_of(ref_mark)),
+                [var.location],
+                self.dump_param_definition(doc, var, var_ref),
             )
 
     def assertFieldDefined(
@@ -297,3 +331,15 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(t, key_marks=[1, 2], ref_marks=3)
+
+    def test_call(self):
+        t = FakeDocument(
+            """\
+            local f(p) = p + 1;
+                    ^1
+            f(p=1)
+              ^2
+            """
+        )
+
+        self.assertParamDefined(t, param_mark=1, ref_marks=2)
