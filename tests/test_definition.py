@@ -1,14 +1,15 @@
 import unittest
 from textwrap import dedent, indent
 
+import lsprotocol.types as L
 from rich.console import Console
 from rich.text import Text
 
 from joule.ast import AST, Id, Scope
-from joule.providers import DefinitionProvider
 from joule.maybe import maybe, must
+from joule.providers import DefinitionProvider
 
-from .dsl import FakeDocument
+from .dsl import FakeDocument, side_by_side
 
 
 class TestDefinition(unittest.TestCase):
@@ -18,6 +19,7 @@ class TestDefinition(unittest.TestCase):
         scopes: Scope | list[Scope],
         defs: AST | list[AST],
         ref: AST,
+        obtained: list[L.Location] = [],
     ) -> str:
         if isinstance(scopes, Scope):
             scopes = [scopes]
@@ -43,11 +45,29 @@ class TestDefinition(unittest.TestCase):
             )
 
             console.print(
-                doc.highlight(
-                    [(scope.owner.location.range, scope_style) for scope in scopes]
-                    + [(ref.location.range, ref_style)]
-                    + [(d.location.range, def_style) for d in defs]
-                ),
+                side_by_side(
+                    Text("\n").join(
+                        [
+                            Text("Expected", "green"),
+                            doc.highlight(
+                                [
+                                    (scope.owner.location.range, scope_style)
+                                    for scope in scopes
+                                ]
+                                + [(ref.location.range, ref_style)]
+                                + [(d.location.range, def_style) for d in defs]
+                            ),
+                        ]
+                    ),
+                    Text("\n").join(
+                        [
+                            Text("Obtained", "red"),
+                            doc.highlight(
+                                [(location.range, def_style) for location in obtained],
+                            ),
+                        ]
+                    ),
+                )
             )
 
             for scope in scopes:
@@ -79,6 +99,7 @@ class TestDefinition(unittest.TestCase):
         doc: FakeDocument,
         keys: AST | list[AST],
         ref: Id.FieldRef,
+        obtained: list[L.Location],
     ):
         if isinstance(keys, AST):
             keys = [keys]
@@ -87,7 +108,7 @@ class TestDefinition(unittest.TestCase):
             binding.scope for key in keys for binding in maybe(key.to(Id.Field).binding)
         ]
 
-        return self.dump_definitions(doc, scopes, keys, ref)
+        return self.dump_definitions(doc, scopes, keys, ref, obtained)
 
     def assertVarDefined(
         self,
@@ -148,11 +169,12 @@ class TestDefinition(unittest.TestCase):
         for ref_mark in ref_marks:
             keys = [doc.node_at(mark) for mark in key_marks]
             ref = doc.node_at(ref_mark).to(Id.FieldRef)
+            obtained = provider.serve(doc.start_of(ref_mark))
 
             self.assertSequenceEqual(
-                provider.serve(doc.start_of(ref_mark)),
+                obtained,
                 [key.location for key in keys],
-                self.dump_field_definitions(doc, keys, ref),
+                self.dump_field_definitions(doc, keys, ref, obtained),
             )
 
     def test_local(self):
@@ -228,18 +250,6 @@ class TestDefinition(unittest.TestCase):
         self.assertVarDefined(t, var_mark=2, ref_marks=5)
         self.assertVarDefined(t, var_mark=6, ref_marks=3)
 
-    def test_field_access(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = { f: 1 }; v.f
-                      ^1            ^2
-                """
-            )
-        )
-
-        self.assertVarDefined(t, var_mark=1, ref_marks=2)
-
     def test_slice_var_index(self):
         t = FakeDocument(
             dedent(
@@ -258,12 +268,13 @@ class TestDefinition(unittest.TestCase):
             dedent(
                 """\
                 local v = { f: 0 }; v.f
-                            ^1        ^2
+                      ^1    ^2      ^3^4
                 """
             )
         )
 
-        self.assertFieldDefined(t, key_marks=1, ref_marks=2)
+        self.assertVarDefined(t, var_mark=1, ref_marks=3)
+        self.assertFieldDefined(t, key_marks=2, ref_marks=4)
 
     def test_nested_field(self):
         t = FakeDocument(
@@ -334,12 +345,31 @@ class TestDefinition(unittest.TestCase):
 
     def test_call(self):
         t = FakeDocument(
-            """\
-            local f(p) = p + 1;
-                    ^1
-            f(p=1)
-              ^2
-            """
+            dedent(
+                """\
+                local f(p) = p + 1;
+                        ^1
+                f(p=1)
+                  ^2
+                """
+            )
+        )
+
+        self.assertParamDefined(t, param_mark=1, ref_marks=2)
+
+    @unittest.skip("TODO")
+    def test_call_field_fn(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = {
+                    f(p): p + 1
+                      ^1
+                };
+                v.f(p=1)
+                    ^2
+                """
+            )
         )
 
         self.assertParamDefined(t, param_mark=1, ref_marks=2)

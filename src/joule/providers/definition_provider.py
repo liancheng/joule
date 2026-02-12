@@ -51,7 +51,8 @@ class DefinitionProvider:
         return (
             binding
             for parent in maybe(ref.parent)
-            for scope in self.find_field_scope(parent.to(FieldAccess).obj)
+            if (field_access := parent.to(FieldAccess))
+            for scope in self.find_field_scope(field_access.obj)
             for binding in maybe(scope.get(ref.name))
         )
 
@@ -88,12 +89,14 @@ class DefinitionProvider:
             match node:
                 case Fn():
                     return maybe(node)
-                case Id.VarRef():
+                case Id.VarRef() | Id.FieldRef():
                     return (
                         fn
                         for binding in self.find_bindings(node)
                         if isinstance((fn := binding.target), Fn)
                     )
+                case FieldAccess():
+                    return find_fn(node.field)
                 case _:
                     return ()
 
@@ -141,6 +144,14 @@ class DefinitionProvider:
                     scope
                     for binding in self.find_var_binding(node)
                     for scope in self.find_field_scope(binding.target)
+                )
+
+            case Id.FieldRef():
+                return (
+                    scope
+                    for parent in maybe(node.parent)
+                    if (field_access := parent.to(FieldAccess))
+                    for scope in self.find_field_scope(field_access)
                 )
 
             case If():
