@@ -139,13 +139,6 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(binding.target.to(Field).value)
                 )
 
-            case Id.VarRef():
-                return (
-                    scope
-                    for binding in self.find_var_binding(node)
-                    for scope in self.find_field_scope(binding.target)
-                )
-
             case Id.FieldRef():
                 return (
                     scope
@@ -154,9 +147,11 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(field_access)
                 )
 
-            case If():
+            case Id.VarRef():
                 return (
-                    scope for e in node.branches for scope in self.find_field_scope(e)
+                    scope
+                    for binding in self.find_var_binding(node)
+                    for scope in self.find_field_scope(binding.target)
                 )
 
             case Object():
