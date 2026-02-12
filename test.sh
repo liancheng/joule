@@ -1,3 +1,3 @@
 #!/bin/sh
 
-uv run python -m unittest discover --verbose
+uv run python -m unittest $@
