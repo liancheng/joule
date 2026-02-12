@@ -70,10 +70,12 @@ class ScopeResolver(Visitor):
             self.visit(e.body)
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
-        self.visit(s.source)
-        with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
-            scope.bind_var(s.id, s)
-            next()
+        def new_next():
+            with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
+                scope.bind_var(s.id, s)
+                next()
+
+        super().visit_for_spec(s, new_next)
 
     def visit_local(self, e: Local):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):

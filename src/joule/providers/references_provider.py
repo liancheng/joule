@@ -1,3 +1,5 @@
+from typing import Iterable
+
 import lsprotocol.types as L
 
 from joule.ast import AST, AnalysisPhase, Document, Id
@@ -16,9 +18,9 @@ class ReferencesProvider:
             for location in self.find_references(node)
         ]
 
-    def find_references(self, node: AST) -> list[L.Location]:
+    def find_references(self, node: AST) -> Iterable[L.Location]:
         match node:
             case Id.Var():
-                return [ref.location for ref in node.references]
+                return (ref.location for ref in node.references)
             case _:
-                return []
+                return ()

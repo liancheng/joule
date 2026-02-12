@@ -17,38 +17,37 @@ class InlayHintProvider(Visitor):
         return self.hints
 
     def visit_var_ref(self, e: Id.VarRef):
-        self.hints.append(L.InlayHint(e.location.range.end, ""))
+        super().visit_var_ref(e)
+        self._add_hint(e.location.range.end, "")
 
     def visit_bind(self, b: Bind):
-        self.hints.append(
-            L.InlayHint(
-                b.id.location.range.end,
-                [
-                    L.InlayHintLabelPart(""),
-                    L.InlayHintLabelPart(str(len(b.id.references))),
-                ],
-            )
+        super().visit_bind(b)
+        self._add_hint(
+            b.id.location.range.end,
+            ["", str(len(b.id.references))],
         )
 
     def visit_param(self, p: Param):
-        self.hints.append(
-            L.InlayHint(
-                p.id.location.range.end,
-                [
-                    L.InlayHintLabelPart(""),
-                    L.InlayHintLabelPart(str(len(p.id.references))),
-                ],
-            )
+        super().visit_param(p)
+        self._add_hint(
+            p.id.location.range.end,
+            ["", str(len(p.id.references))],
         )
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
-        self.hints.append(
-            L.InlayHint(
+        def new_next():
+            self._add_hint(
                 s.id.location.range.end,
-                [
-                    L.InlayHintLabelPart(""),
-                    L.InlayHintLabelPart(str(len(s.id.references))),
-                ],
+                ["", str(len(s.id.references))],
             )
+            next()
+
+        super().visit_for_spec(s, new_next)
+
+    def _add_hint(self, pos: L.Position, label_parts: str | list[str]):
+        label = (
+            [L.InlayHintLabelPart(part) for part in label_parts]
+            if isinstance(label_parts, list)
+            else label_parts
         )
-        next()
+        self.hints.append(L.InlayHint(pos, label))

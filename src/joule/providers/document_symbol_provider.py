@@ -96,12 +96,14 @@ class DocumentSymbolProvider(Visitor):
             self.visit_assert(a)
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
-        symbol = L.DocumentSymbol(
-            name=s.id.name,
-            kind=L.SymbolKind.Variable,
-            range=s.id.location.range,
-            selection_range=s.location.range,
-        )
+        def new_next():
+            symbol = L.DocumentSymbol(
+                name=s.id.name,
+                kind=L.SymbolKind.Variable,
+                range=s.id.location.range,
+                selection_range=s.location.range,
+            )
 
-        self.add_symbol(symbol)
-        next()
+            self.add_symbol(symbol)
+
+        super().visit_for_spec(s, new_next)
