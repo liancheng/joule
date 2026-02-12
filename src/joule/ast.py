@@ -18,8 +18,8 @@ from typing import (
 import lsprotocol.types as L
 import tree_sitter as T
 
-from joule.pretty import PrettyTree
 from joule.maybe import head_or_none, maybe
+from joule.pretty import PrettyTree
 
 URI = Annotated[str, "URI"]
 
@@ -151,8 +151,8 @@ class PrettyAST(PrettyTree):
         match self.node:
             case AST() as ast:
                 return [
-                    PrettyAST(getattr(ast, f.name), f.name)
-                    for f in D.fields(ast)
+                    PrettyAST(v, f.name)
+                    for f, v in self.non_empty_fields(ast)
                     if f.name != "location"
                 ]
             case list() as array if (size := len(array)) > 0:
@@ -1452,9 +1452,9 @@ class PrettyScope(PrettyTree):
             case Scope():
                 repr = "Scope"
             case Binding(_, id, AST() as to):
-                to_class = to.__class__.__qualname__
-                to_range = to.location.range
-                repr = f'"{id.name}" <- {to_class} @ {to_range}'
+                class_name = to.__class__.__qualname__
+                span = to.location.range
+                repr = f'"{id.name}": {class_name} [{span}]'
             case []:
                 repr = "[]"
             case list():
@@ -1469,11 +1469,11 @@ class PrettyScope(PrettyTree):
 
     def children(self) -> list["PrettyTree"]:
         match self.node:
-            case Scope(owner, bindings, _, children):
+            case Scope() as scope:
                 return [
-                    PrettyScope(owner, "owner"),
-                    PrettyScope(bindings, "bindings"),
-                    PrettyScope(children, "children"),
+                    PrettyScope(v, f.name)
+                    for f, v in self.non_empty_fields(scope)
+                    if f.name != "parent"
                 ]
             case list() as array:
                 return [PrettyScope(value, f"[{i}]") for i, value in enumerate(array)]
