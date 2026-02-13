@@ -93,8 +93,10 @@ class DefinitionProvider:
                     return (
                         fn
                         for binding in self.find_bindings(node)
-                        if isinstance((fn := binding.target), Fn)
+                        for fn in find_fn(binding.target)
                     )
+                case Field(_, _, Fn() as fn, _):
+                    return [fn]
                 case FieldAccess():
                     return find_fn(node.field)
                 case _:

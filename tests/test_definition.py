@@ -63,7 +63,8 @@ class TestDefinition(unittest.TestCase):
                         [
                             Text("Obtained", "red"),
                             doc.highlight(
-                                [(location.range, def_style) for location in obtained],
+                                [(location.range, def_style) for location in obtained]
+                                + [(ref.location.range, ref_style)]
                             ),
                         ]
                     ),
@@ -357,7 +358,6 @@ class TestDefinition(unittest.TestCase):
 
         self.assertParamDefined(t, param_mark=1, ref_marks=2)
 
-    @unittest.skip("TODO")
     def test_call_field_fn(self):
         t = FakeDocument(
             dedent(
