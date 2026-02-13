@@ -373,3 +373,19 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertParamDefined(t, param_mark=1, ref_marks=2)
+
+    @unittest.skip("TODO")
+    def test_field_of_call_arg(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = { f: 1 };
+                            ^1
+                local f(p) = p.f;
+                               ^2
+                f(v);
+                """
+            )
+        )
+
+        self.assertFieldDefined(t, key_marks=1, ref_marks=2)
