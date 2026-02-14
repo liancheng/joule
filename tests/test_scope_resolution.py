@@ -1,7 +1,5 @@
 import unittest
-from textwrap import dedent, indent
-
-import lsprotocol.types as L
+from textwrap import dedent
 
 from joule.ast import (
     AST,
@@ -13,80 +11,54 @@ from joule.ast import (
     Num,
     ObjComp,
     Object,
-    Scope,
 )
 from joule.maybe import must
 
-from .dsl import FakeDocument, VarBinding
+from .dsl import FakeDocument
 
 
 class TestScopeResolution(unittest.TestCase):
-    def assertBinding(
-        self,
-        scope: Scope,
-        location: L.Location,
-        name: str,
-        to: AST,
-    ):
-        def message():
-            return "\n".join(
-                [
-                    "Binding not found:",
-                    f"* Name: {name}",
-                    f"* Location: {location}",
-                    "* Bound to:",
-                    indent(to.pretty_tree, " " * 4),
-                    "* With in:",
-                    indent(scope.pretty_tree, " " * 4),
-                ]
-            )
+    def assertVarBinding(self, owner: AST, var: Id.Var, target: AST):
+        binding = var.binding
+        self.assertIsNotNone(binding)
 
-        self.assertTrue(
-            any(
-                b.id.name == name and b.id.location == location and b.target == to
-                for b in scope.bindings
-            ),
-            message(),
-        )
+        binding = must(binding)
+        self.assertEqual(owner, binding.scope.owner)
+        self.assertEqual(binding.scope.get(var.name), binding)
+        self.assertEqual(binding.target, target)
 
-    def assertVarBindings(self, owner: AST, bindings: VarBinding | list[VarBinding]):
-        if isinstance(bindings, tuple):
-            bindings = [bindings]
+    def assertFieldBinding(self, owner: Object, field: Field):
+        self.assertTrue(field.key.is_a(FixedKey))
+        key = field.key.to(FixedKey)
 
-        for var, to in bindings:
-            scope = must(var.binding).scope
-            self.assertEqual(scope.owner, owner)
-            self.assertBinding(scope, var.location, var.name, to)
+        binding = key.id.binding
+        self.assertIsNotNone(binding)
 
-    def assertFieldBindings(self, owner: Object, fields: Field | list[Field]):
-        if isinstance(fields, Field):
-            fields = [fields]
-
-        scope = must(owner.field_scope)
-        self.assertEqual(scope.owner, owner)
-
-        for f in fields:
-            fixed_key = f.key.to(FixedKey)
-            field_binding = must(fixed_key.id.binding)
-            self.assertBinding(scope, f.key.location, fixed_key.id.name, f)
-            self.assertEqual(field_binding.scope, scope)
+        binding = must(binding)
+        self.assertEqual(owner, binding.scope.owner)
+        self.assertEqual(binding.scope.get(key.id.name), binding)
+        self.assertEqual(binding.target, field)
 
     def test_local(self):
         t = FakeDocument(
             dedent(
                 """\
-                local x = 1, x = 2; x + x
+                local x = 1, y = 2; x + y
                 ^1    ^2  ^3 ^4  ^5
                 """
             )
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
             t.node_at(1).to(Local),
-            [
-                (t.node_at(2).to(Id.Var), t.node_at(3).to(Num)),
-                (t.node_at(4).to(Id.Var), t.node_at(5).to(Num)),
-            ],
+            t.node_at(2).to(Id.Var),
+            t.node_at(3).to(Num),
+        )
+
+        self.assertVarBinding(
+            t.node_at(1).to(Local),
+            t.node_at(4).to(Id.Var),
+            t.node_at(5).to(Num),
         )
 
     def test_object(self):
@@ -109,20 +81,19 @@ class TestScopeResolution(unittest.TestCase):
 
         obj = t.body.to(Object)
 
-        self.assertFieldBindings(
+        self.assertFieldBinding(obj, t.node_at(1).to(Field))
+        self.assertFieldBinding(obj, t.node_at(2).to(Field))
+
+        self.assertVarBinding(
             obj,
-            [
-                t.node_at(1).to(Field),
-                t.node_at(2).to(Field),
-            ],
+            t.node_at(3).to(Id.Var),
+            t.node_at(4).to(Num),
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
             obj,
-            [
-                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
-                (t.node_at(5).to(Id.Var), t.node_at(6).to(Num)),
-            ],
+            t.node_at(5).to(Id.Var),
+            t.node_at(6).to(Num),
         )
 
     def test_list_comp(self):
@@ -139,14 +110,16 @@ class TestScopeResolution(unittest.TestCase):
             )
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
             t.node_at(1).to(Local),
-            (t.node_at(2).to(Id.Var), t.node_at(3).to(Num)),
+            t.node_at(2).to(Id.Var),
+            t.node_at(3).to(Num),
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
             t.node_at(4).to(ForSpec),
-            (t.node_at(5).to(Id.Var), t.node_at(4).to(ForSpec)),
+            t.node_at(5).to(Id.Var),
+            t.node_at(4).to(ForSpec),
         )
 
     def test_obj_comp(self):
@@ -164,15 +137,20 @@ class TestScopeResolution(unittest.TestCase):
             """
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
             t.body.to(ObjComp),
-            [
-                (t.node_at(1).to(Id.Var), t.node_at(2).to(Num)),
-                (t.node_at(3).to(Id.Var), t.node_at(4).to(Num)),
-            ],
+            t.node_at(1).to(Id.Var),
+            t.node_at(2).to(Num),
         )
 
-        self.assertVarBindings(
+        self.assertVarBinding(
+            t.body.to(ObjComp),
+            t.node_at(3).to(Id.Var),
+            t.node_at(4).to(Num),
+        )
+
+        self.assertVarBinding(
             t.node_at(5),
-            (t.node_at(6).to(Id.Var), t.node_at(5).to(ForSpec)),
+            t.node_at(6).to(Id.Var),
+            t.node_at(5).to(ForSpec),
         )

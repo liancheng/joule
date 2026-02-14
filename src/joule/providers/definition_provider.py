@@ -6,17 +6,18 @@ from joule.ast import (
     AST,
     AnalysisPhase,
     Arg,
-    Binding,
     Call,
     Document,
     Dollar,
     Field,
     FieldAccess,
+    FieldBinding,
+    FieldScope,
     Fn,
     Id,
     If,
     Object,
-    Scope,
+    VarBinding,
 )
 from joule.maybe import maybe
 
@@ -28,26 +29,26 @@ class DefinitionProvider:
 
     def serve(self, pos: L.Position) -> list[L.Location]:
         return [
-            binding.id.location
+            location
             for node in maybe(self.tree.node_at(pos))
-            for binding in self.find_bindings(node)
+            for location in self.find_definition(node)
         ]
 
-    def find_bindings(self, node: AST) -> Iterable[Binding]:
+    def find_definition(self, node: AST) -> Iterable[L.Location]:
         match node:
             case Id.VarRef() as ref:
-                return self.find_var_binding(ref)
+                return (b.id.location for b in self.find_var_binding(ref))
             case Id.FieldRef() as ref:
-                return self.find_field_binding(ref)
+                return (b.id.location for b in self.find_field_binding(ref))
             case Id.ParamRef() as ref:
-                return self.find_param_binding(ref)
+                return (b.id.location for b in self.find_param_binding(ref))
             case _:
                 return ()
 
-    def find_var_binding(self, ref: Id.VarRef) -> Iterable[Binding]:
+    def find_var_binding(self, ref: Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
 
-    def find_field_binding(self, ref: Id.FieldRef) -> Iterable[Binding]:
+    def find_field_binding(self, ref: Id.FieldRef) -> Iterable[FieldBinding]:
         return (
             binding
             for parent in maybe(ref.parent)
@@ -56,7 +57,7 @@ class DefinitionProvider:
             for binding in maybe(scope.get(ref.name))
         )
 
-    def find_param_binding(self, ref: Id.ParamRef) -> Iterable[Binding]:
+    def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
         # Given a function parameter reference in a named function call argument, this
         # function finds the binding where the function parameter is defined.
         #
@@ -89,10 +90,16 @@ class DefinitionProvider:
             match node:
                 case Fn():
                     return maybe(node)
-                case Id.VarRef() | Id.FieldRef():
+                case Id.VarRef():
                     return (
                         fn
-                        for binding in self.find_bindings(node)
+                        for binding in self.find_var_binding(node)
+                        for fn in find_fn(binding.target)
+                    )
+                case Id.FieldRef():
+                    return (
+                        fn
+                        for binding in self.find_field_binding(node)
                         for fn in find_fn(binding.target)
                     )
                 case Field(_, _, Fn() as fn, _):
@@ -113,7 +120,7 @@ class DefinitionProvider:
             for binding in maybe(param.binding)
         )
 
-    def find_field_scope(self, node: AST) -> Iterable[Scope]:
+    def find_field_scope(self, node: AST) -> Iterable[FieldScope]:
         match node:
             case Dollar():
 
