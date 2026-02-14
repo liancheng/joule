@@ -71,6 +71,9 @@ class AST:
 
         return self
 
+    def is_a(self, expect_type: Type[ASTType]) -> bool:
+        return isinstance(self, expect_type)
+
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))
@@ -286,7 +289,7 @@ class Document(Expr):
 
     def __post_init__(self):
         super().__post_init__()
-        self.top_level_scope: Scope | None = None
+        self.top_level_scope: VarScope | None = None
         self.analysis_phase = AnalysisPhase.Unresolved
 
     @property
@@ -313,7 +316,7 @@ class Id:
 
         def __post_init__(self):
             super().__post_init__()
-            self.binding: Binding | None = None
+            self.binding: VarBinding | None = None
             self.references: list[Id.VarRef] = []
 
         @staticmethod
@@ -351,7 +354,7 @@ class Id:
 
         def __post_init__(self):
             super().__post_init__()
-            self.binding: Binding | None = None
+            self.binding: FieldBinding | None = None
 
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Field":
@@ -1070,7 +1073,7 @@ class Object(Expr):
 
     def __post_init__(self):
         super().__post_init__()
-        self.field_scope: Scope | None = None
+        self.field_scope: FieldScope | None = None
 
     @property
     def children(self) -> Iterable[AST]:
@@ -1396,35 +1399,31 @@ def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
 
 
 @D.dataclass
-class Binding:
-    scope: "Scope"
+class VarBinding:
+    scope: "VarScope"
     id: Id.Var | Id.Field
     target: AST
 
 
 @D.dataclass
-class Scope:
+class VarScope:
     owner: AST
-    bindings: list[Binding] = D.field(default_factory=list)
-    parent: "Scope | None" = None
-    children: list["Scope"] = D.field(default_factory=list)
+    bindings: list[VarBinding] = D.field(default_factory=list)
+    parent: "VarScope | None" = None
+    children: list["VarScope"] = D.field(default_factory=list)
 
-    def bind_var(self, var: Id.Var, to: AST):
-        var.binding = Binding(self, var, to)
+    def bind(self, var: Id.Var, to: AST):
+        var.binding = VarBinding(self, var, to)
         self.bindings.insert(0, var.binding)
 
-    def bind_field(self, key: FixedKey, to: Field):
-        key.id.binding = Binding(self, key.id, to)
-        self.bindings.insert(0, key.id.binding)
-
-    def get(self, name: str) -> Binding | None:
+    def get(self, name: str) -> VarBinding | None:
         return next(
             iter(b for b in self.bindings if b.id.name == name),
             None if self.parent is None else self.parent.get(name),
         )
 
-    def nest(self, owner: AST) -> "Scope":
-        child = Scope(owner, [], parent=self)
+    def nest(self, owner: AST) -> "VarScope":
+        child = VarScope(owner, [], parent=self)
         self.children.append(child)
         return child
 
@@ -1433,8 +1432,46 @@ class Scope:
         return str(PrettyScope(self))
 
     @staticmethod
-    def empty(owner: AST) -> "Scope":
-        return Scope(owner)
+    def empty(owner: AST) -> "VarScope":
+        return VarScope(owner)
+
+
+@D.dataclass
+class FieldBinding:
+    scope: "FieldScope"
+    id: Id.Field
+    target: Field
+
+
+@D.dataclass
+class FieldScope:
+    owner: Object
+    bindings: list[FieldBinding] = D.field(default_factory=list)
+    parent: "FieldScope | None" = None
+    children: list["FieldScope"] = D.field(default_factory=list)
+
+    def bind(self, key: FixedKey, to: Field):
+        key.id.binding = FieldBinding(self, key.id, to)
+        self.bindings.insert(0, key.id.binding)
+
+    def get(self, name: str) -> FieldBinding | None:
+        return next(
+            iter(b for b in self.bindings if b.id.name == name),
+            None if self.parent is None else self.parent.get(name),
+        )
+
+    def nest(self, owner: Object) -> "FieldScope":
+        child = FieldScope(owner, [], parent=self)
+        self.children.append(child)
+        return child
+
+    @property
+    def pretty_tree(self) -> str:
+        return str(PrettyScope(self))
+
+    @staticmethod
+    def empty(owner: Object) -> "FieldScope":
+        return FieldScope(owner)
 
 
 @D.dataclass
@@ -1446,9 +1483,9 @@ class PrettyScope(PrettyTree):
 
     def node_text(self) -> str:
         match self.node:
-            case Scope():
+            case VarScope():
                 repr = "Scope"
-            case Binding(_, id, AST() as to):
+            case VarBinding(_, id, AST() as to):
                 class_name = to.__class__.__qualname__
                 span = to.location.range
                 repr = f'"{id.name}": {class_name} [{span}]'
@@ -1466,7 +1503,7 @@ class PrettyScope(PrettyTree):
 
     def children(self) -> list["PrettyTree"]:
         match self.node:
-            case Scope() as scope:
+            case VarScope() as scope:
                 return [
                     PrettyScope(v, f.name)
                     for f, v in self.non_empty_fields(scope)

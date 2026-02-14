@@ -38,8 +38,6 @@ from joule.parsing import parse_jsonnet
 
 from .marked_range import parse_marked_locations
 
-VarBinding = tuple[Id.Var, AST]
-
 
 class FakeDocument:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:

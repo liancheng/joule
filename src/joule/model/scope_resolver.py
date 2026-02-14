@@ -7,6 +7,7 @@ from joule.ast import (
     ComputedKey,
     Document,
     Field,
+    FieldScope,
     FixedKey,
     Fn,
     ForSpec,
@@ -14,7 +15,7 @@ from joule.ast import (
     Local,
     ObjComp,
     Object,
-    Scope,
+    VarScope,
 )
 from joule.maybe import maybe
 from joule.visitor import Visitor
@@ -22,7 +23,7 @@ from joule.visitor import Visitor
 
 class ScopeResolver(Visitor):
     def resolve(self, tree: Document) -> Document:
-        self.var_scope: Scope = Scope(tree)
+        self.var_scope: VarScope = VarScope(tree)
         tree.top_level_scope = self.var_scope
 
         self.visit(tree)
@@ -31,7 +32,7 @@ class ScopeResolver(Visitor):
         return tree
 
     @contextmanager
-    def activate_var_scope(self, scope: Scope):
+    def activate_var_scope(self, scope: VarScope):
         prev = self.var_scope
         self.var_scope = scope
         try:
@@ -40,13 +41,13 @@ class ScopeResolver(Visitor):
             self.var_scope = prev
 
     def visit_bind(self, b: Bind):
-        self.var_scope.bind_var(b.id, b.value)
+        self.var_scope.bind(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(owner=b)):
             self.visit(b.value)
 
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None
-        e.field_scope.bind_field(k, f)
+        e.field_scope.bind(k, f)
 
     def visit_fn(self, e: Fn):
         # NOTE: In a Jsonnet function, any parameter's default value expression can
@@ -61,7 +62,7 @@ class ScopeResolver(Visitor):
         # `visit_fn` instead of `visit_param`.
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for p in e.params:
-                self.var_scope.bind_var(p.id, p)
+                self.var_scope.bind(p.id, p)
 
             for p in e.params:
                 if p.default is not None:
@@ -72,7 +73,7 @@ class ScopeResolver(Visitor):
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
         def new_next():
             with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
-                scope.bind_var(s.id, s)
+                scope.bind(s.id, s)
                 next()
 
         super().visit_for_spec(s, new_next)
@@ -99,7 +100,7 @@ class ScopeResolver(Visitor):
 
     def visit_object(self, e: Object):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
-            e.field_scope = Scope.empty(e)
+            e.field_scope = FieldScope.empty(e)
             super().visit_object(e)
 
     def visit_var_ref(self, e: Id.VarRef):

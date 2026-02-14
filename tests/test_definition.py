@@ -1,116 +1,13 @@
 import unittest
-from textwrap import dedent, indent
+from textwrap import dedent
 
-import lsprotocol.types as L
-from rich.console import Console
-from rich.text import Text
-
-from joule.ast import AST, Id, Scope
-from joule.maybe import maybe, must
+from joule.ast import Id
 from joule.providers import DefinitionProvider
 
-from .dsl import FakeDocument, side_by_side
+from .dsl import FakeDocument
 
 
 class TestDefinition(unittest.TestCase):
-    def dump_definitions(
-        self,
-        doc: FakeDocument,
-        scopes: Scope | list[Scope],
-        defs: AST | list[AST],
-        ref: AST,
-        obtained: list[L.Location] = [],
-    ) -> str:
-        if isinstance(scopes, Scope):
-            scopes = [scopes]
-
-        if isinstance(defs, AST):
-            defs = [defs]
-
-        console = Console()
-        scope_style = "black on yellow"
-        def_style = "black on red"
-        ref_style = "black on blue"
-
-        with console.capture() as capture:
-            console.print(Text("Variable not defined:"))
-            console.print(
-                Text(", ").join(
-                    [
-                        Text(" scope ", scope_style),
-                        Text(" definition ", def_style),
-                        Text(" reference ", ref_style),
-                    ]
-                ),
-            )
-
-            console.print(
-                side_by_side(
-                    Text("\n").join(
-                        [
-                            Text("Expected", "green"),
-                            doc.highlight(
-                                [
-                                    (scope.owner.location.range, scope_style)
-                                    for scope in scopes
-                                ]
-                                + [(ref.location.range, ref_style)]
-                                + [(d.location.range, def_style) for d in defs]
-                            ),
-                        ]
-                    ),
-                    Text("\n").join(
-                        [
-                            Text("Obtained", "red"),
-                            doc.highlight(
-                                [(location.range, def_style) for location in obtained]
-                                + [(ref.location.range, ref_style)]
-                            ),
-                        ]
-                    ),
-                )
-            )
-
-            for scope in scopes:
-                console.print("\nScope:\n")
-                console.print(indent(scope.pretty_tree, " " * 4))
-                console.print("\nScope owner AST:\n")
-                console.print(indent(scope.owner.pretty_tree, " " * 4))
-
-        return capture.get()
-
-    def dump_var_definition(
-        self,
-        doc: FakeDocument,
-        var: Id.Var,
-        ref: Id.VarRef,
-    ):
-        return self.dump_definitions(doc, must(var.binding).scope, var, ref)
-
-    def dump_param_definition(
-        self,
-        doc: FakeDocument,
-        var: Id.Var,
-        ref: Id.ParamRef,
-    ):
-        return self.dump_definitions(doc, must(var.binding).scope, var, ref)
-
-    def dump_field_definitions(
-        self,
-        doc: FakeDocument,
-        keys: AST | list[AST],
-        ref: Id.FieldRef,
-        obtained: list[L.Location],
-    ):
-        if isinstance(keys, AST):
-            keys = [keys]
-
-        scopes = [
-            binding.scope for key in keys for binding in maybe(key.to(Id.Field).binding)
-        ]
-
-        return self.dump_definitions(doc, scopes, keys, ref, obtained)
-
     def assertVarDefined(
         self,
         doc: FakeDocument,
@@ -124,12 +21,9 @@ class TestDefinition(unittest.TestCase):
 
         for ref_mark in ref_marks:
             var = doc.node_at(var_mark).to(Id.Var)
-            var_ref = doc.node_at(ref_mark).to(Id.VarRef)
-
             self.assertSequenceEqual(
                 provider.serve(doc.start_of(ref_mark)),
                 [var.location],
-                self.dump_var_definition(doc, var, var_ref),
             )
 
     def assertParamDefined(
@@ -145,12 +39,9 @@ class TestDefinition(unittest.TestCase):
 
         for ref_mark in ref_marks:
             var = doc.node_at(param_mark).to(Id.Var)
-            var_ref = doc.node_at(ref_mark).to(Id.ParamRef)
-
             self.assertSequenceEqual(
                 provider.serve(doc.start_of(ref_mark)),
                 [var.location],
-                self.dump_param_definition(doc, var, var_ref),
             )
 
     def assertFieldDefined(
@@ -169,13 +60,9 @@ class TestDefinition(unittest.TestCase):
 
         for ref_mark in ref_marks:
             keys = [doc.node_at(mark) for mark in key_marks]
-            ref = doc.node_at(ref_mark).to(Id.FieldRef)
-            obtained = provider.serve(doc.start_of(ref_mark))
-
             self.assertSequenceEqual(
-                obtained,
+                provider.serve(doc.start_of(ref_mark)),
                 [key.location for key in keys],
-                self.dump_field_definitions(doc, keys, ref, obtained),
             )
 
     def test_local(self):
