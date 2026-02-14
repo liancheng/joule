@@ -1,9 +1,16 @@
+from enum import StrEnum
 from typing import Callable
 
 import lsprotocol.types as L
 
 from joule.ast import AnalysisPhase, Bind, Document, ForSpec, Id, Param
+from joule.maybe import maybe
 from joule.visitor import Visitor
+
+
+class Icon(StrEnum):
+    UpArrow = ""
+    DownArrow = ""
 
 
 class InlayHintProvider(Visitor):
@@ -18,28 +25,39 @@ class InlayHintProvider(Visitor):
 
     def visit_var_ref(self, e: Id.VarRef):
         super().visit_var_ref(e)
-        self._add_hint(e.location.range.end, "")
+
+        for_spec_var_ref = next(
+            (
+                binding.target.is_a(ForSpec)
+                for var in maybe(e.var)
+                for binding in maybe(var.binding)
+            ),
+            False,
+        )
+
+        self._add_hint(
+            e.location.range.end,
+            # Marks for-spec variable references with an down-arrow as for-spec
+            # variables are defined after their references.
+            Icon.DownArrow if for_spec_var_ref else Icon.UpArrow,
+        )
 
     def visit_bind(self, b: Bind):
         super().visit_bind(b)
-        self._add_hint(
-            b.id.location.range.end,
-            ["", str(len(b.id.references))],
-        )
+        n_refs = len(b.id.references)
+        self._add_hint(b.id.location.range.end, [Icon.DownArrow, str(n_refs)])
 
     def visit_param(self, p: Param):
         super().visit_param(p)
-        self._add_hint(
-            p.id.location.range.end,
-            ["", str(len(p.id.references))],
-        )
+        n_refs = len(p.id.references)
+        self._add_hint(p.id.location.range.end, [Icon.DownArrow, str(n_refs)])
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
         def new_next():
-            self._add_hint(
-                s.id.location.range.end,
-                ["", str(len(s.id.references))],
-            )
+            n_refs = len(s.id.references)
+            # Marks for-spec variables with an up-arrow as for-spec variables
+            # are defined after their references.
+            self._add_hint(s.id.location.range.end, [Icon.UpArrow, str(n_refs)])
             next()
 
         super().visit_for_spec(s, new_next)
