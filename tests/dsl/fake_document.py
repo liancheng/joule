@@ -32,9 +32,9 @@ from joule.ast import (
     Slice,
     Str,
 )
+from joule.maybe import head, must
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
-from joule.maybe import head, must
 
 from .marked_range import parse_marked_locations
 
@@ -93,15 +93,17 @@ class FakeDocument:
         for long documents, and a line number gutter:
 
         ```plaintext
-        file:///tmp/test.jsonnet <-- Document URI
-          0    5   10   15       <-- Top ruler
-          |''''|''''|''''|''''
-        1 |local x = { f: 1 };
-        2 |local y = x.f;
-        3 |y + 1
+        file:///tmp/test.jsonnet    <-- Document URI
+           0    5   10   15         <-- Top ruler
+          '|''''|''''|''''|'''
+        0 |local x = { f: 1 };
+        1 |local y = x.f;
+        2 |y + 1
         ^^
           Line number gutter
         ```
+
+        NOTE: To be consistent with LSP, both line and column numbers are 0 based.
         """
         if isinstance(ranges, tuple):
             ranges = [ranges]
@@ -124,6 +126,9 @@ class FakeDocument:
         raw_lines = self.source.splitlines()
         width = max(map(len, raw_lines))
         height = len(raw_lines)
+
+        # The width of the line number gutter equals to the max width of the line
+        # numbers plus one (for a padding space).
         line_no_width = len(str(height))
         gutter_width = line_no_width + 1
 
@@ -133,7 +138,7 @@ class FakeDocument:
             #
             #   [0, 5, 10, 15]
             #
-            every_5_chars = range(0, width // 5 * 5 + 1, 5)
+            every_5_chars = range(0, (width - 1) // 5 * 5 + 1, 5)
 
             # Prints each number with a width of 5, right aligned ("." for space):
             #
@@ -143,22 +148,23 @@ class FakeDocument:
 
             # Joins the segments and chops off the leading spaces, producing:
             #
-            #   "0....5...10...15"
+            #   ".0....5...10...15"
             #
-            header_line = styled("".join(header_segs)[4:], "grey50")
+            # The leading space is due to column numbers being 0 based.
+            header_line = styled("".join(header_segs)[3:], "grey50")
 
             # Produces the guide line according to the max line width, e.g.:
             #
-            #   "|''''|''''|''''|'''"
+            #   "'|''''|''''|''''|''"
             #
-            guide_line = styled(("|''''" * (width // 5 + 1))[: width + 1], "grey50")
+            # Again, the leading "'" is due to column numbers being 0 based.
+            guide_line = styled(("'|'''" * (width // 5 + 1))[: width + 1], "grey50")
 
-            # Adds left padding for the line number gutter. E.g., if the document has 10
-            # lines, the gutter witdh is the width of the max line number (2) plus one
-            # (a padding space):
+            # Adds left padding for the line number gutter. For a document with 10
+            # lines, the gutter width is 3:
             #
-            #   "...0....5...10...15"
-            #   "...|''''|''''|''''|'''"
+            #   "....0....5...10...15"
+            #   "...'|''''|''''|''''|'''"
             #
             header_line.pad_left(left_padding)
             guide_line.pad_left(left_padding)
@@ -171,7 +177,7 @@ class FakeDocument:
 
         # Renders source lines with line numbers.
         for i, line in enumerate(rendered_source.split()):
-            line_no = styled(f"{i + 1:>{line_no_width}} |", "grey50")
+            line_no = styled(f"{i:>{line_no_width}} |", "grey50")
             rendered.append(line_no + line)
 
         # Renders a bottom horizontal ruler for long documents.
