@@ -5,6 +5,7 @@ import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
 from joule.ast import URI, Document
+from joule.maybe import maybe
 from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.providers import (
@@ -16,7 +17,6 @@ from joule.providers import (
     ReferencesProvider,
     RenameProvider,
 )
-from joule.maybe import maybe
 
 log = logging.root
 
@@ -25,8 +25,9 @@ class JouleLanguageServer(LanguageServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def set_workspace_root(self, root_path: str, root_uri: URI):
-        self.workspace.add_folder(L.WorkspaceFolder(root_path, root_uri))
+    def set_workspace_root(self, root_uri: URI):
+        folder = L.WorkspaceFolder(root_uri, Path.from_uri(root_uri).name)
+        self.workspace.add_folder(folder)
         self.trees: dict[URI, Document] = {}
 
     def load(self, uri: URI, source: str, refresh: bool = False) -> Document:
@@ -43,14 +44,10 @@ server = JouleLanguageServer("joule", "v0.1")
 
 @server.feature(L.INITIALIZE)
 def initialize(ls: JouleLanguageServer, params: L.InitializeParams):
-    for root_path in maybe(params.root_path):
-        for root_uri in maybe(params.root_uri):
-            log.info("Discovered workspace root: %s, %s", root_path, root_uri)
-
-            root = Path.from_uri(root_uri).absolute()
-            assert root.as_posix() == Path(root_path).absolute().as_posix()
-
-            ls.set_workspace_root(root.as_posix(), root.as_uri())
+    for root_uri in maybe(params.root_uri):
+        log.info("Discovered workspace root: %s", root_uri)
+        root = Path.from_uri(root_uri).absolute()
+        ls.set_workspace_root(root.as_uri())
 
     return L.InitializeResult(
         capabilities=L.ServerCapabilities(
@@ -70,8 +67,8 @@ def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
     # If the workspace root is not yet discovered, set the root as the parent folder of
     # the first document opened.
     if len(ls.workspace.folders) == 0:
-        root = Path.from_uri(doc.uri).absolute().parent
-        ls.set_workspace_root(root.as_posix(), root.as_uri())
+        parent_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
+        ls.set_workspace_root(parent_uri)
 
     ls.load(doc.uri, doc.text)
 
