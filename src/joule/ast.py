@@ -637,10 +637,6 @@ class Fn(Expr):
     def children(self) -> Iterable[AST]:
         return chain(self.params, [self.body])
 
-    @property
-    def tails(self) -> list[Expr]:
-        return self.body.tails
-
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Fn":
         assert node.type == "anonymous_function"
