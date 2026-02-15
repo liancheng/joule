@@ -9,13 +9,13 @@ from joule.ast import (
     Call,
     Document,
     Dollar,
+    Expr,
     Field,
     FieldAccess,
     FieldBinding,
     FieldScope,
     Fn,
     Id,
-    If,
     Object,
     VarBinding,
 )
@@ -148,13 +148,6 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(binding.target.to(Field).value)
                 )
 
-            case Id.VarRef():
-                return (
-                    scope
-                    for binding in self.find_var_binding(node)
-                    for scope in self.find_field_scope(binding.target)
-                )
-
             case Id.FieldRef():
                 return (
                     scope
@@ -163,13 +156,22 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(field_access)
                 )
 
-            case If():
+            case Id.VarRef():
                 return (
-                    scope for e in node.branches for scope in self.find_field_scope(e)
+                    scope
+                    for binding in self.find_var_binding(node)
+                    for scope in self.find_field_scope(binding.target)
                 )
 
             case Object():
                 return (scope for scope in maybe(node.field_scope))
+
+            case Expr():
+                return (
+                    scope
+                    for tail in node.tails
+                    for scope in self.find_field_scope(tail)
+                )
 
             case _:
                 return ()
