@@ -203,7 +203,7 @@ class Expr(AST):
                 return ErrorExpr(location_of(uri, node), node.type)
 
     @property
-    def tails(self) -> list["Expr"]:
+    def tails(self) -> Iterable["Expr"]:
         return [self]
 
     def arg(self, name: "Id.ParamRef | None" = None) -> "Arg":
@@ -293,11 +293,11 @@ class Document(Expr):
         self.analysis_phase = AnalysisPhase.Unresolved
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.body]
 
     @property
-    def tails(self) -> list[Expr]:
+    def tails(self) -> Iterable[Expr]:
         return self.body.tails
 
     @staticmethod
@@ -498,7 +498,7 @@ class Binary(Expr):
     rhs: Expr
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.lhs, self.rhs]
 
     @staticmethod
@@ -530,7 +530,7 @@ class Bind(AST):
     value: Expr
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.id, self.value]
 
     @staticmethod
@@ -575,7 +575,7 @@ class Local(Expr):
     body: Expr
 
     @property
-    def tails(self) -> list[Expr]:
+    def tails(self) -> Iterable[Expr]:
         return self.body.tails
 
     @property
@@ -747,7 +747,7 @@ class IfSpec(AST):
     condition: Expr
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.condition]
 
     @staticmethod
@@ -802,7 +802,7 @@ class Import(Expr):
     path: Str
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.path]
 
     @staticmethod
@@ -859,11 +859,11 @@ class AssertExpr(Expr):
     body: Expr
 
     @property
-    def tails(self) -> list[Expr]:
+    def tails(self) -> Iterable[Expr]:
         return self.body.tails
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.assertion, self.body]
 
     @staticmethod
@@ -976,7 +976,7 @@ class FixedKey(FieldKey):
     id: Id.Field
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.id]
 
 
@@ -985,7 +985,7 @@ class ComputedKey(FieldKey):
     expr: Expr
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.expr]
 
 
@@ -997,7 +997,7 @@ class Field(AST):
     inherited: bool = False
 
     @property
-    def children(self) -> list[AST]:
+    def children(self) -> Iterable[AST]:
         return [self.key, self.value]
 
     @staticmethod
@@ -1265,12 +1265,15 @@ class If(Expr):
     alternative: Expr | None
 
     @property
-    def tails(self) -> list[Expr]:
-        return self.consequence.tails + [
-            tail
-            for alternative in maybe(self.alternative)
-            for tail in alternative.tails
-        ]
+    def tails(self) -> Iterable[Expr]:
+        return chain(
+            self.consequence.tails,
+            (
+                tail
+                for alternative in maybe(self.alternative)
+                for tail in alternative.tails
+            ),
+        )
 
     @property
     def children(self) -> Iterable[AST]:
