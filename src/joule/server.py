@@ -55,7 +55,6 @@ def initialize(ls: JouleLanguageServer, params: L.InitializeParams):
     return L.InitializeResult(
         capabilities=L.ServerCapabilities(
             text_document_sync=L.TextDocumentSyncKind.Full,
-            rename_provider=L.RenameOptions(prepare_provider=True),
         ),
         server_info=L.ServerInfo(
             name=ls.name,

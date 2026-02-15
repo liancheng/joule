@@ -19,7 +19,7 @@ class RenameProvider:
             case _:
                 return None
 
-    def serve(self, pos: L.Position, new_name: str) -> list[L.WorkspaceEdit]:
+    def serve(self, pos: L.Position, new_name: str) -> L.WorkspaceEdit:
         match self.tree.node_at(pos):
             case Id.Var() as var:
                 text_edits = [
@@ -35,4 +35,4 @@ class RenameProvider:
             case _:
                 text_edits = []
 
-        return [L.WorkspaceEdit(changes={self.tree.location.uri: text_edits})]
+        return L.WorkspaceEdit(changes={self.tree.location.uri: text_edits})
