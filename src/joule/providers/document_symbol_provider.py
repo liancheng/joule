@@ -105,5 +105,6 @@ class DocumentSymbolProvider(Visitor):
             )
 
             self.add_symbol(symbol)
+            next()
 
         super().visit_for_spec(s, new_next)
