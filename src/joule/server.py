@@ -4,10 +4,9 @@ from pathlib import Path
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
-from joule.ast import URI, Document
+from joule.ast import URI
 from joule.maybe import maybe
-from joule.model import ScopeResolver
-from joule.parsing import parse_jsonnet
+from joule.model import DocumentLoader
 from joule.providers import (
     DefinitionProvider,
     DocumentHighlightProvider,
@@ -22,21 +21,10 @@ log = logging.root
 
 
 class JouleLanguageServer(LanguageServer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def set_workspace_root(self, root_uri: URI):
         folder = L.WorkspaceFolder(root_uri, Path.from_uri(root_uri).name)
         self.workspace.add_folder(folder)
-        self.trees: dict[URI, Document] = {}
-
-    def load(self, uri: URI, source: str, refresh: bool = False) -> Document:
-        if uri not in self.trees or refresh:
-            cst = parse_jsonnet(source)
-            ast = Document.from_cst(uri, cst)
-            self.trees[uri] = ScopeResolver().resolve(ast)
-
-        return self.trees[uri]
+        self.document_loader = DocumentLoader(root_uri)
 
 
 server = JouleLanguageServer("joule", "v0.1")
@@ -70,66 +58,66 @@ def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
         parent_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
         ls.set_workspace_root(parent_uri)
 
-    ls.load(doc.uri, doc.text)
+    ls.document_loader.load(doc.uri, doc.text)
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    ls.load(doc.uri, doc.source, refresh=True)
+    ls.document_loader.load(doc.uri, doc.source)
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return DocumentSymbolProvider(tree).serve()
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
 def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return DefinitionProvider(tree).serve(params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return ReferencesProvider(tree).serve(params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
 def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return InlayHintProvider(tree).serve()
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
 def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return DocumentHighlightProvider(tree).serve(params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_RENAME)
 def rename(ls: JouleLanguageServer, params: L.RenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return RenameProvider(tree).serve(params.position, params.new_name)
 
 
 @server.feature(L.TEXT_DOCUMENT_PREPARE_RENAME)
 def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return RenameProvider(tree).prepare(params.position)
 
 
 @server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
 def folding_range(ls: JouleLanguageServer, params: L.PrepareRenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    tree = ls.load(doc.uri, doc.source)
+    tree = ls.document_loader.get_or_load(doc.uri, doc.source)
     return FoldingRangeProvider(tree).serve()
