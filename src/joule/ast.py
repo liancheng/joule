@@ -796,9 +796,15 @@ class ListComp(Expr):
     AST.register(from_cst, "forloop")
 
 
+class ImportType(StrEnum):
+    Default = "import"
+    Str = "importstr"
+    Bin = "importbin"
+
+
 @D.dataclass
 class Import(Expr):
-    type: str
+    type: ImportType
     path: Str
 
     @property
@@ -812,7 +818,7 @@ class Import(Expr):
         [path] = strip_comments(node.named_children)
         return Import(
             location_of(uri, node),
-            node.type,
+            ImportType(node.type),
             Str.from_cst(uri, path),
         )
 

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from joule.ast import URI, Document
+from joule.maybe import head_or_none, maybe
 from joule.model.scope_resolver import ScopeResolver
 from joule.parsing import parse_jsonnet
 
@@ -13,17 +14,42 @@ class DocumentLoader:
     def load_source(self, uri: URI) -> str:
         return Path.from_uri(uri).absolute().read_text()
 
-    def resolve_import_path(self, importer_uri: URI, importee: str) -> Path:
+    def resolve_importee(
+        self,
+        importer_uri: URI,
+        importee: str,
+        raise_on_failure: bool = False,
+    ) -> Path | None:
         if (path := Path(importee)).is_absolute():
             return path
 
-        for search_dir in [Path.from_uri(importer_uri).parent, self.workspace_root]:
+        for search_dir in [
+            Path.from_uri(importer_uri).parent,
+            self.workspace_root.joinpath("vendor"),
+            self.workspace_root,
+        ]:
             if (path := search_dir.joinpath(importee)).exists() and path.is_file():
                 return path
 
-        raise FileNotFoundError(f"{importee} not found")
+        if raise_on_failure:
+            raise FileNotFoundError(f"{importee} not found")
+        else:
+            return None
 
-    def load(self, uri: URI, source: str | None) -> Document:
+    def load_importee(
+        self,
+        importer_uri: URI,
+        importee: str,
+        raise_on_failure: bool = False,
+    ) -> Document | None:
+        return head_or_none(
+            self.load(path.as_uri())
+            for path in maybe(
+                self.resolve_importee(importer_uri, importee, raise_on_failure)
+            )
+        )
+
+    def load(self, uri: URI, source: str | None = None) -> Document:
         if source is None:
             source = self.load_source(uri)
 

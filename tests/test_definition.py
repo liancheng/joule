@@ -3,13 +3,12 @@ from textwrap import dedent
 
 from joule.ast import Id
 from joule.providers import DefinitionProvider
+from tests.dsl.fake_document import fake_workspace
 
 from .dsl import FakeDocument
 
 
 class TestDefinition(unittest.TestCase):
-    provider = DefinitionProvider()
-
     def assertVarDefined(
         self,
         doc: FakeDocument,
@@ -19,10 +18,13 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
+        loader = fake_workspace("file:///tmp", [doc])
+        provider = DefinitionProvider(loader)
+
         for ref_mark in ref_marks:
             var = doc.node_at(var_mark).to(Id.Var)
             self.assertSequenceEqual(
-                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
+                provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [var.location],
             )
 
@@ -35,10 +37,13 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
+        loader = fake_workspace("file:///tmp", [doc])
+        provider = DefinitionProvider(loader)
+
         for ref_mark in ref_marks:
             var = doc.node_at(param_mark).to(Id.Var)
             self.assertSequenceEqual(
-                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
+                provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [var.location],
             )
 
@@ -54,10 +59,13 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
+        loader = fake_workspace("file:///tmp", [doc])
+        provider = DefinitionProvider(loader)
+
         for ref_mark in ref_marks:
             keys = [doc.node_at(mark) for mark in key_marks]
             self.assertSequenceEqual(
-                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
+                provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [key.location for key in keys],
             )
 
@@ -272,3 +280,36 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(t, key_marks=1, ref_marks=2)
+
+    def test_import(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                if true then { f: 1 } else { f: 2 }
+                               ^1            ^2
+                """
+            ),
+            uri="file:///tmp/doc1.jsonnet",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local v = import "doc1.jsonnet";
+                v.f
+                  ^1
+                """
+            ),
+            uri="file:///tmp/doc2.jsonnet",
+        )
+
+        loader = fake_workspace(
+            root_uri="file:///tmp",
+            fakes=[t1, t2],
+        )
+
+        provider = DefinitionProvider(loader)
+        self.assertSequenceEqual(
+            provider.serve(t2.ast, t2.start_of(1)),
+            [t1.at(1), t1.at(2)],
+        )

@@ -1,4 +1,6 @@
 from itertools import accumulate, chain
+from typing import Iterable
+from unittest import mock as M
 
 import lsprotocol.types as L
 import tree_sitter as T
@@ -6,6 +8,7 @@ from rich.text import Text
 
 from joule.ast import (
     AST,
+    URI,
     Arg,
     Array,
     Assert,
@@ -24,6 +27,7 @@ from joule.ast import (
     Id,
     IfSpec,
     Import,
+    ImportType,
     ListComp,
     Local,
     Num,
@@ -34,6 +38,7 @@ from joule.ast import (
 )
 from joule.maybe import head, must
 from joule.model import ScopeResolver
+from joule.model.document_loader import DocumentLoader
 from joule.parsing import parse_jsonnet
 
 from .marked_range import parse_marked_locations
@@ -256,13 +261,13 @@ class FakeDocument:
         return Local(self.at(at), binds, body)
 
     def import_(self, *, at: int, path: Str) -> Import:
-        return Import(self.at(at), "import", path)
+        return Import(self.at(at), ImportType.Default, path)
 
     def importbin(self, *, at: int, path: Str) -> Import:
-        return Import(self.at(at), "importbin", path)
+        return Import(self.at(at), ImportType.Bin, path)
 
     def importstr(self, *, at: int, path: Str) -> Import:
-        return Import(self.at(at), "importstr", path)
+        return Import(self.at(at), ImportType.Str, path)
 
     def list_comp(
         self,
@@ -296,3 +301,15 @@ class FakeDocument:
 
     def dollar(self, *, at: int) -> Dollar:
         return Dollar(self.at(at))
+
+
+def fake_workspace(root_uri: URI, fakes: Iterable[FakeDocument]) -> DocumentLoader:
+    mapping = {fake.uri: fake.source for fake in fakes}
+
+    def fake_load_sources(uri: URI):
+        return mapping[uri]
+
+    loader = DocumentLoader(root_uri)
+    loader.load_source = M.MagicMock(side_effect=fake_load_sources)
+
+    return loader
