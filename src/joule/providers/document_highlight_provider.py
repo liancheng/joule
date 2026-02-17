@@ -7,14 +7,11 @@ from joule.maybe import maybe
 
 
 class DocumentHighlightProvider:
-    def __init__(self, tree: Document) -> None:
+    def serve(self, tree: Document, pos: L.Position) -> list[L.DocumentHighlight]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
-        self.tree = tree
-
-    def serve(self, pos: L.Position) -> list[L.DocumentHighlight]:
         from lsprotocol.types import DocumentHighlightKind as K
 
-        match self.tree.node_at(pos):
+        match tree.node_at(pos):
             case Id.Var() as var:
                 to_highlight = chain(var.references, [var])
             case Id.VarRef() as ref:

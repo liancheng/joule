@@ -8,6 +8,8 @@ from .dsl import FakeDocument
 
 
 class TestDefinition(unittest.TestCase):
+    provider = DefinitionProvider()
+
     def assertVarDefined(
         self,
         doc: FakeDocument,
@@ -17,12 +19,10 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
-        provider = DefinitionProvider(doc.ast)
-
         for ref_mark in ref_marks:
             var = doc.node_at(var_mark).to(Id.Var)
             self.assertSequenceEqual(
-                provider.serve(doc.start_of(ref_mark)),
+                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [var.location],
             )
 
@@ -35,12 +35,10 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
-        provider = DefinitionProvider(doc.ast)
-
         for ref_mark in ref_marks:
             var = doc.node_at(param_mark).to(Id.Var)
             self.assertSequenceEqual(
-                provider.serve(doc.start_of(ref_mark)),
+                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [var.location],
             )
 
@@ -56,12 +54,10 @@ class TestDefinition(unittest.TestCase):
         if isinstance(ref_marks, int):
             ref_marks = [ref_marks]
 
-        provider = DefinitionProvider(doc.ast)
-
         for ref_mark in ref_marks:
             keys = [doc.node_at(mark) for mark in key_marks]
             self.assertSequenceEqual(
-                provider.serve(doc.start_of(ref_mark)),
+                self.provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [key.location for key in keys],
             )
 

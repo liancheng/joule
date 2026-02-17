@@ -5,12 +5,11 @@ from joule.visitor import Visitor
 
 
 class FoldingRangeProvider(Visitor):
-    def __init__(self, tree: Document) -> None:
-        self.tree = tree
+    def __init__(self) -> None:
         self.folding_ranges: list[L.FoldingRange] = []
 
-    def serve(self) -> list[L.FoldingRange]:
-        self.visit(self.tree)
+    def serve(self, tree: Document) -> list[L.FoldingRange]:
+        self.visit(tree)
         return self.folding_ranges
 
     def _add_folding_range(self, span: L.Range):

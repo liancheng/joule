@@ -14,13 +14,12 @@ class Icon(StrEnum):
 
 
 class InlayHintProvider(Visitor):
-    def __init__(self, tree: Document) -> None:
-        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
-        self.tree = tree
+    def __init__(self) -> None:
         self.hints: list[L.InlayHint] = []
 
-    def serve(self):
-        self.visit(self.tree)
+    def serve(self, tree: Document):
+        assert tree.analysis_phase == AnalysisPhase.ScopeResolved
+        self.visit(tree)
         return self.hints
 
     def visit_var_ref(self, e: Id.VarRef):

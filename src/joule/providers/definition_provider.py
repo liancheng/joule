@@ -23,41 +23,47 @@ from joule.maybe import maybe
 
 
 class DefinitionProvider:
-    def __init__(self, tree: Document) -> None:
+    def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
-        self.tree = tree
 
-    def serve(self, pos: L.Position) -> list[L.Location]:
         return [
             location
-            for node in maybe(self.tree.node_at(pos))
-            for location in self.find_definition(node)
+            for node in maybe(tree.node_at(pos))
+            for location in self.find_definition(tree, node)
         ]
 
-    def find_definition(self, node: AST) -> Iterable[L.Location]:
+    def find_definition(self, tree, node: AST) -> Iterable[L.Location]:
         match node:
             case Id.VarRef() as ref:
                 return (b.id.location for b in self.find_var_binding(ref))
             case Id.FieldRef() as ref:
-                return (b.id.location for b in self.find_field_binding(ref))
+                return (b.id.location for b in self.find_field_binding(tree, ref))
             case Id.ParamRef() as ref:
-                return (b.id.location for b in self.find_param_binding(ref))
+                return (b.id.location for b in self.find_param_binding(tree, ref))
             case _:
                 return ()
 
     def find_var_binding(self, ref: Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
 
-    def find_field_binding(self, ref: Id.FieldRef) -> Iterable[FieldBinding]:
+    def find_field_binding(
+        self,
+        tree: Document,
+        ref: Id.FieldRef,
+    ) -> Iterable[FieldBinding]:
         return (
             binding
             for parent in maybe(ref.parent)
             if (field_access := parent.to(FieldAccess))
-            for scope in self.find_field_scope(field_access.obj)
+            for scope in self.find_field_scope(tree, field_access.obj)
             for binding in maybe(scope.get(ref.name))
         )
 
-    def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
+    def find_param_binding(
+        self,
+        tree: Document,
+        ref: Id.ParamRef,
+    ) -> Iterable[VarBinding]:
         # Given a function parameter reference in a named function call argument, this
         # function finds the binding where the function parameter is defined.
         #
@@ -99,7 +105,7 @@ class DefinitionProvider:
                 case Id.FieldRef():
                     return (
                         fn
-                        for binding in self.find_field_binding(node)
+                        for binding in self.find_field_binding(tree, node)
                         for fn in find_fn(binding.target)
                     )
                 case Field(_, _, Fn() as fn, _):
@@ -120,7 +126,7 @@ class DefinitionProvider:
             for binding in maybe(param.binding)
         )
 
-    def find_field_scope(self, node: AST) -> Iterable[FieldScope]:
+    def find_field_scope(self, tree: Document, node: AST) -> Iterable[FieldScope]:
         match node:
             case Dollar():
 
@@ -144,8 +150,9 @@ class DefinitionProvider:
             case FieldAccess():
                 return (
                     scope
-                    for binding in self.find_field_binding(node.field)
-                    for scope in self.find_field_scope(binding.target.to(Field).value)
+                    for binding in self.find_field_binding(tree, node.field)
+                    if (field_value := binding.target.to(Field).value)
+                    for scope in self.find_field_scope(tree, field_value)
                 )
 
             case Id.FieldRef():
@@ -153,14 +160,14 @@ class DefinitionProvider:
                     scope
                     for parent in maybe(node.parent)
                     if (field_access := parent.to(FieldAccess))
-                    for scope in self.find_field_scope(field_access)
+                    for scope in self.find_field_scope(tree, field_access)
                 )
 
             case Id.VarRef():
                 return (
                     scope
                     for binding in self.find_var_binding(node)
-                    for scope in self.find_field_scope(binding.target)
+                    for scope in self.find_field_scope(tree, binding.target)
                 )
 
             case Object():
@@ -170,7 +177,7 @@ class DefinitionProvider:
                 return (
                     scope
                     for tail in node.tails
-                    for scope in self.find_field_scope(tail)
+                    for scope in self.find_field_scope(tree, tail)
                 )
 
             case _:
