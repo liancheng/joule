@@ -19,6 +19,7 @@ from joule.ast import (
     Import,
     ImportType,
     Object,
+    Self,
     VarBinding,
 )
 from joule.maybe import Maybe, maybe
@@ -187,6 +188,21 @@ class DefinitionProvider:
 
             case Object():
                 return (scope for scope in maybe(node.field_scope))
+
+            case Self():
+
+                def enclosing_object(node: AST | None) -> Object | None:
+                    match node:
+                        case Object() | None:
+                            return node
+                        case _:
+                            return enclosing_object(node.parent)
+
+                return (
+                    scope
+                    for obj in maybe(enclosing_object(node))
+                    for scope in maybe(obj.field_scope)
+                )
 
             case Expr():
                 return (

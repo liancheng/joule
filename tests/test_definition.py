@@ -404,3 +404,17 @@ class TestDefinition(unittest.TestCase):
             ],
             refs=[t4.node_at(1).to(Id.FieldRef)],
         )
+
+    def test_self(self):
+        t = FakeDocument(
+            """\
+            { local root = self, f(p): p, g: root.f(1) }
+                                 ^1               ^2
+            """
+        )
+
+        self.assertFieldDefined(
+            fake_workspace([t]),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
