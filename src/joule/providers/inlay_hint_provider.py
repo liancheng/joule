@@ -36,7 +36,7 @@ class InlayHintProvider(Visitor):
 
         if e.var is not None:
             self._add_hint(
-                e.location.range.end,
+                e.location.range.start,
                 # Marks for-spec variable references with an down-arrow as for-spec
                 # variables are defined after their references.
                 Icon.DownArrow if for_spec_var_ref else Icon.UpArrow,
@@ -45,19 +45,19 @@ class InlayHintProvider(Visitor):
     def visit_bind(self, b: Bind):
         super().visit_bind(b)
         n_refs = len(b.id.references)
-        self._add_hint(b.id.location.range.end, [Icon.DownArrow, str(n_refs)])
+        self._add_hint(b.id.location.range.start, [Icon.DownArrow, str(n_refs)])
 
     def visit_param(self, p: Param):
         super().visit_param(p)
         n_refs = len(p.id.references)
-        self._add_hint(p.id.location.range.end, [Icon.DownArrow, str(n_refs)])
+        self._add_hint(p.id.location.range.start, [Icon.DownArrow, str(n_refs)])
 
     def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
         def new_next():
             n_refs = len(s.id.references)
             # Marks for-spec variables with an up-arrow as for-spec variables
             # are defined after their references.
-            self._add_hint(s.id.location.range.end, [Icon.UpArrow, str(n_refs)])
+            self._add_hint(s.id.location.range.start, [Icon.UpArrow, str(n_refs)])
             next()
 
         super().visit_for_spec(s, new_next)
