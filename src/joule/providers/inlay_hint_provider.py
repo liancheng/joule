@@ -17,7 +17,7 @@ class InlayHintProvider(Visitor):
     def __init__(self) -> None:
         self.hints: list[L.InlayHint] = []
 
-    def serve(self, tree: Document):
+    def serve(self, tree: Document) -> list[L.InlayHint]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.visit(tree)
         return self.hints

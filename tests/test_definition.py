@@ -4,6 +4,7 @@ from textwrap import dedent
 from pyfakefs.fake_filesystem_unittest import TestCase
 
 from joule.ast import Id
+from joule.maybe import must
 from joule.model.document_loader import DocumentLoader
 from joule.providers import DefinitionProvider
 from tests.dsl.fake_document import fake_workspace
@@ -38,7 +39,7 @@ class TestDefinition(TestCase):
         param_locations = [param.location for param in params]
 
         for ref in refs:
-            tree = loader.get_or_load(ref.location.uri)
+            tree = must(loader.get_or_load(ref.location.uri))
             self.assertSequenceEqual(
                 provider.serve(tree, ref.location.range.start),
                 param_locations,
@@ -53,7 +54,7 @@ class TestDefinition(TestCase):
         provider = DefinitionProvider(loader)
 
         for ref in refs:
-            tree = loader.get_or_load(ref.location.uri)
+            tree = must(loader.get_or_load(ref.location.uri))
             self.assertSequenceEqual(
                 provider.serve(tree, ref.location.range.start),
                 [key.location for key in keys],
