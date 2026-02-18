@@ -71,9 +71,6 @@ class AST:
 
         return self
 
-    def is_a(self, expect_type: Type[ASTType]) -> bool:
-        return isinstance(self, expect_type)
-
     @property
     def pretty_tree(self) -> str:
         return str(PrettyAST(self))

@@ -48,8 +48,8 @@ class DocumentLoader:
 
         if source is not None:
             tree = AST.from_cst(uri, parse_jsonnet(source))
-            if tree.is_a(Document):
-                scoped_tree = ScopeResolver().resolve(tree.to(Document))
+            if isinstance(tree, Document):
+                scoped_tree = ScopeResolver().resolve(tree)
                 self.trees[uri] = scoped_tree
                 return scoped_tree
 

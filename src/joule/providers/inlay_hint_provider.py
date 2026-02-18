@@ -27,7 +27,7 @@ class InlayHintProvider(Visitor):
 
         for_spec_var_ref = next(
             (
-                binding.target.is_a(ForSpec)
+                isinstance(binding.target, ForSpec)
                 for var in maybe(e.var)
                 for binding in maybe(var.binding)
             ),

@@ -18,7 +18,7 @@ class TestDefinition(TestCase):
 
     def assertVarDefined(self, doc: FakeDocument, var: int, refs: list[int]):
         var_node = doc.node_at(doc.start_of(var))
-        assert var_node.is_a(Id.Var)
+        self.assertIsInstance(var_node, Id.Var)
 
         loader = fake_workspace(self.fs, doc, "file:///tmp")
         provider = DefinitionProvider(loader)

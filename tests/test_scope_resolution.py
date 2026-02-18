@@ -29,7 +29,7 @@ class TestScopeResolution(unittest.TestCase):
         self.assertEqual(binding.target, target)
 
     def assertFieldBinding(self, owner: Object, field: Field):
-        self.assertTrue(field.key.is_a(FixedKey))
+        self.assertIsInstance(field.key, FixedKey)
         key = field.key.to(FixedKey)
 
         binding = key.id.binding

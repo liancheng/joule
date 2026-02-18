@@ -24,5 +24,5 @@ class DocumentHighlightProvider:
         return [
             L.DocumentHighlight(id.location.range, kind)
             for id in to_highlight
-            if (kind := K.Write if id.is_a(Id.Var) else K.Read,)
+            if (kind := K.Write if isinstance(id, Id.Var) else K.Read,)
         ]
