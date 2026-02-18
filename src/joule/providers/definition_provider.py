@@ -6,6 +6,7 @@ from joule.ast import (
     AST,
     AnalysisPhase,
     Arg,
+    Binary,
     Call,
     Document,
     Dollar,
@@ -19,6 +20,7 @@ from joule.ast import (
     Import,
     ImportType,
     Object,
+    Operator,
     Self,
     VarBinding,
 )
@@ -127,8 +129,27 @@ class DefinitionProvider:
             )
         )
 
-    def find_field_scope(self, node: AST) -> Iterable[FieldScope]:
+    def find_field_scope(
+        self,
+        node: AST,
+    ) -> Iterable[FieldScope]:
         match node:
+            case Binary() if node.op == Operator.Plus:
+                lhs_scopes = list(self.find_field_scope(node.lhs))
+                rhs_scopes = list(self.find_field_scope(node.rhs))
+
+                match lhs_scopes, rhs_scopes:
+                    case _ if len(lhs_scopes) == 0:
+                        return rhs_scopes
+                    case _ if len(rhs_scopes) == 0:
+                        return lhs_scopes
+                    case _:
+                        return (
+                            parent.add_child(child)
+                            for parent in lhs_scopes
+                            for child in rhs_scopes
+                        )
+
             case Dollar():
 
                 def outer_most_object(

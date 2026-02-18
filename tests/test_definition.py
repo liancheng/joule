@@ -459,3 +459,20 @@ class TestDefinition(TestCase):
             keys=[t.node_at(1).to(Id.Field)],
             refs=[t.node_at(2).to(Id.FieldRef)],
         )
+
+    def test_obj_extend(self):
+        t = FakeDocument(
+            """\
+            local v1 = { f: 1 };
+            local v2 = { f: 2 };
+                         ^1
+            (v1 + v2).f
+                      ^2
+            """
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )

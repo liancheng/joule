@@ -1443,6 +1443,11 @@ class FieldScope:
         self.children.append(child)
         return child
 
+    def add_child(self, child: FieldScope) -> "FieldScope":
+        child.parent = self
+        self.children.append(child)
+        return child
+
     @property
     def pretty_tree(self) -> str:
         return str(PrettyScope(self))
