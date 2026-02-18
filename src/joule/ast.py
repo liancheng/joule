@@ -803,23 +803,30 @@ class ImportType(StrEnum):
 
 
 @D.dataclass
+class Importee(Str):
+    pass
+
+
+@D.dataclass
 class Import(Expr):
     type: ImportType
-    path: Str
+    importee: Importee
 
     @property
     def children(self) -> Iterable[AST]:
-        return [self.path]
+        return [self.importee]
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Import":
         assert node.type in ["import", "importbin", "importstr"]
 
         [path] = strip_comments(node.named_children)
+        importee = Str.from_cst(uri, path)
+
         return Import(
             location_of(uri, node),
             ImportType(node.type),
-            Str.from_cst(uri, path),
+            Importee(importee.location, importee.value),
         )
 
     AST.register(from_cst, "import", "importbin", "importstr")

@@ -18,11 +18,11 @@ from joule.ast import (
     Fn,
     Id,
     Import,
+    Importee,
     ImportType,
     Object,
     Operator,
     Self,
-    Str,
     VarBinding,
 )
 from joule.maybe import maybe
@@ -50,21 +50,10 @@ class DefinitionProvider:
                 return (b.id.location for b in self.find_param_binding(ref))
             case Id.VarRef() as ref:
                 return (b.id.location for b in self.find_var_binding(ref))
-            case Str() if self.is_importee(node):
-                return (doc.location for doc in self.find_importee(node))
+            case Importee():
+                return (doc.location for doc in maybe(self.loader.get_importee(node)))
             case _:
                 return ()
-
-    def is_importee(self, node: Str) -> bool:
-        return next((parent.is_a(Import) for parent in maybe(node.parent)), False)
-
-    def find_importee(self, importee: Str) -> Iterable[Document]:
-        uri = importee.location.uri
-        return (
-            doc
-            for path in maybe(self.loader.resolve_importee(uri, importee.value))
-            for doc in maybe(self.loader.get_or_load(path.as_uri()))
-        )
 
     def find_var_binding(self, ref: Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
@@ -123,7 +112,7 @@ class DefinitionProvider:
                 case Import() if node.type == ImportType.Default:
                     return (
                         fn
-                        for importee in maybe(self.load_importee(node))
+                        for importee in maybe(self.loader.get_importee(node.importee))
                         for fn in find_fn(importee)
                     )
                 case Expr():
@@ -132,10 +121,6 @@ class DefinitionProvider:
                     return ()
 
         return find_fn(call.fn)
-
-    def load_importee(self, node: Import) -> Document | None:
-        assert node.type == ImportType.Default
-        return self.loader.load_importee(node.location.uri, node.path.value)
 
     def find_field_scope(
         self,
@@ -203,7 +188,7 @@ class DefinitionProvider:
             case Import() if node.type == ImportType.Default:
                 return (
                     scope
-                    for importee in maybe(self.load_importee(node))
+                    for importee in maybe(self.loader.get_importee(node.importee))
                     for scope in self.find_field_scope(importee)
                 )
 

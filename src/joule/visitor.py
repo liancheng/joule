@@ -165,7 +165,7 @@ class Visitor:
         next()
 
     def visit_import(self, e: Import):
-        self.visit_str(e.path)
+        self.visit_str(e.importee)
 
     def visit_list_comp(self, e: ListComp):
         self.visit_comp_spec(

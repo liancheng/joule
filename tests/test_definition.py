@@ -39,7 +39,7 @@ class TestDefinition(TestCase):
         param_locations = [param.location for param in params]
 
         for ref in refs:
-            tree = must(loader.get_or_load(ref.location.uri))
+            tree = must(loader.get(ref.location.uri))
             self.assertSequenceEqual(
                 provider.serve(tree, ref.location.range.start),
                 param_locations,
@@ -54,7 +54,7 @@ class TestDefinition(TestCase):
         provider = DefinitionProvider(loader)
 
         for ref in refs:
-            tree = must(loader.get_or_load(ref.location.uri))
+            tree = must(loader.get(ref.location.uri))
             self.assertSequenceEqual(
                 provider.serve(tree, ref.location.range.start),
                 [key.location for key in keys],

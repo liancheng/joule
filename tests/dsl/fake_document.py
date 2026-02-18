@@ -28,6 +28,7 @@ from joule.ast import (
     Id,
     IfSpec,
     Import,
+    Importee,
     ImportType,
     ListComp,
     Local,
@@ -219,6 +220,9 @@ class FakeDocument:
     def string(self, *, at: int, value: str) -> Str:
         return Str(self.at(at), value)
 
+    def importee(self, *, at: int, value: str) -> Importee:
+        return Importee(self.at(at), value)
+
     def computed_key(self, *, at: int, expr: Expr) -> ComputedKey:
         return ComputedKey(self.at(at), expr)
 
@@ -261,13 +265,13 @@ class FakeDocument:
     def local(self, *, at: int, binds: list[Bind], body: Expr) -> Local:
         return Local(self.at(at), binds, body)
 
-    def import_(self, *, at: int, path: Str) -> Import:
+    def import_(self, *, at: int, path: Importee) -> Import:
         return Import(self.at(at), ImportType.Default, path)
 
-    def importbin(self, *, at: int, path: Str) -> Import:
+    def importbin(self, *, at: int, path: Importee) -> Import:
         return Import(self.at(at), ImportType.Bin, path)
 
-    def importstr(self, *, at: int, path: Str) -> Import:
+    def importstr(self, *, at: int, path: Importee) -> Import:
         return Import(self.at(at), ImportType.Str, path)
 
     def list_comp(

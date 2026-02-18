@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from joule.ast import URI, Document
+from joule.ast import URI, Document, Importee
 from joule.model.scope_resolver import ScopeResolver
 from joule.parsing import parse_jsonnet
 
@@ -32,13 +32,9 @@ class DocumentLoader:
 
         return None
 
-    def load_importee(
-        self,
-        importer_uri: URI,
-        importee: str,
-    ) -> Document | None:
-        if path := self.resolve_importee(importer_uri, importee):
-            return self.load(path.as_uri())
+    def get_importee(self, importee: Importee) -> Document | None:
+        if path := self.resolve_importee(importee.location.uri, importee.value):
+            return self.get(path.as_uri())
         else:
             return None
 
@@ -58,9 +54,5 @@ class DocumentLoader:
         else:
             return None
 
-    def get_or_load(
-        self,
-        uri: URI,
-        source: str | None = None,
-    ) -> Document | None:
-        return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
+    def get(self, uri: URI, source: str | None = None) -> Document | None:
+        return self.trees.get(uri, self.load(uri, source))

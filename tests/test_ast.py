@@ -507,7 +507,7 @@ class TestAST(unittest.TestCase):
             t.body,
             t.import_(
                 at=1,
-                path=t.string(at=2, value="test.jsonnet"),
+                path=t.importee(at=2, value="test.jsonnet"),
             ),
         )
 
@@ -525,7 +525,7 @@ class TestAST(unittest.TestCase):
             t.body,
             t.importbin(
                 at=1,
-                path=t.string(at=2, value="bin"),
+                path=t.importee(at=2, value="bin"),
             ),
         )
 
@@ -543,7 +543,7 @@ class TestAST(unittest.TestCase):
             t.body,
             t.importstr(
                 at=1,
-                path=t.string(at=2, value="test.jsonnet"),
+                path=t.importee(at=2, value="test.jsonnet"),
             ),
         )
 

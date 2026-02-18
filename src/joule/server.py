@@ -72,7 +72,7 @@ def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         DocumentSymbolProvider().serve(tree)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -82,7 +82,7 @@ def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         DefinitionProvider(ls.document_loader).serve(tree, params.position)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -92,7 +92,7 @@ def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         ReferencesProvider().serve(tree, params.position)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -102,7 +102,7 @@ def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         InlayHintProvider().serve(tree)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -112,7 +112,7 @@ def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParam
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         DocumentHighlightProvider().serve(tree, params.position)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -122,7 +122,7 @@ def rename(ls: JouleLanguageServer, params: L.RenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         RenameProvider().serve(tree, params.position, params.new_name)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -132,7 +132,7 @@ def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         RenameProvider().prepare(tree, params.position)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
 
@@ -142,6 +142,6 @@ def folding_range(ls: JouleLanguageServer, params: L.PrepareRenameParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         FoldingRangeProvider().serve(tree)
-        if (tree := ls.document_loader.get_or_load(doc.uri, doc.source))
+        if (tree := ls.document_loader.get(doc.uri, doc.source))
         else None
     )
