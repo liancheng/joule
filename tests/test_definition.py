@@ -464,16 +464,24 @@ class TestDefinition(TestCase):
     def test_obj_extend(self):
         t = FakeDocument(
             """\
-            local v1 = { f: 1 };
-            local v2 = { f: 2 };
-                         ^1
-            (v1 + v2).f
-                      ^2
+            local v1 = { func(p): p + 1 };
+            local v2 = { func(p): p + 2 };
+                         ^1   ^2
+            (v1 + v2).func(p=1)
+                      ^3   ^4
             """
         )
 
+        w = fake_workspace(self.fs, t)
+
         self.assertFieldDefined(
-            fake_workspace(self.fs, t),
+            w,
             keys=[t.node_at(1).to(Id.Field)],
-            refs=[t.node_at(2).to(Id.FieldRef)],
+            refs=[t.node_at(3).to(Id.FieldRef)],
+        )
+
+        self.assertParamDefined(
+            w,
+            params=[t.node_at(2).to(Id.Var)],
+            refs=[t.node_at(4).to(Id.ParamRef)],
         )
