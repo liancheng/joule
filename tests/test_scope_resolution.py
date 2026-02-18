@@ -5,6 +5,7 @@ from joule.ast import (
     AST,
     Field,
     FixedKey,
+    Fn,
     ForSpec,
     Id,
     Local,
@@ -50,15 +51,15 @@ class TestScopeResolution(unittest.TestCase):
         )
 
         self.assertVarBinding(
-            t.node_at(1).to(Local),
-            t.node_at(2).to(Id.Var),
-            t.node_at(3).to(Num),
+            owner=t.node_at(1).to(Local),
+            var=t.node_at(2).to(Id.Var),
+            target=t.node_at(3).to(Num),
         )
 
         self.assertVarBinding(
-            t.node_at(1).to(Local),
-            t.node_at(4).to(Id.Var),
-            t.node_at(5).to(Num),
+            owner=t.node_at(1).to(Local),
+            var=t.node_at(4).to(Id.Var),
+            target=t.node_at(5).to(Num),
         )
 
     def test_object(self):
@@ -81,19 +82,26 @@ class TestScopeResolution(unittest.TestCase):
 
         obj = t.body.to(Object)
 
-        self.assertFieldBinding(obj, t.node_at(1).to(Field))
-        self.assertFieldBinding(obj, t.node_at(2).to(Field))
+        self.assertFieldBinding(
+            owner=obj,
+            field=t.node_at(1).to(Field),
+        )
 
-        self.assertVarBinding(
-            obj,
-            t.node_at(3).to(Id.Var),
-            t.node_at(4).to(Num),
+        self.assertFieldBinding(
+            owner=obj,
+            field=t.node_at(2).to(Field),
         )
 
         self.assertVarBinding(
-            obj,
-            t.node_at(5).to(Id.Var),
-            t.node_at(6).to(Num),
+            owner=obj,
+            var=t.node_at(3).to(Id.Var),
+            target=t.node_at(4).to(Num),
+        )
+
+        self.assertVarBinding(
+            owner=obj,
+            var=t.node_at(5).to(Id.Var),
+            target=t.node_at(6).to(Num),
         )
 
     def test_list_comp(self):
@@ -111,15 +119,15 @@ class TestScopeResolution(unittest.TestCase):
         )
 
         self.assertVarBinding(
-            t.node_at(1).to(Local),
-            t.node_at(2).to(Id.Var),
-            t.node_at(3).to(Num),
+            owner=t.node_at(1).to(Local),
+            var=t.node_at(2).to(Id.Var),
+            target=t.node_at(3).to(Num),
         )
 
         self.assertVarBinding(
-            t.node_at(4).to(ForSpec),
-            t.node_at(5).to(Id.Var),
-            t.node_at(4).to(ForSpec),
+            owner=t.node_at(4).to(ForSpec),
+            var=t.node_at(5).to(Id.Var),
+            target=t.node_at(4).to(ForSpec),
         )
 
     def test_obj_comp(self):
@@ -138,19 +146,34 @@ class TestScopeResolution(unittest.TestCase):
         )
 
         self.assertVarBinding(
-            t.body.to(ObjComp),
-            t.node_at(1).to(Id.Var),
-            t.node_at(2).to(Num),
+            owner=t.body.to(ObjComp),
+            var=t.node_at(1).to(Id.Var),
+            target=t.node_at(2).to(Num),
         )
 
         self.assertVarBinding(
-            t.body.to(ObjComp),
-            t.node_at(3).to(Id.Var),
-            t.node_at(4).to(Num),
+            owner=t.body.to(ObjComp),
+            var=t.node_at(3).to(Id.Var),
+            target=t.node_at(4).to(Num),
         )
 
         self.assertVarBinding(
-            t.node_at(5),
-            t.node_at(6).to(Id.Var),
-            t.node_at(5).to(ForSpec),
+            owner=t.node_at(5),
+            var=t.node_at(6).to(Id.Var),
+            target=t.node_at(5).to(ForSpec),
+        )
+
+    def test_field_fn_params(self):
+        t = FakeDocument(
+            """\
+            { f(p): p }
+               ^^^^^^1
+                ^2
+            """
+        )
+
+        self.assertVarBinding(
+            owner=t.node_at(1).to(Fn),
+            var=t.node_at(2).to(Id.Var),
+            target=t.var(at=2, name="p").param(),
         )

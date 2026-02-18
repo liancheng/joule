@@ -969,7 +969,7 @@ class FieldKey(AST):
         inherited: bool = False,
     ) -> "Field":
         return Field(
-            merge_locations(self.location, value.location),
+            merge_locations(self, value),
             self,
             value,
             visibility,
@@ -1030,7 +1030,7 @@ class Field(AST):
                 location=location_of(uri, node),
                 key=FieldKey.from_cst(uri, key),
                 value=Fn(
-                    L.Location(uri, merge_ranges(lparen, body)),
+                    L.Location(uri, merge_ranges(range_of(lparen), range_of(body))),
                     params=params,
                     body=Expr.from_cst(uri, body),
                 ),
@@ -1356,51 +1356,24 @@ def range_contains(outer: L.Range, inner: L.Range):
 RangeLike = L.Range | T.Range | T.Node | AST
 
 
-def merge_ranges(lhs: RangeLike, rhs: RangeLike) -> L.Range:
-    match lhs:
-        case L.Range():
-            start = lhs.start
-        case T.Range() as r:
-            start = position_of(r.start_point)
-        case T.Node() as n:
-            start = position_of(n.start_point)
-        case AST():
-            start = lhs.location.range.start
-
-    match rhs:
-        case L.Range():
-            end = rhs.end
-        case T.Range() as r:
-            end = position_of(r.end_point)
-        case T.Node() as n:
-            end = position_of(n.end_point)
-        case AST():
-            end = rhs.location.range.end
-
-    assert start < end or end == start
-
-    return L.Range(start, end)
+def merge_ranges(lhs: L.Range, rhs: L.Range) -> L.Range:
+    assert lhs.start < rhs.end or rhs.end == lhs.start
+    return L.Range(lhs.start, rhs.end)
 
 
-LocationLike = L.Location | AST
-
-
-def merge_locations(lhs: LocationLike, rhs: LocationLike) -> L.Location:
-    if isinstance(lhs, AST):
-        lhs = lhs.location
-
-    if isinstance(rhs, AST):
-        rhs = rhs.location
-
-    assert lhs.uri == rhs.uri, dedent(
+def merge_locations(lhs: AST, rhs: AST) -> L.Location:
+    assert lhs.location.uri == rhs.location.uri, dedent(
         f"""\
         Cannot merge two locations from different documents:
-        * {lhs.uri}
-        * {rhs.uri}
+        * {lhs.location.uri}
+        * {rhs.location.uri}
         """
     )
 
-    return L.Location(lhs.uri, merge_ranges(lhs.range, rhs.range))
+    return L.Location(
+        lhs.location.uri,
+        merge_ranges(lhs.location.range, rhs.location.range),
+    )
 
 
 @D.dataclass

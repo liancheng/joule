@@ -1,5 +1,6 @@
 from itertools import accumulate, chain
-from typing import Iterable
+from pathlib import Path
+from typing import Sequence
 from unittest import mock as M
 
 import lsprotocol.types as L
@@ -303,8 +304,20 @@ class FakeDocument:
         return Dollar(self.at(at))
 
 
-def fake_workspace(root_uri: URI, fakes: Iterable[FakeDocument]) -> DocumentLoader:
-    mapping = {fake.uri: fake.source for fake in fakes}
+def fake_workspace(
+    documents: Sequence[FakeDocument],
+    root_uri: URI | None = None,
+) -> DocumentLoader:
+    match documents, root_uri:
+        case [doc], None:
+            root_uri = Path.from_uri(doc.uri).parent.as_uri()
+        case _, None:
+            raise ValueError("Mutiple documents provided. Missing workspace root URI.")
+        case _:
+            pass
+
+    mapping = {doc.uri: doc.source for doc in documents}
+    assert len(mapping) == len(documents)
 
     def fake_load_sources(uri: URI):
         return mapping[uri]
