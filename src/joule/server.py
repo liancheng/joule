@@ -91,7 +91,7 @@ def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
 def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
-        ReferencesProvider().serve(tree, params.position)
+        ReferencesProvider(ls.loader).serve(tree, params.position)
         if (tree := ls.loader.get(doc.uri, doc.source))
         else None
     )

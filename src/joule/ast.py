@@ -363,10 +363,6 @@ class Id:
     class FieldRef(Expr):
         name: str
 
-        def __post_init__(self):
-            super().__post_init__()
-            self.binding: FieldBinding | None = None
-
         @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.FieldRef":
             assert node.type == "id"
