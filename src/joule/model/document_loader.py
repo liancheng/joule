@@ -15,11 +15,7 @@ class DocumentLoader:
         path = Path.from_uri(uri).absolute()
         return path.read_text() if path.is_file() else None
 
-    def resolve_importee(
-        self,
-        importer_uri: URI,
-        importee: str,
-    ) -> Path | None:
+    def resolve_importee(self, importer_uri: URI, importee: str) -> Path | None:
         if (path := Path(importee)).is_absolute():
             return path
 
@@ -39,11 +35,7 @@ class DocumentLoader:
         else:
             return None
 
-    def load(
-        self,
-        uri: URI,
-        source: str | None = None,
-    ) -> Document | None:
+    def load(self, uri: URI, source: str | None = None) -> Document | None:
         if source is None:
             source = self.load_source(uri)
 

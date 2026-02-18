@@ -6,6 +6,7 @@ from joule.ast import (
     AST,
     AnalysisPhase,
     Arg,
+    Array,
     Binary,
     Call,
     Document,
@@ -16,6 +17,7 @@ from joule.ast import (
     FieldBinding,
     FieldScope,
     Fn,
+    ForSpec,
     Id,
     Import,
     Importee,
@@ -127,6 +129,13 @@ class DefinitionProvider:
         node: AST,
     ) -> Iterable[FieldScope]:
         match node:
+            case Array():
+                return (
+                    scope
+                    for value in node.values
+                    for scope in self.find_field_scope(value)
+                )
+
             case Binary() if node.op == Operator.Plus:
                 lhs_scopes = list(self.find_field_scope(node.lhs))
                 rhs_scopes = list(self.find_field_scope(node.rhs))
@@ -169,6 +178,9 @@ class DefinitionProvider:
                     if (field_value := binding.target.to(Field).value)
                     for scope in self.find_field_scope(field_value)
                 )
+
+            case ForSpec():
+                return self.find_field_scope(node.source)
 
             case Id.FieldRef():
                 return (

@@ -484,3 +484,22 @@ class TestDefinition(TestCase):
             params=[t.node_at(2).to(Id.Var)],
             refs=[t.node_at(4).to(Id.ParamRef)],
         )
+
+    def test_field_in_for_spec_source(self):
+        t = FakeDocument(
+            """\
+            [
+                v.f for v in [{ f: 1 }, { f: 2 }]
+                  ^1            ^2        ^3
+            ]
+            """
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[
+                t.node_at(2).to(Id.Field),
+                t.node_at(3).to(Id.Field),
+            ],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
