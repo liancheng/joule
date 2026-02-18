@@ -63,25 +63,6 @@ class DefinitionProvider:
         )
 
     def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
-        # Given a function parameter reference in a named function call argument, this
-        # function finds the binding where the function parameter is defined.
-        #
-        # The following example helps explain the process:
-        #
-        #   local func(p) = p + 1;
-        #         ^1   ^2
-        #   func(p = 1)
-        #   ^3   ^4
-        #
-        # Given `ref` pointing to the parameter reference `p` at location 4, the goal is
-        # to find the function parameter `p` at location 2:
-        #
-        # 1. Find the parent of `ref`, `arg`, an `Arg` node pointing to `p = 1`.
-        # 2. Find the parent of `arg`, `call`, a `Call` node pointing to `func(p = 1)`.
-        #    Now `call.fn` points to `func` at location 3, which references a function.
-        # 3. Find the `Fn` definition of `func` at location 1.
-        # 4. Find parameter `p` at location 2 from the parameter list of the `Fn` node.
-
         def enclosing_call(ref: Id.ParamRef) -> Iterable[Call]:
             return (
                 call
@@ -97,41 +78,44 @@ class DefinitionProvider:
         return (
             binding
             for call in enclosing_call(ref)
-            for fn in self.find_fn(call.fn)
+            for fn in self.find_callee(call)
             for param in find_param(fn, ref.name)
             for binding in maybe(param.binding)
         )
 
-    def find_fn(self, node: AST) -> Iterable[Fn]:
-        match node:
-            case Field() if isinstance(fn := node.value, Fn):
-                return [fn]
-            case FieldAccess():
-                return self.find_fn(node.field)
-            case Fn():
-                return maybe(node)
-            case Id.FieldRef():
-                return (
-                    fn
-                    for binding in self.find_field_binding(node)
-                    for fn in self.find_fn(binding.target)
-                )
-            case Id.VarRef():
-                return (
-                    fn
-                    for binding in self.find_var_binding(node)
-                    for fn in self.find_fn(binding.target)
-                )
-            case Import() if node.type == ImportType.Default:
-                return (
-                    fn
-                    for importee in self.load_importee(node)
-                    for fn in self.find_fn(importee)
-                )
-            case Expr():
-                return (fn for tail in node.tails for fn in self.find_fn(tail))
-            case _:
-                return ()
+    def find_callee(self, call: Call) -> Iterable[Fn]:
+        def find_fn(node: AST) -> Iterable[Fn]:
+            match node:
+                case Field() if isinstance(fn := node.value, Fn):
+                    return [fn]
+                case FieldAccess():
+                    return find_fn(node.field)
+                case Fn():
+                    return maybe(node)
+                case Id.FieldRef():
+                    return (
+                        fn
+                        for binding in self.find_field_binding(node)
+                        for fn in find_fn(binding.target)
+                    )
+                case Id.VarRef():
+                    return (
+                        fn
+                        for binding in self.find_var_binding(node)
+                        for fn in find_fn(binding.target)
+                    )
+                case Import() if node.type == ImportType.Default:
+                    return (
+                        fn
+                        for importee in self.load_importee(node)
+                        for fn in find_fn(importee)
+                    )
+                case Expr():
+                    return (fn for tail in node.tails for fn in find_fn(tail))
+                case _:
+                    return ()
+
+        return find_fn(call.fn)
 
     def load_importee(self, node: Import) -> Maybe[Document]:
         assert node.type == ImportType.Default
