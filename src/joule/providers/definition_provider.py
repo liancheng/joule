@@ -22,6 +22,7 @@ from joule.ast import (
     Object,
     Operator,
     Self,
+    Str,
     VarBinding,
 )
 from joule.maybe import Maybe, maybe
@@ -30,7 +31,7 @@ from joule.model.document_loader import DocumentLoader
 
 class DefinitionProvider:
     def __init__(self, loader: DocumentLoader) -> None:
-        self.document_loader = loader
+        self.loader = loader
 
     def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
@@ -43,14 +44,31 @@ class DefinitionProvider:
 
     def find_definition(self, node: AST) -> Iterable[L.Location]:
         match node:
-            case Id.VarRef() as ref:
-                return (b.id.location for b in self.find_var_binding(ref))
             case Id.FieldRef() as ref:
                 return (b.id.location for b in self.find_field_binding(ref))
             case Id.ParamRef() as ref:
                 return (b.id.location for b in self.find_param_binding(ref))
+            case Id.VarRef() as ref:
+                return (b.id.location for b in self.find_var_binding(ref))
+            case Str() if self.is_importee(node):
+                return (doc.location for doc in self.find_importee(node))
             case _:
                 return ()
+
+    def is_importee(self, node: Str) -> bool:
+        return next((parent.is_a(Import) for parent in maybe(node.parent)), False)
+
+    def find_importee(self, importee: Str) -> Iterable[Document]:
+        return (
+            self.loader.get_or_load(path.as_uri())
+            for path in maybe(
+                self.loader.resolve_importee(
+                    importee.location.uri,
+                    importee.value,
+                    raise_on_failure=False,
+                )
+            )
+        )
 
     def find_var_binding(self, ref: Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
@@ -122,7 +140,7 @@ class DefinitionProvider:
     def load_importee(self, node: Import) -> Maybe[Document]:
         assert node.type == ImportType.Default
         return maybe(
-            self.document_loader.load_importee(
+            self.loader.load_importee(
                 node.location.uri,
                 node.path.value,
                 raise_on_failure=False,
