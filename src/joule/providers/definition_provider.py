@@ -82,7 +82,7 @@ class DefinitionProvider:
         # 3. Find the `Fn` definition of `func` at location 1.
         # 4. Find parameter `p` at location 2 from the parameter list of the `Fn` node.
 
-        def find_call(ref: Id.ParamRef) -> Iterable[Call]:
+        def enclosing_call(ref: Id.ParamRef) -> Iterable[Call]:
             return (
                 call
                 for ref_parent in maybe(ref.parent)
@@ -91,41 +91,49 @@ class DefinitionProvider:
                 if (call := arg_parent.to(Call))
             )
 
-        def find_fn(node: AST) -> Iterable[Fn]:
-            match node:
-                case Fn():
-                    return maybe(node)
-                case Id.VarRef():
-                    return (
-                        fn
-                        for binding in self.find_var_binding(node)
-                        for fn in find_fn(binding.target)
-                    )
-                case Id.FieldRef():
-                    return (
-                        fn
-                        for binding in self.find_field_binding(node)
-                        for fn in find_fn(binding.target)
-                    )
-                case Field(_, _, Fn() as fn, _):
-                    return [fn]
-                case FieldAccess():
-                    return find_fn(node.field)
-                case _:
-                    return ()
-
         def find_param(fn: Fn, name: str) -> Iterable[Id.Var]:
             return (param.id for param in fn.params if param.id.name == name)
 
         return (
             binding
-            for call in find_call(ref)
-            for fn in find_fn(call.fn)
+            for call in enclosing_call(ref)
+            for fn in self.find_fn(call.fn)
             for param in find_param(fn, ref.name)
             for binding in maybe(param.binding)
         )
 
-    def load_importee(self, node: Import) -> Maybe[AST]:
+    def find_fn(self, node: AST) -> Iterable[Fn]:
+        match node:
+            case Field() if isinstance(fn := node.value, Fn):
+                return [fn]
+            case FieldAccess():
+                return self.find_fn(node.field)
+            case Fn():
+                return maybe(node)
+            case Id.FieldRef():
+                return (
+                    fn
+                    for binding in self.find_field_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
+            case Id.VarRef():
+                return (
+                    fn
+                    for binding in self.find_var_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
+            case Import() if node.type == ImportType.Default:
+                return (
+                    fn
+                    for importee in self.load_importee(node)
+                    for fn in self.find_fn(importee)
+                )
+            case Expr():
+                return (fn for tail in node.tails for fn in self.find_fn(tail))
+            case _:
+                return ()
+
+    def load_importee(self, node: Import) -> Maybe[Document]:
         assert node.type == ImportType.Default
         return maybe(
             self.document_loader.load_importee(

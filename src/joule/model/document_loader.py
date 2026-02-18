@@ -23,18 +23,21 @@ class DocumentLoader:
         if (path := Path(importee)).is_absolute():
             return path
 
-        for search_dir in [
-            Path.from_uri(importer_uri).parent,
-            self.workspace_root.joinpath("vendor"),
-            self.workspace_root,
-        ]:
-            if (path := search_dir.joinpath(importee)).exists() and path.is_file():
-                return path
-
-        if raise_on_failure:
-            raise FileNotFoundError(f"{importee} not found")
-        else:
-            return None
+        match head_or_none(
+            joined
+            for search_dir in [
+                Path.from_uri(importer_uri).parent,
+                self.workspace_root.joinpath("vendor"),
+                self.workspace_root,
+            ]
+            if (joined := search_dir.joinpath(importee)).is_file()
+        ):
+            case None if raise_on_failure:
+                raise FileNotFoundError(f"{importee} not found")
+            case None:
+                return None
+            case resolved:
+                return resolved
 
     def load_importee(
         self,

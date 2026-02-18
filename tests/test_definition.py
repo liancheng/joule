@@ -1,6 +1,8 @@
 import unittest
 from textwrap import dedent
 
+from pyfakefs.fake_filesystem_unittest import TestCase
+
 from joule.ast import Id
 from joule.model.document_loader import DocumentLoader
 from joule.providers import DefinitionProvider
@@ -9,12 +11,15 @@ from tests.dsl.fake_document import fake_workspace
 from .dsl import FakeDocument
 
 
-class TestDefinition(unittest.TestCase):
+class TestDefinition(TestCase):
+    def setUp(self) -> None:
+        self.setUpPyfakefs()
+
     def assertVarDefined(self, doc: FakeDocument, var: int, refs: list[int]):
         var_node = doc.node_at(doc.start_of(var))
         assert var_node.is_a(Id.Var)
 
-        loader = fake_workspace([doc], "file:///tmp")
+        loader = fake_workspace(self.fs, doc, "file:///tmp")
         provider = DefinitionProvider(loader)
 
         for ref_mark in refs:
@@ -166,7 +171,7 @@ class TestDefinition(unittest.TestCase):
 
         self.assertVarDefined(t, var=1, refs=[3])
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(2).to(Id.Field)],
             refs=[t.node_at(4).to(Id.FieldRef)],
         )
@@ -184,13 +189,13 @@ class TestDefinition(unittest.TestCase):
         self.assertVarDefined(t, var=1, refs=[4])
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(2).to(Id.Field)],
             refs=[t.node_at(5).to(Id.FieldRef)],
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(3).to(Id.Field)],
             refs=[t.node_at(6).to(Id.FieldRef)],
         )
@@ -206,7 +211,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(2).to(Id.Field)],
             refs=[t.node_at(1).to(Id.FieldRef)],
         )
@@ -222,7 +227,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[
                 t.node_at(1).to(Id.Field),
                 t.node_at(2).to(Id.Field),
@@ -241,7 +246,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(1).to(Id.Field)],
             refs=[t.node_at(2).to(Id.FieldRef)],
         )
@@ -262,7 +267,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[
                 t.node_at(1).to(Id.Field),
                 t.node_at(2).to(Id.Field),
@@ -270,7 +275,7 @@ class TestDefinition(unittest.TestCase):
             refs=[t.node_at(3).to(Id.FieldRef)],
         )
 
-    def test_call(self):
+    def test_call_arg(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -283,12 +288,12 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertParamDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             params=[t.node_at(1).to(Id.Var)],
             refs=[t.node_at(2).to(Id.ParamRef)],
         )
 
-    def test_call_field_fn(self):
+    def test_field_fn_call_arg(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -303,7 +308,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertParamDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             params=[t.node_at(1).to(Id.Var)],
             refs=[t.node_at(2).to(Id.ParamRef)],
         )
@@ -325,7 +330,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertParamDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             params=[
                 t.node_at(1).to(Id.Var),
                 t.node_at(2).to(Id.Var),
@@ -348,7 +353,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertParamDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             params=[t.node_at(1).to(Id.Var)],
             refs=[t.node_at(2).to(Id.ParamRef)],
         )
@@ -397,12 +402,48 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t1, t2, t3, t4], root_uri="file:///tmp"),
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2, t3, t4],
+                root_uri="file:///tmp",
+            ),
             keys=[
                 t1.node_at(1).to(Id.Field),
                 t2.node_at(1).to(Id.Field),
             ],
             refs=[t4.node_at(1).to(Id.FieldRef)],
+        )
+
+    def test_imported_fn_call_arg(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                function(p) = p + 1
+                         ^1
+                """
+            ),
+            uri="file:///tmp/doc1",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local f = import 'doc1';
+                f(p=1)
+                  ^1
+                """
+            ),
+            uri="file:///tmp/doc2",
+        )
+
+        self.assertParamDefined(
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2],
+                root_uri="file:///tmp",
+            ),
+            params=[t1.node_at(1).to(Id.Var)],
+            refs=[t2.node_at(1).to(Id.ParamRef)],
         )
 
     def test_self(self):
@@ -414,7 +455,7 @@ class TestDefinition(unittest.TestCase):
         )
 
         self.assertFieldDefined(
-            fake_workspace([t]),
+            fake_workspace(self.fs, t),
             keys=[t.node_at(1).to(Id.Field)],
             refs=[t.node_at(2).to(Id.FieldRef)],
         )

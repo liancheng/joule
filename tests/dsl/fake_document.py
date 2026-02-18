@@ -1,10 +1,10 @@
 from itertools import accumulate, chain
 from pathlib import Path
 from typing import Sequence
-from unittest import mock as M
 
 import lsprotocol.types as L
 import tree_sitter as T
+from pyfakefs.fake_filesystem import FakeFilesystem
 from rich.text import Text
 
 from joule.ast import (
@@ -305,10 +305,22 @@ class FakeDocument:
 
 
 def fake_workspace(
-    documents: Sequence[FakeDocument],
+    fs: FakeFilesystem,
+    docs: FakeDocument | Sequence[FakeDocument],
     root_uri: URI | None = None,
 ) -> DocumentLoader:
-    match documents, root_uri:
+    if isinstance(docs, FakeDocument):
+        docs = [docs]
+
+    for doc in docs:
+        path = Path.from_uri(doc.uri).as_posix()
+
+        if fs.exists(path):
+            fs.remove(path)
+
+        fs.create_file(file_path=path, contents=doc.source)
+
+    match docs, root_uri:
         case [doc], None:
             root_uri = Path.from_uri(doc.uri).parent.as_uri()
         case _, None:
@@ -316,13 +328,4 @@ def fake_workspace(
         case _:
             pass
 
-    mapping = {doc.uri: doc.source for doc in documents}
-    assert len(mapping) == len(documents)
-
-    def fake_load_sources(uri: URI):
-        return mapping[uri]
-
-    loader = DocumentLoader(root_uri)
-    loader.load_source = M.MagicMock(side_effect=fake_load_sources)
-
-    return loader
+    return DocumentLoader(root_uri)
