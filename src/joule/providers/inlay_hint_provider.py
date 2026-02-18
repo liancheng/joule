@@ -34,12 +34,13 @@ class InlayHintProvider(Visitor):
             False,
         )
 
-        self._add_hint(
-            e.location.range.end,
-            # Marks for-spec variable references with an down-arrow as for-spec
-            # variables are defined after their references.
-            Icon.DownArrow if for_spec_var_ref else Icon.UpArrow,
-        )
+        if e.var is not None:
+            self._add_hint(
+                e.location.range.end,
+                # Marks for-spec variable references with an down-arrow as for-spec
+                # variables are defined after their references.
+                Icon.DownArrow if for_spec_var_ref else Icon.UpArrow,
+            )
 
     def visit_bind(self, b: Bind):
         super().visit_bind(b)
