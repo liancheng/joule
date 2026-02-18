@@ -5,11 +5,10 @@ from pyfakefs.fake_filesystem_unittest import TestCase
 
 from joule.ast import Id
 from joule.maybe import must
-from joule.model.document_loader import DocumentLoader
+from joule.model import DocumentLoader
 from joule.providers import DefinitionProvider
-from tests.dsl.fake_document import fake_workspace
 
-from .dsl import FakeDocument
+from .dsl import FakeDocument, fake_workspace
 
 
 class TestDefinition(TestCase):

@@ -26,7 +26,7 @@ from joule.ast import (
     VarBinding,
 )
 from joule.maybe import maybe
-from joule.model.document_loader import DocumentLoader
+from joule.model import DocumentLoader
 
 
 class DefinitionProvider:

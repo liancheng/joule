@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from joule.ast import AST, URI, Document, Importee
-from joule.model.scope_resolver import ScopeResolver
 from joule.parsing import parse_jsonnet
+
+from .scope_resolver import ScopeResolver
 
 
 class DocumentLoader:

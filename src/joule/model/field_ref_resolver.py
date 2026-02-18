@@ -1,6 +1,6 @@
 from joule.ast import Document, FieldAccess, Id
-from joule.model.document_loader import DocumentLoader
-from joule.providers.definition_provider import DefinitionProvider
+from joule.model import DocumentLoader
+from joule.providers import DefinitionProvider
 from joule.visitor import Visitor
 
 
