@@ -5,8 +5,8 @@ import lsprotocol.types as L
 from joule.ast import (
     AST,
     AnalysisPhase,
-    Arg,
     Array,
+    ASTType,
     Binary,
     Call,
     Document,
@@ -31,9 +31,20 @@ from joule.maybe import maybe
 from joule.model import DocumentLoader
 
 
+def enclosing_node(node: AST | None, expected_type: type[ASTType]) -> ASTType | None:
+    return (
+        node
+        if node is None or isinstance(node, expected_type)
+        else enclosing_node(node.parent, expected_type)
+    )
+
+
 class DefinitionProvider:
     def __init__(self, loader: DocumentLoader) -> None:
+        from joule.providers import ReferencesProvider
+
         self.loader = loader
+        self.references_provider = ReferencesProvider(self.loader)
 
     def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
@@ -70,24 +81,13 @@ class DefinitionProvider:
         )
 
     def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
-        def enclosing_call(ref: Id.ParamRef) -> Iterable[Call]:
-            return (
-                call
-                for ref_parent in maybe(ref.parent)
-                if (arg := ref_parent.to(Arg))
-                for arg_parent in maybe(arg.parent)
-                if (call := arg_parent.to(Call))
-            )
-
-        def find_param(fn: Fn, name: str) -> Iterable[Id.Var]:
-            return (param.id for param in fn.params if param.id.name == name)
-
         return (
             binding
-            for call in enclosing_call(ref)
+            for call in maybe(enclosing_node(ref, Call))
             for fn in self.find_callee(call)
-            for param in find_param(fn, ref.name)
-            for binding in maybe(param.binding)
+            for param in fn.params
+            if param.id.name == ref.name
+            for binding in maybe(param.id.binding)
         )
 
     def find_callee(self, call: Call) -> Iterable[Fn]:
@@ -208,17 +208,9 @@ class DefinitionProvider:
                 return (scope for scope in maybe(node.field_scope))
 
             case Self():
-
-                def enclosing_object(node: AST | None) -> Object | None:
-                    match node:
-                        case Object() | None:
-                            return node
-                        case _:
-                            return enclosing_object(node.parent)
-
                 return (
                     scope
-                    for obj in maybe(enclosing_object(node))
+                    for obj in maybe(enclosing_node(node, Object))
                     for scope in maybe(obj.field_scope)
                 )
 
