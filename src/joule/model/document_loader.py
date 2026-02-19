@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Iterable
 
 from joule.ast import AST, URI, Document, Importee
 from joule.parsing import parse_jsonnet
@@ -50,3 +51,25 @@ class DocumentLoader:
 
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
+
+    def load_all(self, root: Path) -> Iterable[Document]:
+        root = root.absolute()
+
+        def is_jsonnet_file(name: str) -> bool:
+            return (
+                name.endswith(".jsonnet")
+                or name.endswith(".libsonnet")
+                or name.endswith(".jsonnet.TEMPLATE")
+            )
+
+        for dir_path, dir_names, file_names in root.walk():
+            if ".git" in dir_names:
+                dir_names.remove(".git")
+
+            yield from (
+                doc
+                for f in file_names
+                if is_jsonnet_file(f)
+                if (uri := dir_path.joinpath(f).as_uri())
+                if (doc := self.load(uri))
+            )
