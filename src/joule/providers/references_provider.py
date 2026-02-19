@@ -5,18 +5,20 @@ import lsprotocol.types as L
 from joule.ast import AST, AnalysisPhase, Document, FieldAccess, FixedKey, Id
 from joule.maybe import maybe
 from joule.model import DocumentLoader
-from joule.providers import DefinitionProvider
+from joule.providers.definition_provider import enclosing_node
 from joule.visitor import Visitor
 
 
 class FieldRefFinder(Visitor):
     def __init__(self, loader: DocumentLoader, key: FixedKey) -> None:
+        from joule.providers import DefinitionProvider
+
         self.loader = loader
         self.key = key
         self.definition_provider = DefinitionProvider(self.loader)
         self.refs: list[Id.FieldRef] = []
 
-    def find_references(self, tree: Document) -> list[Id.FieldRef]:
+    def search(self, tree: Document) -> list[Id.FieldRef]:
         self.visit(tree)
         return self.refs
 
@@ -32,26 +34,26 @@ class ReferencesProvider:
     def __init__(self, loader: DocumentLoader) -> None:
         self.loader = loader
 
-    def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
+    def serve(self, tree: Document, pos: L.Position) -> list[L.Location] | None:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
-        return [
-            location
+        refs = [
+            ref.location
             for node in maybe(tree.node_at(pos))
-            for location in self.find_references(node)
+            for ref in self.find_references(node)
         ]
+        return refs if len(refs) > 0 else None
 
-    def find_references(self, node: AST) -> Iterable[L.Location]:
+    def find_references(self, node: AST) -> Iterable[AST]:
         match node:
             case Id.Field():
                 return (
-                    ref.location
-                    for key in maybe(node.parent)
-                    if isinstance(key, FixedKey)
+                    ref
+                    for key in maybe(enclosing_node(node, FixedKey, level=1))
                     if (finder := FieldRefFinder(self.loader, key))
-                    for tree in maybe(self.loader.get(node.location.uri))
-                    for ref in finder.find_references(tree)
+                    for tree in self.loader.load_all(self.loader.workspace_root)
+                    for ref in finder.search(tree)
                 )
             case Id.Var():
-                return (ref.location for ref in node.references)
+                return node.references
             case _:
                 return ()
