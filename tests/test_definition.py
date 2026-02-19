@@ -59,6 +59,11 @@ class TestDefinition(TestCase):
                 [key.location for key in keys],
             )
 
+
+class TestVarDefinition(TestDefinition):
+    def setUp(self) -> None:
+        self.setUpPyfakefs()
+
     def test_local(self):
         t = FakeDocument(
             dedent(
@@ -97,7 +102,7 @@ class TestDefinition(TestCase):
         self.assertVarDefined(t, var=3, refs=[2, 7])
         self.assertVarDefined(t, var=4, refs=[8])
 
-    def test_field_fn_params(self):
+    def test_fn_params_field_fn(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -159,123 +164,12 @@ class TestDefinition(TestCase):
         self.assertVarDefined(t, var=1, refs=[4])
         self.assertVarDefined(t, var=2, refs=[3])
 
-    def test_field(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = { f: 0 }; v.f
-                      ^1    ^2      ^3^4
-                """
-            )
-        )
 
-        self.assertVarDefined(t, var=1, refs=[3])
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(2).to(Id.Field)],
-            refs=[t.node_at(4).to(Id.FieldRef)],
-        )
+class TestParamDefinition(TestDefinition):
+    def setUp(self) -> None:
+        self.setUpPyfakefs()
 
-    def test_nested_field(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = { f: { g: 0 } }; v.f.g
-                      ^1    ^2   ^3        ^4^5^6
-                """
-            )
-        )
-
-        self.assertVarDefined(t, var=1, refs=[4])
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(2).to(Id.Field)],
-            refs=[t.node_at(5).to(Id.FieldRef)],
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(3).to(Id.Field)],
-            refs=[t.node_at(6).to(Id.FieldRef)],
-        )
-
-    def test_dollar(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                { f: 1, g: { h: $.i, i: 2 }, i: 3 }
-                                  ^1         ^2
-                """
-            )
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(2).to(Id.Field)],
-            refs=[t.node_at(1).to(Id.FieldRef)],
-        )
-
-    def test_if(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = if true then { f: 1 } else { f: 2 }; v.f
-                                         ^1            ^2        ^3
-                """
-            )
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[
-                t.node_at(1).to(Id.Field),
-                t.node_at(2).to(Id.Field),
-            ],
-            refs=[t.node_at(3).to(Id.FieldRef)],
-        )
-
-    def test_if_no_alternative(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = if true then { f: 1 }; v.f
-                                         ^1        ^2
-                """
-            )
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(1).to(Id.Field)],
-            refs=[t.node_at(2).to(Id.FieldRef)],
-        )
-
-    def test_if_with_var_refs(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v1 = { f: 1 };
-                             ^1
-                local v2 = { f: 2 };
-                             ^2
-                local v3 = if true then v1 else v2;
-                v3.f
-                   ^3
-                """
-            )
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[
-                t.node_at(1).to(Id.Field),
-                t.node_at(2).to(Id.Field),
-            ],
-            refs=[t.node_at(3).to(Id.FieldRef)],
-        )
-
-    def test_call_arg(self):
+    def test_local_fn(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -293,7 +187,7 @@ class TestDefinition(TestCase):
             refs=[t.node_at(2).to(Id.ParamRef)],
         )
 
-    def test_field_fn_call_arg(self):
+    def test_field_fn(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -313,7 +207,7 @@ class TestDefinition(TestCase):
             refs=[t.node_at(2).to(Id.ParamRef)],
         )
 
-    def test_call_field_fn_with_if(self):
+    def test_local_fn_if(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -338,8 +232,45 @@ class TestDefinition(TestCase):
             refs=[t.node_at(3).to(Id.ParamRef)],
         )
 
+    def test_imported_fn_call_arg(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                function(p) = p + 1
+                         ^1
+                """
+            ),
+            uri="file:///tmp/doc1",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local f = import 'doc1';
+                f(p=1)
+                  ^1
+                """
+            ),
+            uri="file:///tmp/doc2",
+        )
+
+        self.assertParamDefined(
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2],
+                root_uri="file:///tmp",
+            ),
+            params=[t1.node_at(1).to(Id.Var)],
+            refs=[t2.node_at(1).to(Id.ParamRef)],
+        )
+
+
+class TestFieldDefinition(TestDefinition):
+    def setUp(self) -> None:
+        self.setUpPyfakefs()
+
     @unittest.skip("TODO")
-    def test_field_of_call_arg(self):
+    def test_call_arg(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -352,10 +283,123 @@ class TestDefinition(TestCase):
             )
         )
 
-        self.assertParamDefined(
+        self.assertFieldDefined(
             fake_workspace(self.fs, t),
-            params=[t.node_at(1).to(Id.Var)],
-            refs=[t.node_at(2).to(Id.ParamRef)],
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_local(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = { f: 0 }; v.f
+                            ^1        ^2
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_local_nested_field(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = { f: { g: 0 } }; v.f.g
+                            ^1   ^2          ^3^4
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(3).to(Id.FieldRef)],
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(4).to(Id.FieldRef)],
+        )
+
+    def test_dollar(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                { f: 1, g: { h: $.i, i: 2 }, i: 3 }
+                                  ^1         ^2
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
+
+    def test_local_if(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = if true then { f: 1 } else { f: 2 }; v.f
+                                         ^1            ^2        ^3
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[
+                t.node_at(1).to(Id.Field),
+                t.node_at(2).to(Id.Field),
+            ],
+            refs=[t.node_at(3).to(Id.FieldRef)],
+        )
+
+    def test_local_if_no_else(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v = if true then { f: 1 }; v.f
+                                         ^1        ^2
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_local_if_in_var(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local v1 = { f: 1 };
+                             ^1
+                local v2 = { f: 2 };
+                             ^2
+                local v3 = if true then v1 else v2;
+                v3.f
+                   ^3
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[
+                t.node_at(1).to(Id.Field),
+                t.node_at(2).to(Id.Field),
+            ],
+            refs=[t.node_at(3).to(Id.FieldRef)],
         )
 
     def test_import(self):
@@ -414,38 +458,6 @@ class TestDefinition(TestCase):
             refs=[t4.node_at(1).to(Id.FieldRef)],
         )
 
-    def test_imported_fn_call_arg(self):
-        t1 = FakeDocument(
-            dedent(
-                """\
-                function(p) = p + 1
-                         ^1
-                """
-            ),
-            uri="file:///tmp/doc1",
-        )
-
-        t2 = FakeDocument(
-            dedent(
-                """\
-                local f = import 'doc1';
-                f(p=1)
-                  ^1
-                """
-            ),
-            uri="file:///tmp/doc2",
-        )
-
-        self.assertParamDefined(
-            fake_workspace(
-                self.fs,
-                docs=[t1, t2],
-                root_uri="file:///tmp",
-            ),
-            params=[t1.node_at(1).to(Id.Var)],
-            refs=[t2.node_at(1).to(Id.ParamRef)],
-        )
-
     def test_self(self):
         t = FakeDocument(
             """\
@@ -485,7 +497,7 @@ class TestDefinition(TestCase):
             refs=[t.node_at(4).to(Id.ParamRef)],
         )
 
-    def test_field_in_for_spec_source(self):
+    def test_for_spec(self):
         t = FakeDocument(
             """\
             [
