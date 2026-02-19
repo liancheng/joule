@@ -6,7 +6,6 @@ from joule.ast import (
     AST,
     AnalysisPhase,
     Array,
-    ASTType,
     Binary,
     Call,
     Document,
@@ -26,17 +25,10 @@ from joule.ast import (
     Operator,
     Self,
     VarBinding,
+    enclosing_node,
 )
 from joule.maybe import maybe
 from joule.model import DocumentLoader
-
-
-def enclosing_node(node: AST | None, expected_type: type[ASTType]) -> ASTType | None:
-    return (
-        node
-        if node is None or isinstance(node, expected_type)
-        else enclosing_node(node.parent, expected_type)
-    )
 
 
 class DefinitionProvider:
@@ -83,7 +75,7 @@ class DefinitionProvider:
     def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
         return (
             binding
-            for call in maybe(enclosing_node(ref, Call))
+            for call in maybe(enclosing_node(ref, Call, level=2))
             for fn in self.find_callee(call)
             for param in fn.params
             if param.id.name == ref.name

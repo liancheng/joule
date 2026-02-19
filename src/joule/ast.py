@@ -1,5 +1,6 @@
 import codecs
 import dataclasses as D
+import sys
 from enum import Enum, StrEnum, auto
 from itertools import chain, dropwhile
 from textwrap import dedent
@@ -1503,3 +1504,19 @@ class PrettyScope(PrettyTree):
 
     def __repr__(self):
         return super().__repr__()
+
+
+def enclosing_node(
+    node: AST | None,
+    expected_type: type[ASTType],
+    level: int = sys.maxsize,
+) -> ASTType | None:
+    match node, level:
+        case None, _:
+            return None
+        case _, -1:
+            return None
+        case _ if isinstance(node, expected_type):
+            return node
+        case _:
+            return enclosing_node(node.parent, expected_type, level - 1)
