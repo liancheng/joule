@@ -22,6 +22,8 @@ from joule.visitor import Visitor
 
 
 class ScopeResolver(Visitor):
+    """An AST visitor that creates scopes and bind variables and object fields."""
+
     def resolve(self, tree: Document) -> Document:
         self.var_scope: VarScope = VarScope(tree)
         tree.top_level_scope = self.var_scope
@@ -50,16 +52,16 @@ class ScopeResolver(Visitor):
         e.field_scope.bind(k, f)
 
     def visit_fn(self, e: Fn):
-        # NOTE: In a Jsonnet function, any parameter's default value expression can
-        # reference any other peer parameters, e.g.:
+        # NOTE: Jsonnet function parameter scoping
         #
-        #   local f(x = y, y, x = z) =
-        #       x + y + z;
-        #   f(y = 2)
+        # In Jsonnet, function parameters in the same parameter list can reference each
+        # other in any order, e.g.:
         #
-        # This requires all parameters to be bound before traversing any parameter
-        # default value expressions. This is also why parameters must be handled in
-        # `visit_fn` instead of `visit_param`.
+        #   function(x = z, y = x, z) = x + y + z
+        #
+        # This requires parameters to be bound before traversing any parameter default
+        # value expressions. This is also why parameters must be handled in `visit_fn`
+        # instead of `visit_param`.
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for p in e.params:
                 self.var_scope.bind(p.id, p)
