@@ -10,6 +10,7 @@ from rich.console import Console
 
 from joule.ast import Document, PrettyAST, PrettyCST
 from joule.model import ScopeResolver
+from joule.model.document_loader import DocumentLoader
 from joule.parsing import parse_jsonnet
 from joule.server import server
 
@@ -104,17 +105,10 @@ def index(
         ast = Document.from_cst(file.as_uri(), cst)
         ScopeResolver().resolve(ast)
 
+    path = path.absolute()
+
     if path.is_file():
         resolve(path)
     else:
-        for root, dirs, files in Path.walk(path):
-            if ".git" in dirs:
-                dirs.remove(".git")
-
-            for file in files:
-                if (
-                    file.endswith(".jsonnet")
-                    or file.endswith(".libsonnet")
-                    or file.endswith(".jsonnet.TEMPLATE")
-                ):
-                    resolve(root.absolute().joinpath(file))
+        for tree in DocumentLoader(path.as_uri()).load_all(path):
+            print(tree.location.uri)
