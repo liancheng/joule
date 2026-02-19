@@ -311,7 +311,6 @@ def fake_workspace(
     fs: FakeFilesystem,
     docs: FakeDocument | Sequence[FakeDocument],
     root_uri: URI | None = None,
-    load_all: bool = False,
 ) -> DocumentLoader:
     if isinstance(docs, FakeDocument):
         docs = [docs]
@@ -324,8 +323,6 @@ def fake_workspace(
         case _:
             pass
 
-    loader = DocumentLoader(root_uri)
-
     for doc in docs:
         path = Path.from_uri(doc.uri).as_posix()
 
@@ -334,7 +331,4 @@ def fake_workspace(
 
         fs.create_file(file_path=path, contents=doc.source)
 
-        if load_all:
-            loader.load(doc.uri, doc.source)
-
-    return loader
+    return DocumentLoader(root_uri)

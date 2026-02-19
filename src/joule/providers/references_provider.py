@@ -20,6 +20,7 @@ class FieldRefFinder(Visitor):
 
     def search(self, tree: Document) -> list[Id.FieldRef]:
         self.visit(tree)
+        self.refs.sort(key=lambda ref: ref.location.uri)
         return self.refs
 
     def visit_field_access(self, e: FieldAccess):
@@ -49,9 +50,8 @@ class ReferencesProvider:
                 return (
                     ref
                     for key in maybe(enclosing_node(node, FixedKey, level=1))
-                    if (finder := FieldRefFinder(self.loader, key))
-                    for tree in self.loader.load_all(self.loader.workspace_root)
-                    for ref in finder.search(tree)
+                    for tree in self.loader.load_all()
+                    for ref in FieldRefFinder(self.loader, key).search(tree)
                 )
             case Id.Var():
                 return node.references

@@ -52,7 +52,9 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def load_all(self, root: Path) -> Iterable[Document]:
+    def load_all(self, root: Path | None = None) -> Iterable[Document]:
+        if root is None:
+            root = self.workspace_root
         root = root.absolute()
 
         def is_jsonnet_file(name: str) -> bool:

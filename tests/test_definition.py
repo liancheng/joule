@@ -240,18 +240,18 @@ class TestParamDefinition(TestDefinition):
                          ^1
                 """
             ),
-            uri="file:///tmp/doc1",
+            uri="file:///tmp/doc1.jsonnet",
         )
 
         t2 = FakeDocument(
             dedent(
                 """\
-                local f = import 'doc1';
+                local f = import 'doc1.jsonnet';
                 f(p=1)
                   ^1
                 """
             ),
-            uri="file:///tmp/doc2",
+            uri="file:///tmp/doc2.jsonnet",
         )
 
         self.assertParamDefined(
