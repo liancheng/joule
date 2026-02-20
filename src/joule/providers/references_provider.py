@@ -1,3 +1,4 @@
+import re
 from typing import Iterable
 
 import lsprotocol.types as L
@@ -47,10 +48,13 @@ class ReferencesProvider:
     def find_references(self, node: AST) -> Iterable[AST]:
         match node:
             case Id.Field():
+                pattern = re.compile(f"\\b{node.name}\\b")
                 return (
                     ref
                     for key in maybe(enclosing_node(node, FixedKey, level=1))
-                    for tree in self.loader.load_all()
+                    for uri, source in self.loader.load_all_sources()
+                    for _ in maybe(re.search(pattern, source))
+                    for tree in maybe(self.loader.load(uri, source))
                     for ref in FieldRefFinder(self.loader, key).search(tree)
                 )
             case Id.Var():

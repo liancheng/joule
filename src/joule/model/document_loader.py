@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Iterable
 
 from joule.ast import AST, URI, Document, Importee
+from joule.maybe import maybe
 from joule.parsing import parse_jsonnet
 
 from .scope_resolver import ScopeResolver
@@ -17,13 +18,14 @@ class DocumentLoader:
         path = Path.from_uri(uri).absolute()
         return path.read_text() if path.is_file() else None
 
-    def resolve_importee(self, importer_uri: URI, importee: str) -> Path | None:
+    def resolve_importee_path(self, importer_uri: URI, importee: str) -> Path | None:
         if (path := Path(importee)).is_absolute():
             return path
 
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
             self.workspace_root.rglob("vendor/"),
+            self.workspace_root.rglob("jsonnet/"),
             [self.workspace_root],
         )
 
@@ -34,7 +36,7 @@ class DocumentLoader:
         return None
 
     def get_importee(self, importee: Importee) -> Document | None:
-        if path := self.resolve_importee(importee.location.uri, importee.value):
+        if path := self.resolve_importee_path(importee.location.uri, importee.value):
             return self.get(path.as_uri())
         else:
             return None
@@ -55,7 +57,7 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def load_all(self, root: Path | None = None) -> Iterable[Document]:
+    def load_all_sources(self, root: Path | None = None) -> Iterable[tuple[URI, str]]:
         if root is None:
             root = self.workspace_root
         root = root.absolute()
@@ -72,9 +74,15 @@ class DocumentLoader:
                 dir_names.remove(".git")
 
             yield from (
-                doc
+                (path.as_uri(), path.read_text())
                 for f in file_names
                 if is_jsonnet_file(f)
-                if (uri := dir_path.joinpath(f).as_uri())
-                if (doc := self.load(uri))
+                if (path := dir_path.joinpath(f))
             )
+
+    def load_all(self, root: Path | None = None) -> Iterable[Document]:
+        return (
+            doc
+            for uri, source in self.load_all_sources(root)
+            for doc in maybe(self.load(uri, source))
+        )
