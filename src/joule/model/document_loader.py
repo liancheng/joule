@@ -1,3 +1,4 @@
+from itertools import chain
 from pathlib import Path
 from typing import Iterable
 
@@ -20,12 +21,14 @@ class DocumentLoader:
         if (path := Path(importee)).is_absolute():
             return path
 
-        for search_dir in [
-            Path.from_uri(importer_uri).parent,
-            self.workspace_root.joinpath("vendor"),
-            self.workspace_root,
-        ]:
-            if (joined := search_dir.joinpath(importee)).is_file():
+        search_dirs = chain(
+            [Path.from_uri(importer_uri).parent],
+            self.workspace_root.rglob("vendor/"),
+            [self.workspace_root],
+        )
+
+        for dir in search_dirs:
+            if (joined := dir.joinpath(importee)).is_file():
                 return joined
 
         return None
