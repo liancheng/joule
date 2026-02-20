@@ -1,3 +1,3 @@
 #!/bin/sh
 
-uv run python -m unittest $@
+uv run green -vv

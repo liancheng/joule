@@ -3,7 +3,7 @@ name = "joule"
 version = "0.1.0"
 description = "A toy Jsonnet language server"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "parsy>=2.2",
     "pyfakefs>=6.1.1",
@@ -24,7 +24,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "debugpy>=1.8.19",
-    "pytest>=9.0.2",
+    "green>=4.0.2",
     "ruff>=0.15.0",
 ]
 

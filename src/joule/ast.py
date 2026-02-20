@@ -242,7 +242,7 @@ class Expr(AST):
     def not_eq(self, rhs: "Expr") -> "Binary":
         return self.bin_op(Operator.NotEq, rhs)
 
-    def get(self, field_ref: Id.FieldRef) -> FieldAccess:
+    def get(self, field_ref: "Id.FieldRef") -> "FieldAccess":
         return FieldAccess(merge_locations(self, field_ref), self, field_ref)
 
 
@@ -1448,7 +1448,7 @@ class FieldScope:
         self.children.append(child)
         return child
 
-    def add_child(self, child: FieldScope) -> "FieldScope":
+    def add_child(self, child: "FieldScope") -> "FieldScope":
         child.parent = self
         self.children.append(child)
         return child
