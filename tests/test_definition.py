@@ -15,16 +15,16 @@ class TestDefinition(TestCase):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
-    def assertVarDefined(self, doc: FakeDocument, var: int, refs: list[int]):
-        var_node = doc.node_at(doc.start_of(var))
+    def assertVarDefined(self, doc: FakeDocument, var_mark: int, ref_marks: list[int]):
+        var_node = doc.node_at(doc.start_of(var_mark))
         self.assertIsInstance(var_node, Id.Var)
 
         loader = fake_workspace(self.fs, doc, "file:///tmp")
-        provider = DefinitionProvider(loader)
+        def_provider = DefinitionProvider(loader)
 
-        for ref_mark in refs:
+        for ref_mark in ref_marks:
             self.assertSequenceEqual(
-                provider.serve(doc.ast, doc.start_of(ref_mark)),
+                def_provider.serve(doc.ast, doc.start_of(ref_mark)),
                 [var_node.location],
             )
 
@@ -34,13 +34,13 @@ class TestDefinition(TestCase):
         params: list[Id.Var],
         refs: list[Id.ParamRef],
     ):
-        provider = DefinitionProvider(loader)
+        def_provider = DefinitionProvider(loader)
         param_locations = [param.location for param in params]
 
         for ref in refs:
             tree = must(loader.get(ref.location.uri))
             self.assertSequenceEqual(
-                provider.serve(tree, ref.location.range.start),
+                def_provider.serve(tree, ref.location.range.start),
                 param_locations,
             )
 
@@ -50,12 +50,12 @@ class TestDefinition(TestCase):
         keys: list[Id.Field],
         refs: list[Id.FieldRef],
     ):
-        provider = DefinitionProvider(loader)
+        def_provider = DefinitionProvider(loader)
 
         for ref in refs:
             tree = must(loader.get(ref.location.uri))
             self.assertSequenceEqual(
-                provider.serve(tree, ref.location.range.start),
+                def_provider.serve(tree, ref.location.range.start),
                 [key.location for key in keys],
             )
 
@@ -65,28 +65,32 @@ class TestVarDefinition(TestDefinition):
         self.setUpPyfakefs()
 
     def test_local(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local x = 1; x
-                      ^1     ^2
-                """
-            )
+        self.assertVarDefined(
+            FakeDocument(
+                dedent(
+                    """\
+                    local x = 1; x
+                          ^1     ^2
+                    """
+                )
+            ),
+            var_mark=1,
+            ref_marks=[2],
         )
-
-        self.assertVarDefined(t, var=1, refs=[2])
 
     def test_local_shadowing(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local x = 1; local x = 2; x
-                                   ^1     ^2
-                """
-            )
+        self.assertVarDefined(
+            FakeDocument(
+                dedent(
+                    """\
+                    local x = 1; local x = 2; x
+                                       ^1     ^2
+                    """
+                )
+            ),
+            var_mark=1,
+            ref_marks=[2],
         )
-
-        self.assertVarDefined(t, var=1, refs=[2])
 
     def test_fn_params(self):
         t = FakeDocument(
@@ -98,9 +102,9 @@ class TestVarDefinition(TestDefinition):
             )
         )
 
-        self.assertVarDefined(t, var=1, refs=[5, 6])
-        self.assertVarDefined(t, var=3, refs=[2, 7])
-        self.assertVarDefined(t, var=4, refs=[8])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[5, 6])
+        self.assertVarDefined(t, var_mark=3, ref_marks=[2, 7])
+        self.assertVarDefined(t, var_mark=4, ref_marks=[8])
 
     def test_fn_params_field_fn(self):
         t = FakeDocument(
@@ -112,9 +116,9 @@ class TestVarDefinition(TestDefinition):
             )
         )
 
-        self.assertVarDefined(t, var=1, refs=[5, 6])
-        self.assertVarDefined(t, var=3, refs=[2, 7])
-        self.assertVarDefined(t, var=4, refs=[8])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[5, 6])
+        self.assertVarDefined(t, var_mark=3, ref_marks=[2, 7])
+        self.assertVarDefined(t, var_mark=4, ref_marks=[8])
 
     def test_list_comp(self):
         t = FakeDocument(
@@ -126,8 +130,8 @@ class TestVarDefinition(TestDefinition):
             )
         )
 
-        self.assertVarDefined(t, var=1, refs=[3])
-        self.assertVarDefined(t, var=4, refs=[2])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[3])
+        self.assertVarDefined(t, var_mark=4, ref_marks=[2])
 
     def test_obj_comp(self):
         t = FakeDocument(
@@ -147,9 +151,9 @@ class TestVarDefinition(TestDefinition):
             )
         )
 
-        self.assertVarDefined(t, var=1, refs=[4])
-        self.assertVarDefined(t, var=2, refs=[5])
-        self.assertVarDefined(t, var=6, refs=[3])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[4])
+        self.assertVarDefined(t, var_mark=2, ref_marks=[5])
+        self.assertVarDefined(t, var_mark=6, ref_marks=[3])
 
     def test_slice_var_index(self):
         t = FakeDocument(
@@ -161,8 +165,8 @@ class TestVarDefinition(TestDefinition):
             )
         )
 
-        self.assertVarDefined(t, var=1, refs=[4])
-        self.assertVarDefined(t, var=2, refs=[3])
+        self.assertVarDefined(t, var_mark=1, ref_marks=[4])
+        self.assertVarDefined(t, var_mark=2, ref_marks=[3])
 
 
 class TestParamDefinition(TestDefinition):
