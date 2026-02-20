@@ -83,38 +83,47 @@ class DefinitionProvider:
         )
 
     def find_callee(self, call: Call) -> Iterable[Fn]:
-        def find_fn(node: AST) -> Iterable[Fn]:
+        """Given a function call, finds the definition of the function."""
+
+        def find(node: AST) -> Iterable[Fn]:
             match node:
                 case Field() if isinstance(fn := node.value, Fn):
-                    return [fn]
+                    return (fn,)
+
                 case FieldAccess():
-                    return find_fn(node.field)
+                    return find(node.field)
+
                 case Fn():
                     return maybe(node)
+
                 case Id.FieldRef():
                     return (
                         fn
                         for binding in self.find_field_binding(node)
-                        for fn in find_fn(binding.target)
+                        for fn in find(binding.target)
                     )
+
                 case Id.VarRef():
                     return (
                         fn
                         for binding in self.find_var_binding(node)
-                        for fn in find_fn(binding.target)
+                        for fn in find(binding.target)
                     )
+
                 case Import() if node.type == ImportType.Default:
                     return (
                         fn
                         for importee in maybe(self.loader.get_importee(node.importee))
-                        for fn in find_fn(importee)
+                        for fn in find(importee)
                     )
+
                 case Expr():
-                    return (fn for tail in node.tails for fn in find_fn(tail))
+                    return (fn for tail in node.tails for fn in find(tail))
+
                 case _:
                     return ()
 
-        return find_fn(call.fn)
+        return find(call.fn)
 
     def find_field_scope(
         self,
@@ -144,22 +153,30 @@ class DefinitionProvider:
                             for child in rhs_scopes
                         )
 
+            case Call():
+                return (
+                    scope
+                    for fn in self.find_callee(node)
+                    for tail in fn.body.tails
+                    for scope in self.find_field_scope(tail)
+                )
+
             case Dollar():
 
-                def outer_most_object(
+                def outermost_object(
                     node: AST | None, so_far: Object | None = None
                 ) -> Object | None:
                     match node:
                         case None:
                             return so_far
                         case Object():
-                            return outer_most_object(node.parent, node)
+                            return outermost_object(node.parent, node)
                         case _:
-                            return outer_most_object(node.parent, so_far)
+                            return outermost_object(node.parent, so_far)
 
                 return (
                     scope
-                    for obj in maybe(outer_most_object(node))
+                    for obj in maybe(outermost_object(node))
                     for scope in maybe(obj.field_scope)
                 )
 

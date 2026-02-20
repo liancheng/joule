@@ -117,3 +117,19 @@ class TestFieldReferences(TestReferences):
                 t3.node_at(1).to(Id.FieldRef),
             ],
         )
+
+    def test_call(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local fn() = { f: 1 }; fn().f
+                               ^1           ^2
+                """
+            )
+        )
+
+        self.assertFieldReferenced(
+            fake_workspace(self.fs, t),
+            field=t.node_at(1).to(Id.Field),
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
