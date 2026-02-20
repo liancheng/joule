@@ -66,8 +66,7 @@ class DefinitionProvider:
     def find_field_binding(self, ref: Id.FieldRef) -> Iterable[FieldBinding]:
         return (
             binding
-            for parent in maybe(ref.parent)
-            if (field_access := parent.to(FieldAccess))
+            for field_access in maybe(enclosing_node(ref, FieldAccess, level=1))
             for scope in self.find_field_scope(field_access.obj)
             for binding in maybe(scope.get(ref.name))
         )
@@ -88,7 +87,7 @@ class DefinitionProvider:
         def find(node: AST) -> Iterable[Fn]:
             match node:
                 case Field() if isinstance(fn := node.value, Fn):
-                    return (fn,)
+                    return maybe(fn)
 
                 case FieldAccess():
                     return find(node.field)
@@ -125,10 +124,37 @@ class DefinitionProvider:
 
         return find(call.fn)
 
-    def find_field_scope(
-        self,
-        node: AST,
-    ) -> Iterable[FieldScope]:
+    def find_field_scope(self, node: AST) -> Iterable[FieldScope]:
+        """Finds the object field scopes an AST node tracks.
+
+        This is the major function that helps find the definition of an object field.
+        Note that due to branching, one AST node may track multiple field scopes. See
+        the following examples:
+
+         1. Array in list comprehension:
+
+            ```plaintext
+            [
+                val.f for val in [{ f: 1 }, { f: 2 }]
+                ^1  ^2            ^^^^^^^^3 ^^^^^^^^4
+            ]
+            ```
+
+            `val` at 1 tracks the two field scopes owned by objects at 3 and 4, each
+            contributes a definition of field reference `f` at 2.
+
+         2. Conditional branches:
+
+            ```plaintext
+            local val = if condition then { f: 1 } else { f: 2 };
+                                            ^^^^^^^^1     ^^^^^^^^2
+            val.f
+            ^3  ^4
+            ```
+
+            `val` at 3 tracks the two field scopes owned by objects at 1 and 2, each
+            contributes a definition of field reference `f` at 4.
+        """
         match node:
             case Array():
                 return (
@@ -154,6 +180,20 @@ class DefinitionProvider:
                         )
 
             case Call():
+                # Example:
+                #
+                #   local func() =
+                #       local v = 1;
+                #       { f: v };
+                #   func().f
+                #          ^1
+                #
+                # To find the definiton of field `f` at 2:
+                #
+                # - Finds the definition of `func`.
+                # - Finds tail expression of the body of `func`, which is `{ f: v }`.
+                # - Returns the field scope of `{ f: v }`, which contains the desired
+                #   defintion of field `f`.
                 return (
                     scope
                     for fn in self.find_callee(node)

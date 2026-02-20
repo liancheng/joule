@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Callable, Sequence, cast
+from typing import Callable, Sequence
 
 import lsprotocol.types as L
 
@@ -12,6 +12,7 @@ from joule.ast import (
     Object,
     Param,
 )
+from joule.maybe import maybe
 from joule.visitor import Visitor
 
 
@@ -31,7 +32,7 @@ class DocumentSymbolProvider(Visitor):
 
     def add_symbol(self, symbol: L.DocumentSymbol):
         parent = self.breadcrumb[-1]
-        children = cast(list, parent.children) or []
+        children = [child for children in maybe(parent.children) for child in children]
         children.append(symbol)
         parent.children = children
 

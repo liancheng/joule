@@ -22,6 +22,7 @@ class DocumentLoader:
         if (path := Path(importee)).is_absolute():
             return path
 
+        # TODO: Make search directories customizable
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
             self.workspace_root.rglob("vendor/"),

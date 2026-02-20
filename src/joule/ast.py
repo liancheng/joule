@@ -13,7 +13,6 @@ from typing import (
     Iterator,
     Type,
     TypeVar,
-    cast,
 )
 
 import lsprotocol.types as L
@@ -446,7 +445,7 @@ class Array(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return iter(cast(AST, value) for value in self.values)
+        return iter(value for value in self.values)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Array":
@@ -1509,6 +1508,7 @@ class PrettyScope(PrettyTree):
 def enclosing_node(
     node: AST | None,
     expected_type: type[ASTType],
+    *,
     level: int = sys.maxsize,
 ) -> ASTType | None:
     match node, level:
@@ -1519,4 +1519,4 @@ def enclosing_node(
         case _ if isinstance(node, expected_type):
             return node
         case _:
-            return enclosing_node(node.parent, expected_type, level - 1)
+            return enclosing_node(node.parent, expected_type, level=level - 1)
