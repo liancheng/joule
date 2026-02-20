@@ -199,8 +199,51 @@ class Expr(AST):
             case _:
                 return ErrorExpr(location_of(uri, node), node.type)
 
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Tracks expressions whose tails contain this expression.
+        self.tail_of = []
+
+        for tail in self.tails:
+            if tail is not self:
+                tail.tail_of.append(self)
+
     @property
     def tails(self) -> Iterable["Expr"]:
+        """Tail expressions of this expression.
+
+        A tail of an expression decides the value the expression returns. Simple
+        expressions like literal values and variable references are their own tails.
+        More complex expressions may have more than one tail due to branching.
+
+         1. Single tail expressions:
+
+            ```plaintext
+            42
+            ^^
+            local val = 1; val
+                           ^^^
+            assert cond; val
+                         ^^^
+            ```
+
+         2. Multi-tail expression:
+
+            ```plaintext
+            if cond then val1 else val2
+                         ^^^^      ^^^^
+            ```
+
+        Tails are recursive. `val1` and `val2` below are tails of both the inner `if`
+        expression and the top-level `local` expression, but the `if` expression is
+        _not_ a tail of the `local` expression.
+
+            ```plaintext
+            local cond = f(); if cond then val1 else val2
+                                           ^^^^      ^^^^
+            ```
+        """
         return [self]
 
     def arg(self, name: "Id.ParamRef | None" = None) -> "Arg":
@@ -507,7 +550,7 @@ class Binary(Expr):
                 lhs, op, rhs, *_ = strip_comments(node.named_children)
                 assert op.text is not None
                 operator = Operator(op.text.decode())
-            case _:
+            case _:  # implicit_plus
                 lhs, rhs, *_ = strip_comments(node.named_children)
                 operator = Operator.Plus
 
