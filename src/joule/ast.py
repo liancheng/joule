@@ -1514,7 +1514,7 @@ class PrettyScope(PrettyTree):
     def node_text(self) -> str:
         match self.node:
             case VarScope():
-                repr = "Scope"
+                repr = "VarScope"
             case VarBinding(_, id, AST() as to):
                 class_name = to.__class__.__qualname__
                 span = to.location.range

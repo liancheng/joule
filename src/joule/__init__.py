@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from joule.ast import Document, PrettyAST, PrettyCST
+from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
 from joule.model import ScopeResolver
 from joule.model.document_loader import DocumentLoader
 from joule.parsing import parse_jsonnet
@@ -34,6 +34,7 @@ def serve():
 class TreeType(StrEnum):
     Jsonnet = "j"
     TreeSitter = "t"
+    VarScope = "v"
 
 
 @app.command()
@@ -60,7 +61,7 @@ def tree(
                 The type of tree to print:
                 - `j`: The Jsonnet AST
                 - `t`: The tree-sitter CST
-                - `s`: The Jsonnet variable scope tree
+                - `v`: The Jsonnet variable scope tree
                 """
             ),
         ),
@@ -82,6 +83,8 @@ def tree(
             tree = PrettyAST(ast)
         case TreeType.TreeSitter:
             tree = PrettyCST(cst)
+        case TreeType.VarScope:
+            tree = PrettyScope(ast.top_level_scope)
 
     Console(markup=False).print(tree)
 
