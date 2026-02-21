@@ -60,7 +60,7 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def load_all_sources(self, root: Path | None = None) -> Iterable[tuple[URI, str]]:
+    def discover_all(self, root: Path | None = None) -> Iterable[Path]:
         if root is None:
             root = self.workspace_root
         root = root.absolute()
@@ -76,16 +76,11 @@ class DocumentLoader:
             if ".git" in dir_names:
                 dir_names.remove(".git")
 
-            yield from (
-                (path.as_uri(), path.read_text())
-                for f in file_names
-                if is_jsonnet_file(f)
-                if (path := dir_path.joinpath(f))
-            )
+            yield from (dir_path.joinpath(f) for f in file_names if is_jsonnet_file(f))
 
     def load_all(self, root: Path | None = None) -> Iterable[Document]:
         return (
             doc
-            for uri, source in self.load_all_sources(root)
-            for doc in maybe(self.load(uri, source))
+            for path in self.discover_all(root)
+            for doc in maybe(self.load(path.as_uri()))
         )

@@ -7,6 +7,7 @@ from joule.ast import (
     ComputedKey,
     Document,
     Field,
+    FieldAccess,
     FieldScope,
     FixedKey,
     Fn,
@@ -25,10 +26,11 @@ class ScopeResolver(Visitor):
     """An AST visitor that creates scopes and bind variables and object fields."""
 
     def resolve(self, tree: Document) -> Document:
+        self.tree = tree
         self.var_scope: VarScope = VarScope(tree)
-        tree.top_level_scope = self.var_scope
-
         self.visit(tree)
+
+        tree.top_level_scope = self.var_scope
         tree.analysis_phase = AnalysisPhase.ScopeResolved
 
         return tree
@@ -46,6 +48,10 @@ class ScopeResolver(Visitor):
         self.var_scope.bind(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(owner=b)):
             self.visit(b.value)
+
+    def visit_field_access(self, e: FieldAccess):
+        super().visit_field_access(e)
+        self.tree.field_refs.append(e.field)
 
     def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
         assert e.field_scope is not None

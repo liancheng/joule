@@ -329,8 +329,9 @@ class Document(Expr):
 
     def __post_init__(self):
         super().__post_init__()
-        self.top_level_scope: VarScope | None = None
         self.analysis_phase = AnalysisPhase.Unresolved
+        self.top_level_scope: VarScope | None = None
+        self.field_refs: list[Id.FieldRef] = []
 
     @property
     def children(self) -> Iterable[AST]:

@@ -33,10 +33,7 @@ from joule.model import DocumentLoader
 
 class DefinitionProvider:
     def __init__(self, loader: DocumentLoader) -> None:
-        from joule.providers import ReferencesProvider
-
         self.loader = loader
-        self.references_provider = ReferencesProvider(self.loader)
 
     def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
