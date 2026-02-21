@@ -18,9 +18,11 @@ class DocumentLoader:
         path = Path.from_uri(uri).absolute()
         return path.read_text() if path.is_file() else None
 
-    def resolve_importee_path(self, importer_uri: URI, importee: str) -> Path | None:
-        if (path := Path(importee)).is_absolute():
+    def resolve_importee(self, importee: Importee) -> Path | None:
+        if (path := Path(importee.value)).is_absolute():
             return path
+
+        importer_uri = importee.location.uri
 
         # TODO: Make search directories customizable
         search_dirs = chain(
@@ -31,13 +33,13 @@ class DocumentLoader:
         )
 
         for dir in search_dirs:
-            if (joined := dir.joinpath(importee)).is_file():
+            if (joined := dir.joinpath(importee.value)).is_file():
                 return joined
 
         return None
 
     def get_importee(self, importee: Importee) -> Document | None:
-        if path := self.resolve_importee_path(importee.location.uri, importee.value):
+        if path := self.resolve_importee(importee):
             return self.get(path.as_uri())
         else:
             return None
