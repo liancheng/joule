@@ -267,6 +267,7 @@ class DefinitionProvider:
                 return (
                     scope
                     for tail in node.tails
+                    if tail is not node
                     for scope in self.find_field_scope(tail)
                 )
 
