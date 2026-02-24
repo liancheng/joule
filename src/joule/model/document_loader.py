@@ -10,9 +10,9 @@ from .scope_resolver import ScopeResolver
 
 
 class DocumentLoader:
-    def __init__(self, root_uri: URI) -> None:
+    def __init__(self, workspace_uri: URI | None) -> None:
         self.trees: dict[URI, Document] = {}
-        self.workspace_root = Path.from_uri(root_uri)
+        self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()
@@ -27,9 +27,12 @@ class DocumentLoader:
         # TODO: Make search directories customizable
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
-            self.workspace_root.rglob("vendor/"),
-            self.workspace_root.rglob("jsonnet/"),
-            [self.workspace_root],
+            (
+                dir
+                for path in maybe(self.workspace_path)
+                for dir in path.rglob("vendor/")
+            ),
+            maybe(self.workspace_path),
         )
 
         for dir in search_dirs:
@@ -60,10 +63,8 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def discover_all(self, root: Path | None = None) -> Iterable[Path]:
-        if root is None:
-            root = self.workspace_root
-        root = root.absolute()
+    def walk(self, root: Path) -> Iterable[Path]:
+        root = root.resolve()
 
         def is_jsonnet_file(name: str) -> bool:
             return (
@@ -78,9 +79,7 @@ class DocumentLoader:
 
             yield from (dir_path.joinpath(f) for f in file_names if is_jsonnet_file(f))
 
-    def load_all(self, root: Path | None = None) -> Iterable[Document]:
+    def load_all(self, root: Path) -> Iterable[Document]:
         return (
-            doc
-            for path in self.discover_all(root)
-            for doc in maybe(self.load(path.as_uri()))
+            doc for path in self.walk(root) for doc in maybe(self.load(path.as_uri()))
         )

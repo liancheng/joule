@@ -47,7 +47,8 @@ class ReferencesProvider:
 
         return (
             ref
-            for path in self.loader.discover_all()
+            for workspace_path in maybe(self.loader.workspace_path)
+            for path in self.loader.walk(workspace_path)
             for tree in maybe(prune(path))
             for ref in tree.field_refs
             if ref.name == field.name

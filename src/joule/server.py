@@ -5,7 +5,6 @@ import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
 from joule.ast import URI
-from joule.maybe import maybe
 from joule.model import DocumentLoader
 from joule.providers import (
     DefinitionProvider,
@@ -21,43 +20,33 @@ log = logging.root
 
 
 class JouleLanguageServer(LanguageServer):
-    def set_workspace_root(self, root_uri: URI):
-        folder = L.WorkspaceFolder(root_uri, Path.from_uri(root_uri).name)
-        self.workspace.add_folder(folder)
-        self.loader = DocumentLoader(root_uri)
+    @property
+    def loader(self) -> DocumentLoader:
+        try:
+            return self._loader
+        except AttributeError:
+            workspace_uri: URI | None = None
+
+            match list(self.workspace.folders.keys()):
+                case [_, _, *_]:
+                    raise RuntimeError("Joule does not support multi-workspace.")
+                case [workspace_uri]:
+                    pass
+                case _ if (workspace_uri := self.workspace.root_uri) is not None:
+                    Path.from_uri(workspace_uri).resolve()
+                case _ if (workspace_path := self.workspace.root_path) is not None:
+                    workspace_uri = Path(workspace_path).resolve().as_uri()
+
+            self._loader = DocumentLoader(workspace_uri)
+            return self._loader
 
 
 server = JouleLanguageServer("joule", "v0.1")
 
 
-@server.feature(L.INITIALIZE)
-def initialize(ls: JouleLanguageServer, params: L.InitializeParams):
-    for root_uri in maybe(params.root_uri):
-        log.info("Discovered workspace root: %s", root_uri)
-        root = Path.from_uri(root_uri).absolute()
-        ls.set_workspace_root(root.as_uri())
-
-    return L.InitializeResult(
-        capabilities=L.ServerCapabilities(
-            text_document_sync=L.TextDocumentSyncKind.Full,
-        ),
-        server_info=L.ServerInfo(
-            name=ls.name,
-            version=ls.version,
-        ),
-    )
-
-
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
     doc = params.text_document
-
-    # If the workspace root is not yet discovered, set the root as the parent folder of
-    # the first document opened.
-    if len(ls.workspace.folders) == 0:
-        parent_uri = Path.from_uri(doc.uri).absolute().parent.as_uri()
-        ls.set_workspace_root(parent_uri)
-
     ls.loader.load(doc.uri, doc.text)
 
 
