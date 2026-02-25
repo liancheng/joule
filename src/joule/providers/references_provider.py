@@ -48,7 +48,7 @@ class ReferencesProvider:
         return (
             ref
             for workspace_path in maybe(self.loader.workspace_path)
-            for path in self.loader.walk(workspace_path)
+            for path in self.loader.scan_jsonnet_files(workspace_path)
             for tree in maybe(prune(path))
             for ref in tree.field_refs
             if ref.name == field.name

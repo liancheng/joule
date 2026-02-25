@@ -13,6 +13,7 @@ class DocumentLoader:
     def __init__(self, workspace_uri: URI | None) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
+        self.jpaths: list[Path] = []
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()
@@ -27,11 +28,7 @@ class DocumentLoader:
         # TODO: Make search directories customizable
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
-            (
-                dir
-                for path in maybe(self.workspace_path)
-                for dir in path.rglob("vendor/")
-            ),
+            self.jpaths,
             maybe(self.workspace_path),
         )
 
@@ -40,6 +37,22 @@ class DocumentLoader:
                 return joined
 
         return None
+
+    def resolve_jpaths(self, jpaths: list[Path]):
+        self.jpaths = list(
+            chain(
+                (jpath for jpath in jpaths if jpath.is_absolute()),
+                (
+                    dir_path
+                    for workspace_path in maybe(self.workspace_path)
+                    for jpath in jpaths
+                    if not jpath.is_absolute()
+                    if (jparts := jpath.parts)
+                    for dir_path, _, _ in workspace_path.resolve().walk()
+                    if dir_path.parts[-len(jparts) :] == jparts
+                ),
+            )
+        )
 
     def get_importee(self, importee: Importee) -> Document | None:
         if path := self.resolve_importee(importee):
@@ -63,7 +76,7 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def walk(self, root: Path) -> Iterable[Path]:
+    def scan_jsonnet_files(self, root: Path) -> Iterable[Path]:
         root = root.resolve()
 
         def is_jsonnet_file(name: str) -> bool:
@@ -81,5 +94,7 @@ class DocumentLoader:
 
     def load_all(self, root: Path) -> Iterable[Document]:
         return (
-            doc for path in self.walk(root) for doc in maybe(self.load(path.as_uri()))
+            doc
+            for path in self.scan_jsonnet_files(root)
+            for doc in maybe(self.load(path.as_uri()))
         )
