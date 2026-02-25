@@ -46,16 +46,13 @@ server = JouleLanguageServer("joule", "v0.1")
 
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
-    ls.loader.resolve_jpaths(
-        [
-            Path(str(path))
-            for paths in await ls.workspace_configuration_async(
-                L.ConfigurationParams([L.ConfigurationItem(section="jpath")])
-            )
-            if paths is not None
-            for path in paths
-        ]
-    )
+    params = L.ConfigurationParams([L.ConfigurationItem(section="include")])
+    match await ls.workspace_configuration_async(params):
+        case [list() as paths]:
+            jpaths = [Path(path) for path in paths if isinstance(path, str)]
+            ls.loader.resolve_jpaths(jpaths)
+        case _:
+            pass
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
