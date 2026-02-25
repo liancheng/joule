@@ -102,6 +102,18 @@ def index(
             allow_dash=False,
         ),
     ],
+    profile: Annotated[
+        Path | None,
+        typer.Option(
+            "-p",
+            "--profile",
+            help="Run the command with cProfile.",
+            file_okay=True,
+            dir_okay=False,
+            writable=True,
+            allow_dash=False,
+        ),
+    ] = None,
 ):
     def resolve(file: Path):
         cst = parse_jsonnet(file.read_text())
@@ -110,8 +122,23 @@ def index(
 
     path = path.absolute()
 
-    if path.is_file():
-        resolve(path)
+    def run():
+        if path.is_file():
+            resolve(path)
+        else:
+            for tree in DocumentLoader(path.as_uri()).load_all(path):
+                print(tree.location.uri)
+
+    if profile:
+        import cProfile
+
+        with cProfile.Profile() as prof:
+            run()
+
+        prof.dump_stats(profile.as_posix())
     else:
-        for tree in DocumentLoader(path.as_uri()).load_all(path):
-            print(tree.location.uri)
+        run()
+
+
+if __name__ == "__main__":
+    app()
