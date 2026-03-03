@@ -13,7 +13,8 @@ class DocumentLoader:
     def __init__(self, workspace_uri: URI | None) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.jpaths: list[Path] = []
+        self.include_paths: list[Path] = []
+        self.exclude_globs: list[str] = []
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()
@@ -28,7 +29,7 @@ class DocumentLoader:
         # TODO: Make search directories customizable
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
-            self.jpaths,
+            self.include_paths,
             maybe(self.workspace_path),
         )
 
@@ -38,18 +39,19 @@ class DocumentLoader:
 
         return None
 
-    def resolve_jpaths(self, jpaths: list[Path]):
-        self.jpaths = list(
+    def resolve_include(self, include: Iterable[str]):
+        paths = map(Path, include)
+        self.include_paths = list(
             chain(
-                (jpath for jpath in jpaths if jpath.is_absolute()),
+                (path for path in paths if path.is_absolute()),
                 (
                     dir_path
                     for workspace_path in maybe(self.workspace_path)
-                    for jpath in jpaths
-                    if not jpath.is_absolute()
-                    if (jparts := jpath.parts)
+                    for path in paths
+                    if not path.is_absolute()
+                    if (parts := path.parts)
                     for dir_path, _, _ in workspace_path.resolve().walk()
-                    if dir_path.parts[-len(jparts) :] == jparts
+                    if dir_path.parts[-len(parts) :] == parts
                 ),
             )
         )
@@ -76,7 +78,7 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def scan_jsonnet_files(self, root: Path) -> Iterable[Path]:
+    def collect_jsonnet_files(self, root: Path) -> Iterable[Path]:
         root = root.resolve()
 
         def is_jsonnet_file(name: str) -> bool:
@@ -87,14 +89,11 @@ class DocumentLoader:
             )
 
         for dir_path, dir_names, file_names in root.walk():
-            if ".git" in dir_names:
-                dir_names.remove(".git")
+            dir_names[:] = [
+                dir
+                for dir in dir_names
+                for glob in self.exclude_globs
+                if not dir_path.joinpath(dir).match(glob)
+            ]
 
             yield from (dir_path.joinpath(f) for f in file_names if is_jsonnet_file(f))
-
-    def load_all(self, root: Path) -> Iterable[Document]:
-        return (
-            doc
-            for path in self.scan_jsonnet_files(root)
-            for doc in maybe(self.load(path.as_uri()))
-        )

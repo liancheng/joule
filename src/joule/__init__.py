@@ -115,19 +115,16 @@ def index(
         ),
     ] = None,
 ):
-    def resolve(file: Path):
-        cst = parse_jsonnet(file.read_text())
-        ast = Document.from_cst(file.as_uri(), cst)
-        ScopeResolver().resolve(ast)
-
     path = path.absolute()
+    workspace_path = path.parent if path.is_file() else path
+    loader = DocumentLoader(workspace_path.as_uri())
 
     def run():
         if path.is_file():
-            resolve(path)
+            loader.load(path.as_uri())
         else:
-            for tree in DocumentLoader(path.as_uri()).load_all(path):
-                print(tree.location.uri)
+            for file_path in loader.collect_jsonnet_files(path):
+                loader.load(file_path.as_uri())
 
     if profile:
         import cProfile

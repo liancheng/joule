@@ -46,11 +46,22 @@ server = JouleLanguageServer("joule", "v0.1")
 
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
-    params = L.ConfigurationParams([L.ConfigurationItem(section="include")])
-    match await ls.workspace_configuration_async(params):
-        case [list() as paths]:
-            jpaths = [Path(path) for path in paths if isinstance(path, str)]
-            ls.loader.resolve_jpaths(jpaths)
+    sections = ["include", "exclude"]
+    configs = await ls.workspace_configuration_async(
+        L.ConfigurationParams(
+            [L.ConfigurationItem(section=section) for section in sections]
+        )
+    )
+
+    match dict(zip(sections, configs)):
+        case {
+            "include": list() as include_paths,
+            "exclude": list() as exclude_paths,
+        } if all(isinstance(path, str) for path in include_paths) and all(
+            isinstance(path, str) for path in exclude_paths
+        ):
+            ls.loader.resolve_include(include_paths)
+            ls.loader.exclude_globs = exclude_paths
         case _:
             pass
 
