@@ -288,7 +288,7 @@ class TestFieldDefinition(TestDefinition):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
-    def test_call_arg(self):
+    def test_fn_param_field(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -305,6 +305,41 @@ class TestFieldDefinition(TestDefinition):
             fake_workspace(self.fs, t),
             keys=[t.node_at(1).to(Id.Field)],
             refs=[t.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_fn_param_multi_docs(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                function(p={ f: 1 }) p.f
+                             ^1        ^2
+                """
+            ),
+            uri="file:///tmp/doc1.jsonnet",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local f = import 'doc1.jsonnet';
+                f({ f: 2 })
+                    ^1
+                """
+            ),
+            uri="file:///tmp/doc2.jsonnet",
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2],
+                root_uri="file:///tmp",
+            ),
+            keys=[
+                t1.node_at(1).to(Id.Field),
+                t2.node_at(1).to(Id.Field),
+            ],
+            refs=[t1.node_at(2).to(Id.FieldRef)],
         )
 
     def test_local(self):
