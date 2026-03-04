@@ -1,4 +1,3 @@
-import unittest
 from textwrap import dedent
 
 from pyfakefs.fake_filesystem_unittest import TestCase
@@ -63,6 +62,22 @@ class TestDefinition(TestCase):
 class TestVarDefinition(TestDefinition):
     def setUp(self) -> None:
         self.setUpPyfakefs()
+
+    def test_assert_expr(self):
+        self.assertVarDefined(
+            FakeDocument(
+                dedent(
+                    """\
+                    local v = 1;
+                          ^1
+                    { f(): assert true; v }
+                                        ^2
+                    """
+                )
+            ),
+            var_mark=1,
+            ref_marks=[2],
+        )
 
     def test_local(self):
         self.assertVarDefined(
@@ -273,7 +288,6 @@ class TestFieldDefinition(TestDefinition):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
-    @unittest.skip("TODO")
     def test_call_arg(self):
         t = FakeDocument(
             dedent(
@@ -282,7 +296,7 @@ class TestFieldDefinition(TestDefinition):
                             ^1
                 local f(p) = p.f;
                                ^2
-                f(v);
+                f(v)
                 """
             )
         )

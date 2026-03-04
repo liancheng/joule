@@ -1,3 +1,4 @@
+import logging
 from itertools import chain
 from pathlib import Path
 from typing import Iterable
@@ -8,12 +9,14 @@ from joule.parsing import parse_jsonnet
 
 from .scope_resolver import ScopeResolver
 
+log = logging.getLogger(__name__)
+
 
 class DocumentLoader:
     def __init__(self, workspace_uri: URI | None) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.include_paths: list[Path] = []
+        self.include_globs: list[str] = []
         self.exclude_globs: list[str] = []
 
     def load_source(self, uri: URI) -> str | None:
@@ -29,7 +32,7 @@ class DocumentLoader:
         # TODO: Make search directories customizable
         search_dirs = chain(
             [Path.from_uri(importer_uri).parent],
-            self.include_paths,
+            (d for path in maybe(self.workspace_path) for d in self.list_folders(path)),
             maybe(self.workspace_path),
         )
 
@@ -38,23 +41,6 @@ class DocumentLoader:
                 return joined
 
         return None
-
-    def resolve_include(self, include: Iterable[str]):
-        paths = map(Path, include)
-        self.include_paths = list(
-            chain(
-                (path for path in paths if path.is_absolute()),
-                (
-                    dir_path
-                    for workspace_path in maybe(self.workspace_path)
-                    for path in paths
-                    if not path.is_absolute()
-                    if (parts := path.parts)
-                    for dir_path, _, _ in workspace_path.resolve().walk()
-                    if dir_path.parts[-len(parts) :] == parts
-                ),
-            )
-        )
 
     def get_importee(self, importee: Importee) -> Document | None:
         if path := self.resolve_importee(importee):
@@ -78,7 +64,23 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def collect_jsonnet_files(self, root: Path) -> Iterable[Path]:
+    def list_folders(self, root: Path) -> Iterable[Path]:
+        root = root.resolve()
+
+        for child in root.iterdir():
+            for dir_path, dir_names, _ in child.walk():
+                dir_names[:] = [
+                    dir
+                    for dir in dir_names
+                    for exclude in self.exclude_globs
+                    if not dir_path.joinpath(dir).match(exclude)
+                    for include in self.include_globs
+                    if dir_path.joinpath(dir).match(include)
+                ]
+
+                yield dir_path
+
+    def list_jsonnet_files(self, root: Path) -> Iterable[Path]:
         root = root.resolve()
 
         def is_jsonnet_file(name: str) -> bool:
@@ -88,12 +90,18 @@ class DocumentLoader:
                 or name.endswith(".jsonnet.TEMPLATE")
             )
 
+        if root.is_file() and is_jsonnet_file(root.name):
+            yield root
+            return
+
         for dir_path, dir_names, file_names in root.walk():
             dir_names[:] = [
                 dir
                 for dir in dir_names
-                for glob in self.exclude_globs
-                if not dir_path.joinpath(dir).match(glob)
+                for exclude in self.exclude_globs
+                if not dir_path.joinpath(dir).match(exclude)
+                for include in self.include_globs
+                if dir_path.joinpath(dir).match(include)
             ]
 
             yield from (dir_path.joinpath(f) for f in file_names if is_jsonnet_file(f))

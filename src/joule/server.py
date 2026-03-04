@@ -16,7 +16,7 @@ from joule.providers import (
     RenameProvider,
 )
 
-log = logging.root
+log = logging.getLogger(__name__)
 
 
 class JouleLanguageServer(LanguageServer):
@@ -53,15 +53,18 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         )
     )
 
+    log.info(f"### initialized: {dict(zip(sections, configs))}")
+
     match dict(zip(sections, configs)):
         case {
-            "include": list() as include_paths,
-            "exclude": list() as exclude_paths,
-        } if all(isinstance(path, str) for path in include_paths) and all(
-            isinstance(path, str) for path in exclude_paths
+            "include": list() as include,
+            "exclude": list() as exclude,
+        } if all(isinstance(path, str) for path in include) and all(
+            isinstance(path, str) for path in exclude
         ):
-            ls.loader.resolve_include(include_paths)
-            ls.loader.exclude_globs = exclude_paths
+            log.info("### initialized: hit")
+            ls.loader.include_globs = include
+            ls.loader.exclude_globs = exclude
         case _:
             pass
 

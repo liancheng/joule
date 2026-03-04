@@ -4,6 +4,7 @@ from typing import Callable
 from joule.ast import (
     AnalysisPhase,
     Bind,
+    Call,
     ComputedKey,
     Document,
     Field,
@@ -48,6 +49,10 @@ class ScopeResolver(Visitor):
         self.var_scope.bind(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(owner=b)):
             self.visit(b.value)
+
+    def visit_call(self, e: Call):
+        super().visit_call(e)
+        self.tree.calls.append(e)
 
     def visit_field_access(self, e: FieldAccess):
         super().visit_field_access(e)

@@ -9,6 +9,7 @@ from joule.ast import (
     Binary,
     ComputedKey,
     Field,
+    Fn,
     Local,
     Num,
     ObjComp,
@@ -728,7 +729,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-    def test_function_field(self):
+    def test_fn_field(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -754,7 +755,7 @@ class TestAST(unittest.TestCase):
             ),
         )
 
-    def test_function_field_no_params(self):
+    def test_fn_field_no_params(self):
         t = FakeDocument(
             dedent(
                 """\
@@ -775,6 +776,54 @@ class TestAST(unittest.TestCase):
                     body=t.num(at=4, value=1),
                 ),
                 visibility=Visibility.Hidden,
+            ),
+        )
+
+    def test_fn_body_with_assert(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                function() assert true; 1
+                ^1:        ^^^^^^^^^^^2 ^:1,3
+                                  ^^^^4
+                """
+            )
+        )
+
+        self.assertAstEqual(
+            t.body.to(Fn),
+            t.fn(
+                at=1,
+                params=[],
+                body=t.assert_(at=2, condition=t.true(at=4)).guard(
+                    t.num(at=3, value=1)
+                ),
+            ),
+        )
+
+    def test_fn_field_body_with_assert(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                { f(): assert true; 1 }
+                  ^^^^^^^^^^^^^^^^^^^1
+                  ^2
+                   ^3: ^^^^^^^^^^^4 ^:3,5
+                              ^^^^6
+                """
+            )
+        )
+
+        self.assertAstEqual(
+            t.node_at(1).to(Field),
+            t.fixed_key(at=2, name="f").map_to(
+                t.fn(
+                    at=3,
+                    params=[],
+                    body=t.assert_(at=4, condition=t.true(at=6)).guard(
+                        t.num(at=5, value=1)
+                    ),
+                )
             ),
         )
 

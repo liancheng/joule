@@ -83,8 +83,8 @@ class Visitor:
                 self.visit_super(tree)
 
     def visit_arg(self, a: Arg):
-        if a.name is not None:
-            self.visit(a.name)
+        if a.id is not None:
+            self.visit(a.id)
         self.visit(a.value)
 
     def visit_array(self, e: Array):

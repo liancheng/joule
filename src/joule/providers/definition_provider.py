@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Iterable
 
 import lsprotocol.types as L
@@ -23,6 +24,7 @@ from joule.ast import (
     ImportType,
     Object,
     Operator,
+    Param,
     Self,
     VarBinding,
     enclosing_node,
@@ -144,7 +146,7 @@ class DefinitionProvider:
 
             ```plaintext
             local val = if condition then { f: 1 } else { f: 2 };
-                                            ^^^^^^^^1     ^^^^^^^^2
+                                          ^^^^^^^^1     ^^^^^^^^2
             val.f
             ^3  ^4
             ```
@@ -252,6 +254,24 @@ class DefinitionProvider:
 
             case Object():
                 return (scope for scope in maybe(node.field_scope))
+
+            case Param():
+                root_path = (
+                    self.loader.workspace_path
+                    or Path.from_uri(node.location.uri).resolve()
+                )
+
+                return (
+                    scope
+                    for fn in maybe(enclosing_node(node, Fn, level=1))
+                    for path in self.loader.list_jsonnet_files(root_path)
+                    if (tree := self.loader.get(path.as_uri()))
+                    for call in tree.calls
+                    for callee in self.find_callee(call)
+                    if callee == fn
+                    for arg in maybe(call.find_arg_by_param(node))
+                    for scope in self.find_field_scope(arg.value)
+                )
 
             case Self():
                 return (

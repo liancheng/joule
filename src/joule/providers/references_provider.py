@@ -24,7 +24,6 @@ class ReferencesProvider:
         return refs if len(refs) > 0 else None
 
     def find_references(self, node: AST) -> Iterable[Expr]:
-        self.def_provider = DefinitionProvider(self.loader)
         match node:
             case Id.Field():
                 return self.find_field_references(node)
@@ -48,11 +47,11 @@ class ReferencesProvider:
         return (
             ref
             for workspace_path in maybe(self.loader.workspace_path)
-            for path in self.loader.collect_jsonnet_files(workspace_path)
+            for path in self.loader.list_jsonnet_files(workspace_path)
             for tree in maybe(prune(path))
             for ref in tree.field_refs
             if ref.name == field.name
-            for binding in self.def_provider.find_field_binding(ref)
+            for binding in DefinitionProvider(self.loader).find_field_binding(ref)
             if isinstance(fixed_key := binding.target.key, FixedKey)
             if fixed_key.id == field
         )

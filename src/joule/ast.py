@@ -332,6 +332,7 @@ class Document(Expr):
         self.analysis_phase = AnalysisPhase.Unresolved
         self.top_level_scope: VarScope | None = None
         self.field_refs: list[Id.FieldRef] = []
+        self.calls: list[Call] = []
 
     @property
     def children(self) -> Iterable[AST]:
@@ -692,10 +693,13 @@ class Fn(Expr):
             case body, *_:
                 params = []
 
+        body_ast = Expr.from_cst(uri, body)
+        fn_range = merge_ranges(range_of(node), body_ast.location.range)
+
         return Fn(
-            location=location_of(uri, node),
+            location=L.Location(uri, fn_range),
             params=params,
-            body=Expr.from_cst(uri, body),
+            body=body_ast,
         )
 
     AST.register(from_cst, "anonymous_function")
@@ -704,11 +708,11 @@ class Fn(Expr):
 @D.dataclass
 class Arg(AST):
     value: Expr
-    name: Id.ParamRef | None = None
+    id: Id.ParamRef | None = None
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.value], maybe(self.name))
+        return chain([self.value], maybe(self.id))
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Arg":
@@ -718,7 +722,7 @@ class Arg(AST):
             return Arg(
                 location=location_of(uri, node),
                 value=Expr.from_cst(uri, value),
-                name=Id.ParamRef.from_cst(uri, name),
+                id=Id.ParamRef.from_cst(uri, name),
             )
         else:
             return Arg(
@@ -758,6 +762,22 @@ class Call(Expr):
         )
 
     AST.register(from_cst, "functioncall")
+
+    def find_arg_by_name(self, name: str) -> Arg | None:
+        return head_or_none(
+            arg for arg in self.args for id in maybe(arg.id) if id.name == name
+        )
+
+    def find_arg_by_position(self, index: int) -> Arg | None:
+        return self.args[index] if 0 <= index <= len(self.args) else None
+
+    def find_arg_by_param(self, param: Param) -> Arg | None:
+        return self.find_arg_by_name(param.id.name) or head_or_none(
+            self.args[param_ord]
+            for fn in maybe(enclosing_node(param, Fn, level=1))
+            if (param_ord := fn.params.index(param)) >= 0
+            if (param_ord < len(self.args))
+        )
 
 
 @D.dataclass
@@ -1074,13 +1094,16 @@ class Field(AST):
                     vis, body, *_ = rest
 
             assert vis.text is not None
+            body_ast = Expr.from_cst(uri, body)
+            fn_range = merge_ranges(range_of(lparen), body_ast.location.range)
+
             return Field(
                 location=location_of(uri, node),
                 key=FieldKey.from_cst(uri, key),
                 value=Fn(
-                    L.Location(uri, merge_ranges(range_of(lparen), range_of(body))),
+                    L.Location(uri, fn_range),
                     params=params,
-                    body=Expr.from_cst(uri, body),
+                    body=body_ast,
                 ),
                 visibility=Visibility(vis.text.decode()),
             )
