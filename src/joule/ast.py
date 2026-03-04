@@ -763,17 +763,17 @@ class Call(Expr):
 
     AST.register(from_cst, "functioncall")
 
-    def find_arg_by_name(self, name: str) -> Arg | None:
+    def find_arg_by_name(self, name: str) -> Expr | None:
         return head_or_none(
-            arg for arg in self.args for id in maybe(arg.id) if id.name == name
+            arg.value for arg in self.args for id in maybe(arg.id) if id.name == name
         )
 
-    def find_arg_by_position(self, index: int) -> Arg | None:
-        return self.args[index] if 0 <= index <= len(self.args) else None
+    def find_arg_by_position(self, index: int) -> Expr | None:
+        return self.args[index].value if 0 <= index <= len(self.args) else None
 
-    def find_arg_by_param(self, param: Param) -> Arg | None:
+    def find_arg_by_param(self, param: Param) -> Expr | None:
         return self.find_arg_by_name(param.id.name) or head_or_none(
-            self.args[param_ord]
+            self.args[param_ord].value
             for fn in maybe(enclosing_node(param, Fn, level=1))
             if (param_ord := fn.params.index(param)) >= 0
             if (param_ord < len(self.args))

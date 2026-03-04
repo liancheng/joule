@@ -1,3 +1,4 @@
+from itertools import chain
 from pathlib import Path
 from typing import Iterable
 
@@ -261,8 +262,8 @@ class DefinitionProvider:
                     or Path.from_uri(node.location.uri).resolve()
                 )
 
-                return (
-                    scope
+                call_args = (
+                    arg
                     for fn in maybe(enclosing_node(node, Fn, level=1))
                     for path in self.loader.list_jsonnet_files(root_path)
                     if (tree := self.loader.get(path.as_uri()))
@@ -270,7 +271,12 @@ class DefinitionProvider:
                     for callee in self.find_callee(call)
                     if callee == fn
                     for arg in maybe(call.find_arg_by_param(node))
-                    for scope in self.find_field_scope(arg.value)
+                )
+
+                return (
+                    scope
+                    for e in chain(maybe(node.default), call_args)
+                    for scope in self.find_field_scope(e)
                 )
 
             case Self():

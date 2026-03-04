@@ -533,3 +533,31 @@ class TestFieldDefinition(TestDefinition):
             ],
             refs=[t.node_at(1).to(Id.FieldRef)],
         )
+
+    def test_fn_param_default_value(self):
+        t = FakeDocument(
+            """\
+            function(p={ f: 1 }) p.f
+                         ^1        ^2
+            """
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_field_fn_param_default_value(self):
+        t = FakeDocument(
+            """\
+            { f(p={ f: 1 }): p.f }
+                    ^1         ^2
+            """
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(1).to(Id.Field)],
+            refs=[t.node_at(2).to(Id.FieldRef)],
+        )

@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 import lsprotocol.types as L
@@ -15,8 +14,6 @@ from joule.providers import (
     ReferencesProvider,
     RenameProvider,
 )
-
-log = logging.getLogger(__name__)
 
 
 class JouleLanguageServer(LanguageServer):
@@ -53,8 +50,6 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         )
     )
 
-    log.info(f"### initialized: {dict(zip(sections, configs))}")
-
     match dict(zip(sections, configs)):
         case {
             "include": list() as include,
@@ -62,7 +57,6 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         } if all(isinstance(path, str) for path in include) and all(
             isinstance(path, str) for path in exclude
         ):
-            log.info("### initialized: hit")
             ls.loader.include_globs = include
             ls.loader.exclude_globs = exclude
         case _:
