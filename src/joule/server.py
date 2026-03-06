@@ -1,9 +1,11 @@
+from functools import cached_property
 from pathlib import Path
 
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
 from joule.ast import URI
+from joule.config import JouleConfig
 from joule.model import DocumentLoader
 from joule.providers import (
     DefinitionProvider,
@@ -17,25 +19,28 @@ from joule.providers import (
 
 
 class JouleLanguageServer(LanguageServer):
-    @property
+    config: JouleConfig = JouleConfig()
+
+    @cached_property
     def loader(self) -> DocumentLoader:
-        try:
-            return self._loader
-        except AttributeError:
-            workspace_uri: URI | None = None
+        workspace_uri: URI | None = None
 
-            match list(self.workspace.folders.keys()):
-                case [_, _, *_]:
-                    raise RuntimeError("Joule does not support multi-workspace.")
-                case [workspace_uri]:
-                    pass
-                case _ if (workspace_uri := self.workspace.root_uri) is not None:
-                    Path.from_uri(workspace_uri).resolve()
-                case _ if (workspace_path := self.workspace.root_path) is not None:
-                    workspace_uri = Path(workspace_path).resolve().as_uri()
+        match list(self.workspace.folders.keys()):
+            # Two or more workspace folders, not supported
+            case [_, _, *_]:
+                raise RuntimeError("Joule does not support multi-workspace.")
+            # Single workspace folder
+            case [workspace_uri]:
+                pass
+            # Falls back to workspace root URI, if any
+            case _ if (workspace_uri := self.workspace.root_uri) is not None:
+                Path.from_uri(workspace_uri).resolve()
+            # Falls back to workspace path, if any
+            case _ if (workspace_path := self.workspace.root_path) is not None:
+                workspace_uri = Path(workspace_path).resolve().as_uri()
 
-            self._loader = DocumentLoader(workspace_uri)
-            return self._loader
+        self._loader = DocumentLoader(workspace_uri)
+        return self._loader
 
 
 server = JouleLanguageServer("joule", "v0.1")
@@ -43,24 +48,22 @@ server = JouleLanguageServer("joule", "v0.1")
 
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
-    sections = ["include", "exclude"]
-    configs = await ls.workspace_configuration_async(
+    config_values = await ls.workspace_configuration_async(
         L.ConfigurationParams(
-            [L.ConfigurationItem(section=section) for section in sections]
+            [L.ConfigurationItem(section=field) for field in JouleConfig.model_fields]
         )
     )
 
-    match dict(zip(sections, configs)):
-        case {
-            "include": list() as include,
-            "exclude": list() as exclude,
-        } if all(isinstance(path, str) for path in include) and all(
-            isinstance(path, str) for path in exclude
-        ):
-            ls.loader.include_globs = include
-            ls.loader.exclude_globs = exclude
-        case _:
-            pass
+    ls.config = JouleConfig(
+        **{
+            section: config
+            for section, config in zip(JouleConfig.model_fields, config_values)
+            if config is not None
+        }
+    )
+
+    ls.loader.include_globs = ls.config.include
+    ls.loader.exclude_globs = ls.config.exclude
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)

@@ -102,6 +102,22 @@ def index(
             allow_dash=False,
         ),
     ],
+    exclude_globs: Annotated[
+        list[str],
+        typer.Option(
+            "-e",
+            "--exclude",
+            help="Glob patterns of folders to exclude",
+        ),
+    ] = [".git"],
+    include_globs: Annotated[
+        list[str],
+        typer.Option(
+            "-i",
+            "--include",
+            help="Glob patterns of folders to include",
+        ),
+    ] = ["**/vendor"],
     profile: Annotated[
         Path | None,
         typer.Option(
@@ -119,11 +135,15 @@ def index(
     workspace_path = path.parent if path.is_file() else path
     loader = DocumentLoader(workspace_path.as_uri())
 
+    loader.exclude_globs = exclude_globs
+    loader.include_globs = include_globs
+
     def run():
         if path.is_file():
             loader.load(path.as_uri())
         else:
             for file_path in loader.list_jsonnet_files(path):
+                print(file_path)
                 loader.load(file_path.as_uri())
 
     if profile:
