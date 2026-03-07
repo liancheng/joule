@@ -1,3 +1,4 @@
+import logging
 import re
 from pathlib import Path
 from typing import Iterable
@@ -8,6 +9,8 @@ from joule.ast import AST, AnalysisPhase, Document, Expr, FixedKey, Id
 from joule.maybe import maybe
 from joule.model import DocumentLoader
 from joule.providers.definition_provider import DefinitionProvider
+
+log = logging.getLogger(__name__)
 
 
 class ReferencesProvider:
@@ -47,7 +50,7 @@ class ReferencesProvider:
         return (
             ref
             for workspace_path in maybe(self.loader.workspace_path)
-            for path in self.loader.list_jsonnet_files(workspace_path)
+            for path in self.loader.list_source_files(workspace_path)
             for tree in maybe(prune(path))
             for ref in tree.field_refs
             if ref.name == field.name

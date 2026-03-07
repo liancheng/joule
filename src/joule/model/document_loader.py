@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 from joule.ast import AST, URI, Document, Importee
-from joule.maybe import maybe
+from joule.maybe import head_or_none, maybe
 from joule.parsing import parse_jsonnet
 
 from .scope_resolver import ScopeResolver
@@ -16,8 +16,8 @@ class DocumentLoader:
     def __init__(self, workspace_uri: URI | None) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.include_globs: list[str] = []
         self.exclude_globs: list[str] = []
+        self.include_globs: list[str] = []
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()
@@ -27,20 +27,21 @@ class DocumentLoader:
         if (path := Path(importee.value)).is_absolute():
             return path
 
-        importer_uri = importee.location.uri
-
-        # TODO: Make search directories customizable
         search_dirs = chain(
-            [Path.from_uri(importer_uri).parent],
-            (d for path in maybe(self.workspace_path) for d in self.list_folders(path)),
+            [Path.from_uri(importee.location.uri).parent],
+            (
+                dir
+                for path in maybe(self.workspace_path)
+                for dir in self.list_paths(path, self.include_globs, self.exclude_globs)
+            ),
             maybe(self.workspace_path),
         )
 
-        for dir in search_dirs:
-            if (joined := dir.joinpath(importee.value)).is_file():
-                return joined
-
-        return None
+        return head_or_none(
+            path
+            for dir in search_dirs
+            if (path := dir.joinpath(importee.value)).is_file()
+        )
 
     def get_importee(self, importee: Importee) -> Document | None:
         if path := self.resolve_importee(importee):
@@ -64,44 +65,49 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def list_folders(self, root: Path) -> Iterable[Path]:
+    def list_paths(
+        self,
+        root: Path,
+        include_globs: list[str],
+        exclude_globs: list[str],
+        source_globs: list[str] | None = None,
+    ) -> Iterable[Path]:
         root = root.resolve()
-
-        for child in root.iterdir():
-            for dir_path, dir_names, _ in child.walk():
-                dir_names[:] = [
-                    dir
-                    for dir in dir_names
-                    for exclude in self.exclude_globs
-                    if not dir_path.joinpath(dir).match(exclude)
-                    for include in self.include_globs
-                    if dir_path.joinpath(dir).match(include)
-                ]
-
-                yield dir_path
-
-    def list_jsonnet_files(self, root: Path) -> Iterable[Path]:
-        root = root.resolve()
-
-        def is_jsonnet_file(name: str) -> bool:
-            return (
-                name.endswith(".jsonnet")
-                or name.endswith(".libsonnet")
-                or name.endswith(".jsonnet.TEMPLATE")
-            )
-
-        if root.is_file() and is_jsonnet_file(root.name):
-            yield root
-            return
 
         for dir_path, dir_names, file_names in root.walk():
             dir_names[:] = [
                 dir
                 for dir in dir_names
-                for exclude in self.exclude_globs
-                if not dir_path.joinpath(dir).match(exclude)
-                for include in self.include_globs
-                if dir_path.joinpath(dir).match(include)
+                for glob in exclude_globs
+                if not Path(dir).full_match(glob)
             ]
 
-            yield from (dir_path.joinpath(f) for f in file_names if is_jsonnet_file(f))
+            if not source_globs:
+                yield from (
+                    dir_path.joinpath(dir)
+                    for dir in dir_names
+                    for glob in include_globs
+                    if Path(dir).full_match(glob)
+                )
+            else:
+                yield from (
+                    dir_path.joinpath(file)
+                    for file in file_names
+                    for glob in source_globs
+                    if Path(file).match(glob)
+                )
+
+    def list_folders(self, root: Path) -> Iterable[Path]:
+        return self.list_paths(root, self.include_globs, self.exclude_globs)
+
+    def list_source_files(self, root: Path) -> Iterable[Path]:
+        return self.list_paths(
+            root,
+            include_globs=self.include_globs,
+            exclude_globs=self.exclude_globs,
+            source_globs=[
+                "*.jsonnet",
+                "*.libsonnet",
+                "*.jsonnet.TEMPLATE",
+            ],
+        )

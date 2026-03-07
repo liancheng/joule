@@ -265,7 +265,7 @@ class DefinitionProvider:
                 call_args = (
                     arg
                     for fn in maybe(enclosing_node(node, Fn, level=1))
-                    for path in self.loader.list_jsonnet_files(root_path)
+                    for path in self.loader.list_source_files(root_path)
                     if (tree := self.loader.get(path.as_uri()))
                     for call in tree.calls
                     for callee in self.find_callee(call)

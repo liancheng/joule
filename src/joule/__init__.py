@@ -142,7 +142,7 @@ def index(
         if path.is_file():
             loader.load(path.as_uri())
         else:
-            for file_path in loader.list_jsonnet_files(path):
+            for file_path in loader.list_source_files(path):
                 print(file_path)
                 loader.load(file_path.as_uri())
 

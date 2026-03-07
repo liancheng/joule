@@ -39,8 +39,7 @@ class JouleLanguageServer(LanguageServer):
             case _ if (workspace_path := self.workspace.root_path) is not None:
                 workspace_uri = Path(workspace_path).resolve().as_uri()
 
-        self._loader = DocumentLoader(workspace_uri)
-        return self._loader
+        return DocumentLoader(workspace_uri)
 
 
 server = JouleLanguageServer("joule", "v0.1")
@@ -100,6 +99,7 @@ def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JouleLanguageServer, params: L.ReferenceParams):
+    # TODO: Add progress reporting
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         ReferencesProvider(ls.loader).serve(tree, params.position)
