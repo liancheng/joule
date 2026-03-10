@@ -72,7 +72,7 @@ class DocumentLoader:
         exclude_globs: list[str],
         source_globs: list[str] | None = None,
     ) -> Iterable[Path]:
-        root = root.resolve()
+        assert root.is_absolute()
 
         for dir_path, dir_names, file_names in root.walk():
             dir_names[:] = [
