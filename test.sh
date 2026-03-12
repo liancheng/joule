@@ -1,3 +1,3 @@
 #!/bin/sh
 
-uv run green -vv
+uv run green -vv "$@"
