@@ -19,8 +19,6 @@ from joule.providers import (
 
 
 class JouleLanguageServer(LanguageServer):
-    config: JouleConfig = JouleConfig()
-
     @cached_property
     def loader(self) -> DocumentLoader:
         workspace_uri: URI | None = None
@@ -33,8 +31,8 @@ class JouleLanguageServer(LanguageServer):
             case [workspace_uri]:
                 pass
             # Falls back to workspace root URI, if any
-            case _ if (workspace_uri := self.workspace.root_uri) is not None:
-                Path.from_uri(workspace_uri).resolve()
+            case _ if (uri := self.workspace.root_uri) is not None:
+                workspace_uri = Path.from_uri(uri).resolve().as_uri()
             # Falls back to workspace path, if any
             case _ if (workspace_path := self.workspace.root_path) is not None:
                 workspace_uri = Path(workspace_path).resolve().as_uri()
@@ -53,16 +51,13 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         )
     )
 
-    ls.config = JouleConfig(
+    ls.loader.config = JouleConfig(
         **{
             section: config
             for section, config in zip(JouleConfig.model_fields, config_values)
             if config is not None
         }
     )
-
-    ls.loader.include_globs = ls.config.include
-    ls.loader.exclude_globs = ls.config.exclude
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)

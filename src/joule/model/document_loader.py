@@ -1,9 +1,11 @@
 import logging
+import os
 from itertools import chain
 from pathlib import Path
 from typing import Iterable
 
 from joule.ast import AST, URI, Document, Importee
+from joule.config import JouleConfig
 from joule.maybe import head_or_none, maybe
 from joule.parsing import parse_jsonnet
 
@@ -13,11 +15,13 @@ log = logging.getLogger(__name__)
 
 
 class DocumentLoader:
-    def __init__(self, workspace_uri: URI | None) -> None:
+    def __init__(
+        self,
+        workspace_uri: URI | None,
+    ) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.exclude_globs: list[str] = []
-        self.include_globs: list[str] = []
+        self.config: JouleConfig | None = None
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()
@@ -32,7 +36,7 @@ class DocumentLoader:
             (
                 dir
                 for path in maybe(self.workspace_path)
-                for dir in self.list_paths(path, self.include_globs, self.exclude_globs)
+                for dir in self.list_library_search_paths(path)
             ),
             maybe(self.workspace_path),
         )
@@ -65,49 +69,37 @@ class DocumentLoader:
     def get(self, uri: URI, source: str | None = None) -> Document | None:
         return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
 
-    def list_paths(
-        self,
-        root: Path,
-        include_globs: list[str],
-        exclude_globs: list[str],
-        source_globs: list[str] | None = None,
-    ) -> Iterable[Path]:
+    def list_library_search_paths(self, root: Path) -> Iterable[Path]:
         assert root.is_absolute()
 
-        for dir_path, dir_names, file_names in root.walk():
-            dir_names[:] = [
-                dir
-                for dir in dir_names
-                for glob in exclude_globs
-                if not Path(dir).full_match(glob)
-            ]
-
-            if not source_globs:
-                yield from (
-                    dir_path.joinpath(dir)
-                    for dir in dir_names
-                    for glob in include_globs
-                    if Path(dir).full_match(glob)
-                )
-            else:
-                yield from (
-                    dir_path.joinpath(file)
-                    for file in file_names
-                    for glob in source_globs
-                    if Path(file).match(glob)
-                )
-
-    def list_folders(self, root: Path) -> Iterable[Path]:
-        return self.list_paths(root, self.include_globs, self.exclude_globs)
+        with os.scandir(root.as_posix()) as entries:
+            yield from (
+                path
+                for config in maybe(self.config)
+                for entry in entries
+                if entry.is_dir() and (dir := Path(entry.path))
+                if any(dir.full_match(glob) for glob in config.library_search_paths)
+                for path in chain([dir], self.list_library_search_paths(dir))
+            )
 
     def list_source_files(self, root: Path) -> Iterable[Path]:
-        return self.list_paths(
-            root,
-            include_globs=self.include_globs,
-            exclude_globs=self.exclude_globs,
-            source_globs=[
-                "*.jsonnet",
-                "*.libsonnet",
-                "*.jsonnet.TEMPLATE",
-            ],
-        )
+        assert root.is_absolute()
+
+        with os.scandir(root.as_posix()) as entries:
+            for entry in entries:
+                if entry.is_dir():
+                    yield from (
+                        file
+                        for config in maybe(self.config)
+                        if (dir := Path(entry.path))
+                        if not any(dir.full_match(g) for g in config.exclude_folders)
+                        for file in self.list_source_files(dir)
+                    )
+                elif entry.is_file():
+                    file = Path(entry.path)
+                    yield from (
+                        file
+                        for config in maybe(self.config)
+                        if any(file.full_match(g) for g in config.include_folders)
+                        if any(file.match(g) for g in config.include_files)
+                    )

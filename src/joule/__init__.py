@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 
 from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
+from joule.config import JouleConfig
 from joule.model import ScopeResolver
 from joule.model.document_loader import DocumentLoader
 from joule.parsing import parse_jsonnet
@@ -102,22 +103,30 @@ def index(
             allow_dash=False,
         ),
     ],
-    exclude_globs: Annotated[
+    exclude_folders: Annotated[
         list[str],
         typer.Option(
-            "-e",
+            "-x",
             "--exclude",
             help="Glob patterns of folders to exclude",
         ),
     ] = [".git"],
-    include_globs: Annotated[
+    include_folders: Annotated[
         list[str],
         typer.Option(
-            "-i",
+            "-I",
             "--include",
             help="Glob patterns of folders to include",
         ),
     ] = ["**/vendor"],
+    include_files: Annotated[
+        list[str],
+        typer.Option(
+            "-i",
+            "--include-files",
+            help="Glob patterns of files to include",
+        ),
+    ] = ["*.jsonnet", "*.libsonnet"],
     profile: Annotated[
         Path | None,
         typer.Option(
@@ -134,9 +143,12 @@ def index(
     path = path.absolute()
     workspace_path = path.parent if path.is_file() else path
     loader = DocumentLoader(workspace_path.as_uri())
-
-    loader.exclude_globs = exclude_globs
-    loader.include_globs = include_globs
+    loader.config = JouleConfig(
+        library_search_paths=[],
+        exclude_folders=exclude_folders,
+        include_folders=include_folders,
+        include_files=include_files,
+    )
 
     def run():
         if path.is_file():

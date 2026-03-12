@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Iterable
 
 from pyfakefs.fake_filesystem_unittest import TestCase
 
+from joule.config import JouleConfig
 from joule.model.document_loader import DocumentLoader
 
 
@@ -9,26 +11,59 @@ class TestDocumentLoader(TestCase):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
-    def test_list_sources(self):
-        root = Path("/tmp/project")
+        self.project_root = Path("/tmp/project")
+        self.fs.create_dir(self.project_root)
+        self.fs.create_file(self.project_root.joinpath(".git", "config"))
+        self.fs.create_file(self.project_root.joinpath("src", "d", "__init__.py"))
+        self.fs.create_file(self.project_root.joinpath("vendor", "d1", "f1.jsonnet"))
+        self.fs.create_file(self.project_root.joinpath("vendor", "d2", "f2.libsonnet"))
+        self.fs.create_file(self.project_root.joinpath("test", "test_f1.jsonnet"))
 
-        self.fs.create_dir(root / ".git" / "baz.jsonnet")
-        self.fs.create_file(root / "vendor" / "foo" / "bar" / "baz.jsonnet")
-        self.fs.create_file(root / "vendor" / "foo" / "bar" / "baz.py")
-        self.fs.create_file(root / "nested" / "vendor" / "foo" / "baz.jsonnet")
+    def tearDown(self) -> None:
+        self.tearDownPyfakefs()
+        return super().tearDown()
 
-        loader = DocumentLoader(root.as_uri())
-        self.assertSetEqual(
-            set(
-                loader.list_paths(
-                    root,
-                    include_globs=["**/vendor"],
-                    exclude_globs=["**/.*"],
-                    source_globs=["*.jsonnet"],
-                )
-            ),
-            {
-                root.joinpath("vendor", "foo", "bar", "baz.jsonnet"),
-                root.joinpath("nested", "vendor", "foo", "baz.jsonnet"),
-            },
+    def assertPathsEqual(self, obtained: Iterable[Path], expected: Iterable[Path]):
+        self.assertSequenceEqual(sorted(obtained), sorted(expected))
+
+    def test_list_files(self):
+        loader = DocumentLoader(self.project_root.as_uri())
+        loader.config = JouleConfig(
+            exclude_folders=["**/.*"],
+            include_folders=["**/vendor/**"],
+            include_files=["*.jsonnet"],
+        )
+
+        self.assertPathsEqual(
+            loader.list_source_files(self.project_root),
+            [self.project_root.joinpath("vendor", "d1", "f1.jsonnet")],
+        )
+
+    def test_list_files_multi_source_globs(self):
+        loader = DocumentLoader(self.project_root.as_uri())
+        loader.config = JouleConfig(
+            exclude_folders=["**/.*"],
+            include_folders=["**/vendor/**"],
+            include_files=["*.jsonnet", "*.libsonnet"],
+        )
+
+        self.assertPathsEqual(
+            loader.list_source_files(self.project_root),
+            [
+                self.project_root.joinpath("vendor", "d1", "f1.jsonnet"),
+                self.project_root.joinpath("vendor", "d2", "f2.libsonnet"),
+            ],
+        )
+
+    def test_list_library_search_paths(self):
+        loader = DocumentLoader(self.project_root.as_uri())
+        loader.config = JouleConfig(
+            library_search_paths=["**/vendor"],
+        )
+
+        self.assertPathsEqual(
+            loader.list_library_search_paths(self.project_root),
+            [
+                self.project_root.joinpath("vendor"),
+            ],
         )
