@@ -38,7 +38,7 @@ from joule.ast import (
     Slice,
     Str,
 )
-from joule.maybe import head, must
+from joule.maybe import must
 from joule.model import DocumentLoader, ScopeResolver
 from joule.parsing import parse_jsonnet
 
@@ -79,7 +79,7 @@ class FakeDocument:
         return self.at(mark).range.end
 
     def query_one(self, query: T.Query, capture: str) -> AST:
-        node = head(T.QueryCursor(query).captures(self.cst).get(capture, []))
+        node = T.QueryCursor(query).captures(self.cst)[capture][0]
         return AST.from_cst(self.uri, node)
 
     def node_at(self, target: int | L.Position | L.Range) -> AST:
