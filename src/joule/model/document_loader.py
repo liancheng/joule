@@ -18,10 +18,11 @@ class DocumentLoader:
     def __init__(
         self,
         workspace_uri: URI | None,
+        config: JouleConfig,
     ) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.config: JouleConfig | None = None
+        self.config: JouleConfig = config
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()

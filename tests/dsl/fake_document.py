@@ -332,7 +332,4 @@ def fake_workspace(
 
         fs.create_file(file_path=path, contents=doc.source)
 
-    loader = DocumentLoader(root_uri)
-    loader.config = JouleConfig()
-
-    return loader
+    return DocumentLoader(root_uri, JouleConfig())

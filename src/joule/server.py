@@ -19,6 +19,8 @@ from joule.providers import (
 
 
 class JouleLanguageServer(LanguageServer):
+    config: JouleConfig = JouleConfig()
+
     @cached_property
     def loader(self) -> DocumentLoader:
         workspace_uri: URI | None = None
@@ -37,7 +39,7 @@ class JouleLanguageServer(LanguageServer):
             case _ if (workspace_path := self.workspace.root_path) is not None:
                 workspace_uri = Path(workspace_path).resolve().as_uri()
 
-        return DocumentLoader(workspace_uri)
+        return DocumentLoader(workspace_uri, self.config)
 
 
 server = JouleLanguageServer("joule", "v0.1")
@@ -51,7 +53,7 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         )
     )
 
-    ls.loader.config = JouleConfig(
+    ls.config = JouleConfig(
         **{
             section: config
             for section, config in zip(JouleConfig.model_fields, config_values)
