@@ -73,34 +73,34 @@ class DocumentLoader:
     def list_library_search_paths(self, root: Path) -> Iterable[Path]:
         assert root.is_absolute()
 
-        with os.scandir(root.as_posix()) as entries:
+        if any(root.full_match(glob) for glob in self.config.library_paths):
+            yield root
+
+        with os.scandir(root) as entries:
             yield from (
                 path
-                for config in maybe(self.config)
                 for entry in entries
-                if entry.is_dir() and (dir := Path(entry.path))
-                if any(dir.full_match(glob) for glob in config.library_search_paths)
-                for path in chain([dir], self.list_library_search_paths(dir))
+                if entry.is_dir()
+                for path in self.list_library_search_paths(Path(entry.path))
             )
 
     def list_source_files(self, root: Path) -> Iterable[Path]:
         assert root.is_absolute()
 
-        with os.scandir(root.as_posix()) as entries:
-            for entry in entries:
-                if entry.is_dir():
-                    yield from (
-                        file
-                        for config in maybe(self.config)
-                        if (dir := Path(entry.path))
-                        if not any(dir.full_match(g) for g in config.exclude_folders)
-                        for file in self.list_source_files(dir)
-                    )
-                elif entry.is_file():
-                    file = Path(entry.path)
-                    yield from (
-                        file
-                        for config in maybe(self.config)
-                        if any(file.full_match(g) for g in config.include_folders)
-                        if any(file.match(g) for g in config.include_files)
-                    )
+        if any(root.full_match(glob) for glob in self.config.exclude):
+            return
+
+        if (
+            root.is_file()
+            and any(root.full_match(glob) for glob in self.config.include)
+            and any(root.name.endswith(suffix) for suffix in self.config.suffixes)
+        ):
+            yield root
+
+        if root.is_dir():
+            with os.scandir(root.as_posix()) as entries:
+                yield from (
+                    file
+                    for entry in entries
+                    for file in self.list_source_files(Path(entry.path))
+                )

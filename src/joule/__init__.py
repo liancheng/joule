@@ -103,7 +103,7 @@ def index(
             allow_dash=False,
         ),
     ],
-    exclude_folders: Annotated[
+    exclude: Annotated[
         list[str],
         typer.Option(
             "-x",
@@ -111,20 +111,20 @@ def index(
             help="Glob patterns of folders to exclude",
         ),
     ] = [".git"],
-    include_folders: Annotated[
+    include: Annotated[
         list[str],
         typer.Option(
-            "-I",
+            "-i",
             "--include",
             help="Glob patterns of folders to include",
         ),
     ] = ["**/vendor"],
-    include_files: Annotated[
+    suffixes: Annotated[
         list[str],
         typer.Option(
-            "-i",
-            "--include-files",
-            help="Glob patterns of files to include",
+            "-s",
+            "--suffix",
+            help="Suffixes of files to include",
         ),
     ] = ["*.jsonnet", "*.libsonnet"],
     profile: Annotated[
@@ -142,13 +142,12 @@ def index(
 ):
     path = path.absolute()
     workspace_path = path.parent if path.is_file() else path
-    loader = DocumentLoader(workspace_path.as_uri())
-    loader.config = JouleConfig(
-        library_search_paths=[],
-        exclude_folders=exclude_folders,
-        include_folders=include_folders,
-        include_files=include_files,
+    config = JouleConfig(
+        exclude=exclude,
+        include=include,
+        suffixes=suffixes,
     )
+    loader = DocumentLoader(workspace_path.as_uri(), config)
 
     def run():
         if path.is_file():
