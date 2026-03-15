@@ -39,7 +39,7 @@ class JouleLanguageServer(LanguageServer):
             case _ if (workspace_path := self.workspace.root_path) is not None:
                 workspace_uri = Path(workspace_path).resolve().as_uri()
 
-        return DocumentLoader(workspace_uri, self.config)
+        return DocumentLoader(workspace_uri, lambda: self.config)
 
 
 server = JouleLanguageServer("joule", "v0.1")

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from joule.ast import AST, URI, Document, Importee
-from joule.config import JouleConfig
+from joule.config import JouleConfig, JouleConfigFactory
 from joule.maybe import head_or_none, maybe
 from joule.parsing import parse_jsonnet
 
@@ -18,11 +18,15 @@ class DocumentLoader:
     def __init__(
         self,
         workspace_uri: URI | None,
-        config: JouleConfig,
+        config_factory: JouleConfigFactory = lambda: JouleConfig(),
     ) -> None:
         self.trees: dict[URI, Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
-        self.config: JouleConfig = config
+        self.config_factory: JouleConfigFactory = config_factory
+
+    @property
+    def config(self) -> JouleConfig:
+        return self.config_factory()
 
     def load_source(self, uri: URI) -> str | None:
         path = Path.from_uri(uri).absolute()

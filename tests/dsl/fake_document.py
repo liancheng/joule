@@ -38,7 +38,6 @@ from joule.ast import (
     Slice,
     Str,
 )
-from joule.config import JouleConfig
 from joule.maybe import must
 from joule.model import DocumentLoader, ScopeResolver
 from joule.parsing import parse_jsonnet
@@ -332,4 +331,4 @@ def fake_workspace(
 
         fs.create_file(file_path=path, contents=doc.source)
 
-    return DocumentLoader(root_uri, JouleConfig())
+    return DocumentLoader(root_uri)

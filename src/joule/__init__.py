@@ -147,7 +147,7 @@ def index(
         include=include,
         suffixes=suffixes,
     )
-    loader = DocumentLoader(workspace_path.as_uri(), config)
+    loader = DocumentLoader(workspace_path.as_uri(), lambda: config)
 
     def run():
         if path.is_file():

@@ -29,7 +29,7 @@ class TestDocumentLoader(TestCase):
     def test_list_files(self):
         loader = DocumentLoader(
             self.project_root.as_uri(),
-            JouleConfig(
+            lambda: JouleConfig(
                 exclude=["**/.*"],
                 include=["**/vendor/**"],
                 suffixes=["jsonnet"],
@@ -44,7 +44,7 @@ class TestDocumentLoader(TestCase):
     def test_list_files_multi_source_globs(self):
         loader = DocumentLoader(
             self.project_root.as_uri(),
-            JouleConfig(
+            lambda: JouleConfig(
                 exclude=["**/.*"],
                 include=["**/vendor/**"],
                 suffixes=["jsonnet", "libsonnet"],
@@ -62,7 +62,7 @@ class TestDocumentLoader(TestCase):
     def test_list_library_search_paths(self):
         loader = DocumentLoader(
             self.project_root.as_uri(),
-            JouleConfig(library_paths=["**/vendor"]),
+            lambda: JouleConfig(library_paths=["**/vendor"]),
         )
 
         self.assertPathsEqual(

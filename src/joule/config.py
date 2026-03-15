@@ -1,3 +1,5 @@
+from typing import Callable
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -8,3 +10,6 @@ class JouleConfig(BaseModel):
     exclude: list[str] = ["**/.*"]
     include: list[str] = ["**"]
     suffixes: list[str] = ["jsonnet", "libsonnet"]
+
+
+type JouleConfigFactory = Callable[[], JouleConfig]
