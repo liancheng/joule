@@ -288,60 +288,6 @@ class TestFieldDefinition(TestDefinition):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
-    def test_fn_param_field(self):
-        t = FakeDocument(
-            dedent(
-                """\
-                local v = { f: 1 };
-                            ^1
-                local f(p) = p.f;
-                               ^2
-                f(v)
-                """
-            )
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(self.fs, t),
-            keys=[t.node_at(1).to(Id.Field)],
-            refs=[t.node_at(2).to(Id.FieldRef)],
-        )
-
-    def test_fn_param_multi_docs(self):
-        t1 = FakeDocument(
-            dedent(
-                """\
-                function(p={ f: 1 }) p.f
-                             ^1        ^2
-                """
-            ),
-            uri="file:///tmp/doc1.jsonnet",
-        )
-
-        t2 = FakeDocument(
-            dedent(
-                """\
-                local f = import 'doc1.jsonnet';
-                f({ f: 2 })
-                    ^1
-                """
-            ),
-            uri="file:///tmp/doc2.jsonnet",
-        )
-
-        self.assertFieldDefined(
-            fake_workspace(
-                self.fs,
-                docs=[t1, t2],
-                root_uri="file:///tmp",
-            ),
-            keys=[
-                t1.node_at(1).to(Id.Field),
-                t2.node_at(1).to(Id.Field),
-            ],
-            refs=[t1.node_at(2).to(Id.FieldRef)],
-        )
-
     def test_local(self):
         t = FakeDocument(
             dedent(
@@ -569,7 +515,113 @@ class TestFieldDefinition(TestDefinition):
             refs=[t.node_at(1).to(Id.FieldRef)],
         )
 
-    def test_fn_param_default_value(self):
+
+class TestParamFieldDefinition(TestDefinition):
+    def test_literal_arg(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local f(p) = p.f;
+                               ^1
+                f({ f: 1 })
+                    ^2
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
+
+    def test_local_var_arg(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local f(p) = p.f;
+                               ^1
+                local v = { f: 1 };
+                            ^2
+                f(v)
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
+
+    def test_imported_fn(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                function(p) p.f
+                              ^1
+                """
+            ),
+            uri="file:///tmp/doc1.jsonnet",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local f = import 'doc1.jsonnet';
+                f({ f: 2 })
+                    ^1
+                """
+            ),
+            uri="file:///tmp/doc2.jsonnet",
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2],
+                root_uri="file:///tmp",
+            ),
+            keys=[t2.node_at(1).to(Id.Field)],
+            refs=[t1.node_at(1).to(Id.FieldRef)],
+        )
+
+    def test_imported_fn_param_default(self):
+        t1 = FakeDocument(
+            dedent(
+                """\
+                function(p={ f: 1 }) p.f
+                             ^1        ^2
+                """
+            ),
+            uri="file:///tmp/doc1.jsonnet",
+        )
+
+        t2 = FakeDocument(
+            dedent(
+                """\
+                local f = import 'doc1.jsonnet';
+                f({ f: 2 })
+                    ^1
+                """
+            ),
+            uri="file:///tmp/doc2.jsonnet",
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(
+                self.fs,
+                docs=[t1, t2],
+                root_uri="file:///tmp",
+            ),
+            keys=[
+                t1.node_at(1).to(Id.Field),
+                t2.node_at(1).to(Id.Field),
+            ],
+            refs=[t1.node_at(2).to(Id.FieldRef)],
+        )
+
+    def test_param_default(self):
         t = FakeDocument(
             """\
             function(p={ f: 1 }) p.f
@@ -583,7 +635,7 @@ class TestFieldDefinition(TestDefinition):
             refs=[t.node_at(2).to(Id.FieldRef)],
         )
 
-    def test_field_fn_param_default_value(self):
+    def test_field_fn_param_default(self):
         t = FakeDocument(
             """\
             { f(p={ f: 1 }): p.f }
