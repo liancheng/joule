@@ -3,7 +3,8 @@ from typing import Callable
 
 import lsprotocol.types as L
 
-from joule.ast import AnalysisPhase, Bind, Document, ForSpec, Id, Param
+from joule import ast as A
+from joule.ast import AnalysisPhase
 from joule.maybe import maybe
 from joule.visitor import Visitor
 
@@ -17,17 +18,17 @@ class InlayHintProvider(Visitor):
     def __init__(self) -> None:
         self.hints: list[L.InlayHint] = []
 
-    def serve(self, tree: Document) -> list[L.InlayHint]:
+    def serve(self, tree: A.Document) -> list[L.InlayHint]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         self.visit(tree)
         return self.hints
 
-    def visit_var_ref(self, e: Id.VarRef):
+    def visit_var_ref(self, e: A.Id.VarRef):
         super().visit_var_ref(e)
 
         for_spec_var_ref = next(
             (
-                isinstance(binding.target, ForSpec)
+                isinstance(binding.target, A.ForSpec)
                 for var in maybe(e.var)
                 for binding in maybe(var.binding)
             ),
@@ -42,17 +43,17 @@ class InlayHintProvider(Visitor):
                 Icon.DownArrow if for_spec_var_ref else Icon.UpArrow,
             )
 
-    def visit_bind(self, b: Bind):
+    def visit_bind(self, b: A.Bind):
         super().visit_bind(b)
         n_refs = len(b.id.references)
         self._add_hint(b.id.location.range.start, [Icon.DownArrow, str(n_refs)])
 
-    def visit_param(self, p: Param):
+    def visit_param(self, p: A.Param):
         super().visit_param(p)
         n_refs = len(p.id.references)
         self._add_hint(p.id.location.range.start, [Icon.DownArrow, str(n_refs)])
 
-    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+    def visit_for_spec(self, s: A.ForSpec, next: Callable[[], None]):
         def new_next():
             n_refs = len(s.id.references)
             # Marks for-spec variables with an up-arrow as for-spec variables

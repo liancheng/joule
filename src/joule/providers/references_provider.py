@@ -5,7 +5,8 @@ from typing import Iterable
 
 import lsprotocol.types as L
 
-from joule.ast import AST, AnalysisPhase, Document, Expr, FixedKey, Id
+from joule import ast as A
+from joule.ast import AnalysisPhase
 from joule.maybe import maybe
 from joule.model import DocumentLoader
 from joule.providers.definition_provider import DefinitionProvider
@@ -17,7 +18,7 @@ class ReferencesProvider:
     def __init__(self, loader: DocumentLoader) -> None:
         self.loader = loader
 
-    def serve(self, tree: Document, pos: L.Position) -> list[L.Location] | None:
+    def serve(self, tree: A.Document, pos: L.Position) -> list[L.Location] | None:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
         refs = [
             ref.location
@@ -26,21 +27,21 @@ class ReferencesProvider:
         ]
         return refs if len(refs) > 0 else None
 
-    def find_references(self, node: AST) -> Iterable[Expr]:
+    def find_references(self, node: A.AST) -> Iterable[A.Expr]:
         match node:
-            case Id.Field():
+            case A.Id.Field():
                 return self.find_field_references(node)
-            case Id.Var():
+            case A.Id.Var():
                 return node.references
             case _:
                 return ()
 
-    def find_field_references(self, field: Id.Field) -> Iterable[Id.FieldRef]:
-        def prune(path: Path) -> Document | None:
+    def find_field_references(self, field: A.Id.Field) -> Iterable[A.Id.FieldRef]:
+        def prune(path: Path) -> A.Document | None:
             pattern = re.compile(f"\\b{field.name}\\b")
             uri = path.absolute().as_uri()
             match self.loader.trees.get(uri):
-                case Document() as tree:
+                case A.Document() as tree:
                     return tree
                 case _ if re.search(pattern, source := path.read_text()):
                     return self.loader.load(uri, source)
@@ -55,6 +56,6 @@ class ReferencesProvider:
             for ref in tree.field_refs
             if ref.name == field.name
             for binding in DefinitionProvider(self.loader).find_field_binding(ref)
-            if isinstance(fixed_key := binding.target.key, FixedKey)
+            if isinstance(fixed_key := binding.target.key, A.FixedKey)
             if fixed_key.id == field
         )

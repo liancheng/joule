@@ -1,24 +1,8 @@
 from contextlib import contextmanager
 from typing import Callable
 
-from joule.ast import (
-    AnalysisPhase,
-    Bind,
-    Call,
-    ComputedKey,
-    Document,
-    Field,
-    FieldAccess,
-    FieldScope,
-    FixedKey,
-    Fn,
-    ForSpec,
-    Id,
-    Local,
-    ObjComp,
-    Object,
-    VarScope,
-)
+from joule import ast as A
+from joule.ast import AnalysisPhase, VarScope
 from joule.maybe import maybe
 from joule.visitor import Visitor
 
@@ -26,7 +10,7 @@ from joule.visitor import Visitor
 class ScopeResolver(Visitor):
     """An AST visitor that creates scopes and bind variables and object fields."""
 
-    def resolve(self, tree: Document) -> Document:
+    def resolve(self, tree: A.Document) -> A.Document:
         self.tree = tree
         self.var_scope: VarScope = VarScope(tree)
         self.visit(tree)
@@ -45,24 +29,24 @@ class ScopeResolver(Visitor):
         finally:
             self.var_scope = prev
 
-    def visit_bind(self, b: Bind):
+    def visit_bind(self, b: A.Bind):
         self.var_scope.bind(b.id, b.value)
         with self.activate_var_scope(self.var_scope.nest(owner=b)):
             self.visit(b.value)
 
-    def visit_call(self, e: Call):
+    def visit_call(self, e: A.Call):
         super().visit_call(e)
         self.tree.calls.append(e)
 
-    def visit_field_access(self, e: FieldAccess):
+    def visit_field_access(self, e: A.FieldAccess):
         super().visit_field_access(e)
         self.tree.field_refs.append(e.field)
 
-    def visit_fixed_key(self, e: Object, f: Field, k: FixedKey):
+    def visit_fixed_key(self, e: A.Object, f: A.Field, k: A.FixedKey):
         assert e.field_scope is not None
         e.field_scope.bind(k, f)
 
-    def visit_fn(self, e: Fn):
+    def visit_fn(self, e: A.Fn):
         # NOTE: Jsonnet function parameter scoping
         #
         # In Jsonnet, function parameters in the same parameter list can reference each
@@ -83,7 +67,7 @@ class ScopeResolver(Visitor):
 
             self.visit(e.body)
 
-    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+    def visit_for_spec(self, s: A.ForSpec, next: Callable[[], None]):
         def new_next():
             with self.activate_var_scope(self.var_scope.nest(owner=s)) as scope:
                 scope.bind(s.id, s)
@@ -91,16 +75,16 @@ class ScopeResolver(Visitor):
 
         super().visit_for_spec(s, new_next)
 
-    def visit_local(self, e: Local):
+    def visit_local(self, e: A.Local):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for b in e.binds:
                 self.visit_bind(b)
 
             self.visit(e.body)
 
-    def visit_obj_comp(self, e: ObjComp):
+    def visit_obj_comp(self, e: A.ObjComp):
         def next():
-            self.visit_computed_key(e.field, e.field.key.to(ComputedKey))
+            self.visit_computed_key(e.field, e.field.key.to(A.ComputedKey))
 
             with self.activate_var_scope(self.var_scope.nest(owner=e)):
                 for b in e.binds:
@@ -111,13 +95,13 @@ class ScopeResolver(Visitor):
 
         self.visit_comp_spec([e.for_spec] + e.comp_spec, next)
 
-    def visit_object(self, e: Object):
+    def visit_object(self, e: A.Object):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
-            e.field_scope = FieldScope.empty(e)
+            e.field_scope = A.FieldScope.empty(e)
             super().visit_object(e)
 
-    def visit_var_ref(self, e: Id.VarRef):
+    def visit_var_ref(self, e: A.Id.VarRef):
         for binding in maybe(self.var_scope.get(e.name)):
-            var = binding.id.to(Id.Var)
+            var = binding.id.to(A.Id.Var)
             e.var = var
             var.references.append(e)

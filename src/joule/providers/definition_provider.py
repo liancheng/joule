@@ -4,29 +4,11 @@ from typing import Iterable
 
 import lsprotocol.types as L
 
+from joule import ast as A
 from joule.ast import (
-    AST,
     AnalysisPhase,
-    Array,
-    Binary,
-    Call,
-    Document,
-    Dollar,
-    Expr,
-    Field,
-    FieldAccess,
     FieldBinding,
     FieldScope,
-    Fn,
-    ForSpec,
-    Id,
-    Import,
-    Importee,
-    ImportType,
-    Object,
-    Operator,
-    Param,
-    Self,
     VarBinding,
     enclosing_node,
 )
@@ -38,7 +20,7 @@ class DefinitionProvider:
     def __init__(self, loader: DocumentLoader) -> None:
         self.loader = loader
 
-    def serve(self, tree: Document, pos: L.Position) -> list[L.Location]:
+    def serve(self, tree: A.Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
 
         return [
@@ -47,76 +29,76 @@ class DefinitionProvider:
             for location in self.find_definition(node)
         ]
 
-    def find_definition(self, node: AST) -> Iterable[L.Location]:
+    def find_definition(self, node: A.AST) -> Iterable[L.Location]:
         match node:
-            case Id.FieldRef() as ref:
+            case A.Id.FieldRef() as ref:
                 return (b.id.location for b in self.find_field_binding(ref))
-            case Id.ParamRef() as ref:
+            case A.Id.ParamRef() as ref:
                 return (b.id.location for b in self.find_param_binding(ref))
-            case Id.VarRef() as ref:
+            case A.Id.VarRef() as ref:
                 return (b.id.location for b in self.find_var_binding(ref))
-            case Importee():
+            case A.Importee():
                 return (doc.location for doc in maybe(self.loader.get_importee(node)))
             case _:
                 return ()
 
-    def find_var_binding(self, ref: Id.VarRef) -> Iterable[VarBinding]:
+    def find_var_binding(self, ref: A.Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
 
-    def find_field_binding(self, ref: Id.FieldRef) -> Iterable[FieldBinding]:
+    def find_field_binding(self, ref: A.Id.FieldRef) -> Iterable[FieldBinding]:
         return (
             binding
-            for field_access in maybe(enclosing_node(ref, FieldAccess, level=1))
+            for field_access in maybe(enclosing_node(ref, A.FieldAccess, level=1))
             for scope in self.find_field_scope(field_access.obj)
             for binding in maybe(scope.get(ref.name))
         )
 
-    def find_param_binding(self, ref: Id.ParamRef) -> Iterable[VarBinding]:
+    def find_param_binding(self, ref: A.Id.ParamRef) -> Iterable[VarBinding]:
         return (
             binding
-            for call in maybe(enclosing_node(ref, Call, level=2))
+            for call in maybe(enclosing_node(ref, A.Call, level=2))
             for fn in self.find_callee(call)
             for param in fn.params
             if param.id.name == ref.name
             for binding in maybe(param.id.binding)
         )
 
-    def find_callee(self, call: Call) -> Iterable[Fn]:
+    def find_callee(self, call: A.Call) -> Iterable[A.Fn]:
         """Given a function call, finds the definition of the function."""
 
-        def find(node: AST) -> Iterable[Fn]:
+        def find(node: A.AST) -> Iterable[A.Fn]:
             match node:
-                case Field() if isinstance(fn := node.value, Fn):
+                case A.Field() if isinstance(fn := node.value, A.Fn):
                     return maybe(fn)
 
-                case FieldAccess():
+                case A.FieldAccess():
                     return find(node.field)
 
-                case Fn():
+                case A.Fn():
                     return maybe(node)
 
-                case Id.FieldRef():
+                case A.Id.FieldRef():
                     return (
                         fn
                         for binding in self.find_field_binding(node)
                         for fn in find(binding.target)
                     )
 
-                case Id.VarRef():
+                case A.Id.VarRef():
                     return (
                         fn
                         for binding in self.find_var_binding(node)
                         for fn in find(binding.target)
                     )
 
-                case Import() if node.type == ImportType.Default:
+                case A.Import() if node.type == A.ImportType.Default:
                     return (
                         fn
                         for importee in maybe(self.loader.get_importee(node.importee))
                         for fn in find(importee)
                     )
 
-                case Expr():
+                case A.Expr():
                     return (fn for tail in node.tails for fn in find(tail))
 
                 case _:
@@ -124,7 +106,7 @@ class DefinitionProvider:
 
         return find(call.fn)
 
-    def find_field_scope(self, node: AST) -> Iterable[FieldScope]:
+    def find_field_scope(self, node: A.AST) -> Iterable[FieldScope]:
         """Finds the object field scopes an AST node tracks.
 
         This is the major function that helps find the definition of an object field.
@@ -156,14 +138,14 @@ class DefinitionProvider:
             contributes a definition of field reference `f` at 4.
         """
         match node:
-            case Array():
+            case A.Array():
                 return (
                     scope
                     for value in node.values
                     for scope in self.find_field_scope(value)
                 )
 
-            case Binary() if node.op == Operator.Plus:
+            case A.Binary() if node.op == A.Operator.Plus:
                 lhs_scopes = list(self.find_field_scope(node.lhs))
                 rhs_scopes = list(self.find_field_scope(node.rhs))
 
@@ -179,7 +161,7 @@ class DefinitionProvider:
                             for child in rhs_scopes
                         )
 
-            case Call():
+            case A.Call():
                 # Example:
                 #
                 #   local func() =
@@ -201,15 +183,15 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(tail)
                 )
 
-            case Dollar():
+            case A.Dollar():
 
                 def outermost_object(
-                    node: AST | None, so_far: Object | None = None
-                ) -> Object | None:
+                    node: A.AST | None, so_far: A.Object | None = None
+                ) -> A.Object | None:
                     match node:
                         case None:
                             return so_far
-                        case Object():
+                        case A.Object():
                             return outermost_object(node.parent, node)
                         case _:
                             return outermost_object(node.parent, so_far)
@@ -220,43 +202,43 @@ class DefinitionProvider:
                     for scope in maybe(obj.field_scope)
                 )
 
-            case FieldAccess():
+            case A.FieldAccess():
                 return (
                     scope
                     for binding in self.find_field_binding(node.field)
-                    if (field_value := binding.target.to(Field).value)
+                    if (field_value := binding.target.to(A.Field).value)
                     for scope in self.find_field_scope(field_value)
                 )
 
-            case ForSpec():
+            case A.ForSpec():
                 return self.find_field_scope(node.source)
 
-            case Id.FieldRef():
+            case A.Id.FieldRef():
                 return (
                     scope
                     for parent in maybe(node.parent)
-                    if (field_access := parent.to(FieldAccess))
+                    if (field_access := parent.to(A.FieldAccess))
                     for scope in self.find_field_scope(field_access)
                 )
 
-            case Id.VarRef():
+            case A.Id.VarRef():
                 return (
                     scope
                     for binding in self.find_var_binding(node)
                     for scope in self.find_field_scope(binding.target)
                 )
 
-            case Import() if node.type == ImportType.Default:
+            case A.Import() if node.type == A.ImportType.Default:
                 return (
                     scope
                     for importee in maybe(self.loader.get_importee(node.importee))
                     for scope in self.find_field_scope(importee)
                 )
 
-            case Object():
+            case A.Object():
                 return (scope for scope in maybe(node.field_scope))
 
-            case Param():
+            case A.Param():
                 root_path = (
                     self.loader.workspace_path
                     or Path.from_uri(node.location.uri).resolve()
@@ -264,7 +246,7 @@ class DefinitionProvider:
 
                 call_args = (
                     arg
-                    for fn in maybe(enclosing_node(node, Fn, level=1))
+                    for fn in maybe(enclosing_node(node, A.Fn, level=1))
                     for path in self.loader.list_source_files(root_path)
                     if (tree := self.loader.get(path.as_uri()))
                     for call in tree.calls
@@ -279,14 +261,14 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(e)
                 )
 
-            case Self():
+            case A.Self():
                 return (
                     scope
-                    for obj in maybe(enclosing_node(node, Object))
+                    for obj in maybe(enclosing_node(node, A.Object))
                     for scope in maybe(obj.field_scope)
                 )
 
-            case Expr():
+            case A.Expr():
                 return (
                     scope
                     for tail in node.tails

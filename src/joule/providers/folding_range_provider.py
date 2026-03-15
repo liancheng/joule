@@ -1,6 +1,6 @@
 import lsprotocol.types as L
 
-from joule.ast import Array, Document, Fn, ListComp, ObjComp, Object
+from joule import ast as A
 from joule.visitor import Visitor
 
 
@@ -8,7 +8,7 @@ class FoldingRangeProvider(Visitor):
     def __init__(self) -> None:
         self.folding_ranges: list[L.FoldingRange] = []
 
-    def serve(self, tree: Document) -> list[L.FoldingRange]:
+    def serve(self, tree: A.Document) -> list[L.FoldingRange]:
         self.visit(tree)
         return self.folding_ranges
 
@@ -23,22 +23,22 @@ class FoldingRangeProvider(Visitor):
                 )
             )
 
-    def visit_fn(self, e: Fn):
+    def visit_fn(self, e: A.Fn):
         super().visit_fn(e)
         self._add_folding_range(e.location.range)
 
-    def visit_object(self, e: Object):
+    def visit_object(self, e: A.Object):
         super().visit_object(e)
         self._add_folding_range(e.location.range)
 
-    def visit_obj_comp(self, e: ObjComp):
+    def visit_obj_comp(self, e: A.ObjComp):
         super().visit_obj_comp(e)
         self._add_folding_range(e.location.range)
 
-    def visit_array(self, e: Array):
+    def visit_array(self, e: A.Array):
         super().visit_array(e)
         self._add_folding_range(e.location.range)
 
-    def visit_list_comp(self, e: ListComp):
+    def visit_list_comp(self, e: A.ListComp):
         super().visit_list_comp(e)
         self._add_folding_range(e.location.range)

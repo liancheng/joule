@@ -3,15 +3,7 @@ from typing import Callable, Sequence
 
 import lsprotocol.types as L
 
-from joule.ast import (
-    Bind,
-    ComputedKey,
-    Document,
-    FixedKey,
-    ForSpec,
-    Object,
-    Param,
-)
+from joule import ast as A
 from joule.maybe import maybe
 from joule.visitor import Visitor
 
@@ -26,7 +18,7 @@ class DocumentSymbolProvider(Visitor):
         )
         self.breadcrumb = [self.root_symbol]
 
-    def serve(self, tree: Document) -> Sequence[L.DocumentSymbol]:
+    def serve(self, tree: A.Document) -> Sequence[L.DocumentSymbol]:
         self.visit(tree)
         return self.root_symbol.children or []
 
@@ -44,7 +36,7 @@ class DocumentSymbolProvider(Visitor):
         finally:
             self.breadcrumb.pop()
 
-    def visit_bind(self, b: Bind):
+    def visit_bind(self, b: A.Bind):
         symbol = L.DocumentSymbol(
             name=b.id.name,
             kind=L.SymbolKind.Variable,
@@ -56,7 +48,7 @@ class DocumentSymbolProvider(Visitor):
         with self.open_symbol(symbol):
             self.visit(b.value)
 
-    def visit_param(self, p: Param):
+    def visit_param(self, p: A.Param):
         symbol = L.DocumentSymbol(
             name=p.id.name,
             kind=L.SymbolKind.Variable,
@@ -70,10 +62,10 @@ class DocumentSymbolProvider(Visitor):
             with self.open_symbol(symbol):
                 self.visit(p.default)
 
-    def visit_object(self, e: Object):
+    def visit_object(self, e: A.Object):
         for f in e.fields:
             match f.key:
-                case FixedKey() as k:
+                case A.FixedKey() as k:
                     symbol = L.DocumentSymbol(
                         name=k.id.name,
                         kind=L.SymbolKind.Field,
@@ -85,7 +77,7 @@ class DocumentSymbolProvider(Visitor):
                     with self.open_symbol(symbol):
                         self.visit_field_value(f)
 
-                case ComputedKey() as k:
+                case A.ComputedKey() as k:
                     self.visit_computed_key(f, k)
                     self.visit_field_value(f)
 
@@ -95,7 +87,7 @@ class DocumentSymbolProvider(Visitor):
         for a in e.assertions:
             self.visit_assert(a)
 
-    def visit_for_spec(self, s: ForSpec, next: Callable[[], None]):
+    def visit_for_spec(self, s: A.ForSpec, next: Callable[[], None]):
         def new_next():
             symbol = L.DocumentSymbol(
                 name=s.id.name,
