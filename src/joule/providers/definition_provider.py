@@ -68,6 +68,14 @@ class DefinitionProvider:
 
         def find(node: A.AST) -> Iterable[A.Fn]:
             match node:
+                case A.Call():
+                    return (
+                        fn
+                        for callee in self.find_callee(node)
+                        for tail in callee.body.tails
+                        for fn in find(tail)
+                    )
+
                 case A.Field() if isinstance(fn := node.value, A.Fn):
                     return maybe(fn)
 
@@ -98,7 +106,7 @@ class DefinitionProvider:
                         for fn in find(importee)
                     )
 
-                case A.Expr():
+                case A.Expr() if list(node.tails) != [node]:
                     return (fn for tail in node.tails for fn in find(tail))
 
                 case _:

@@ -648,3 +648,22 @@ class TestParamFieldDefinition(TestDefinition):
             keys=[t.node_at(1).to(Id.Field)],
             refs=[t.node_at(2).to(Id.FieldRef)],
         )
+
+    def test_fn_returned_fn(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                local f(p) = p.f;
+                               ^1
+                local g() = f;
+                g()({ f: 1 })
+                      ^2
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
