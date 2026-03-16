@@ -112,7 +112,7 @@ class DefinitionProvider:
                 case _:
                     return ()
 
-        return find(call.fn)
+        return find(call.callee)
 
     def find_field_scope(self, node: A.AST) -> Iterable[FieldScope]:
         """Finds the object field scopes an AST node tracks.
@@ -256,11 +256,11 @@ class DefinitionProvider:
                     arg
                     for fn in maybe(enclosing_node(node, A.Fn, level=1))
                     for path in self.loader.list_source_files(root_path)
-                    if (tree := self.loader.get(path.as_uri()))
+                    for tree in maybe(self.loader.get(path.as_uri()))
                     for call in tree.calls
                     for callee in self.find_callee(call)
                     if callee == fn
-                    for arg in maybe(call.find_arg_by_param(node))
+                    for arg in maybe(call.arg_of_param(node))
                 )
 
                 return (

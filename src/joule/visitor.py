@@ -78,7 +78,7 @@ class Visitor:
         del e
 
     def visit_call(self, e: A.Call):
-        self.visit(e.fn)
+        self.visit(e.callee)
         for a in e.args:
             self.visit_arg(a)
 

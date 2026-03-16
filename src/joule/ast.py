@@ -735,12 +735,12 @@ class Arg(AST):
 
 @D.dataclass
 class Call(Expr):
-    fn: Expr
+    callee: Expr
     args: list[Arg]
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.fn], self.args)
+        return chain([self.callee], self.args)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Call":
@@ -753,7 +753,7 @@ class Call(Expr):
 
         return Call(
             location=location_of(uri, node),
-            fn=Expr.from_cst(uri, fn),
+            callee=Expr.from_cst(uri, fn),
             args=[
                 Arg.from_cst(uri, arg)
                 for args in maybe_args
@@ -763,7 +763,7 @@ class Call(Expr):
 
     AST.register(from_cst, "functioncall")
 
-    def find_arg_by_name(self, name: str) -> Expr | None:
+    def arg_by_name(self, name: str) -> Expr | None:
         return head_or_none(
             arg.value for arg in self.args for id in maybe(arg.id) if id.name == name
         )
@@ -771,8 +771,8 @@ class Call(Expr):
     def find_arg_by_position(self, index: int) -> Expr | None:
         return self.args[index].value if 0 <= index <= len(self.args) else None
 
-    def find_arg_by_param(self, param: Param) -> Expr | None:
-        return self.find_arg_by_name(param.id.name) or head_or_none(
+    def arg_of_param(self, param: Param) -> Expr | None:
+        return self.arg_by_name(param.id.name) or head_or_none(
             self.args[param_ord].value
             for fn in maybe(enclosing_node(param, Fn, level=1))
             if (param_ord := fn.params.index(param)) >= 0
