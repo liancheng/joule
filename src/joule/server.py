@@ -146,7 +146,7 @@ def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
 
 
 @server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
-def folding_range(ls: JouleLanguageServer, params: L.PrepareRenameParams):
+def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     return (
         FoldingRangeProvider().serve(tree)
