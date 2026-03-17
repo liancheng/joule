@@ -40,6 +40,9 @@ class FakeDocument:
     def location(self) -> L.Location:
         return self.body.location
 
+    def __matmul__(self, mark: int) -> A.AST:
+        return self.node_at(mark)
+
     def at(self, mark: int) -> L.Location:
         return self.locations[mark]
 

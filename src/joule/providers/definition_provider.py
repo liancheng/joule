@@ -111,7 +111,7 @@ class DefinitionProvider:
                 return ()
 
     def find_field_scope(self, node: A.AST) -> Iterable[FieldScope]:
-        """Finds the object field scopes an AST node tracks.
+        """Given an AST node returning an object, finds the field scopes of the object.
 
         This is the major function that helps find the definition of an object field.
         Note that due to branching, one AST node may track multiple field scopes. See

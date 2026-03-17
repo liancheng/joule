@@ -1,24 +1,21 @@
 from textwrap import dedent
 
-from pyfakefs.fake_filesystem_unittest import TestCase
-
-from joule.ast import Id
+from joule.ast import AST, Id
 from joule.model.document_loader import DocumentLoader
 from joule.providers import ReferencesProvider
-from tests.dsl.fake_document import FakeDocument, fake_workspace
+
+from . import FakeWorkspaceTestCase
+from .dsl import FakeDocument, fake_workspace
 
 
-class TestReferences(TestCase):
-    def setUp(self) -> None:
-        self.setUpPyfakefs()
-
+class TestReferences(FakeWorkspaceTestCase):
     def assertVarReferenced(
         self,
         doc: FakeDocument,
         var_mark: int,
         ref_marks: list[int],
     ):
-        loader = fake_workspace(self.fs, doc)
+        loader = self.workspace(doc)
         ref_provider = ReferencesProvider(loader)
         self.assertSequenceEqual(
             [doc.node_at(ref_mark) for ref_mark in ref_marks],
@@ -28,14 +25,14 @@ class TestReferences(TestCase):
     def assertFieldReferenced(
         self,
         loader: DocumentLoader,
-        field: Id.Field,
-        refs: list[Id.FieldRef],
+        field: AST,
+        refs: list[AST],
     ):
         ref_provider = ReferencesProvider(loader)
         self.assertSequenceEqual(
-            refs,
+            [ref.to(Id.FieldRef) for ref in refs],
             sorted(
-                ref_provider.find_references(field),
+                ref_provider.find_references(field.to(Id.Field)),
                 key=lambda ref: ref.location.uri,
             ),
         )
@@ -69,9 +66,9 @@ class TestFieldReferences(TestReferences):
         )
 
         self.assertFieldReferenced(
-            fake_workspace(self.fs, t),
-            field=t.node_at(1).to(Id.Field),
-            refs=[t.node_at(2).to(Id.FieldRef)],
+            self.workspace(t),
+            field=t @ 1,
+            refs=[t @ 2],
         )
 
     def test_import(self):
@@ -111,11 +108,8 @@ class TestFieldReferences(TestReferences):
                 docs=[t1, t2, t3],
                 root_uri="file:///tmp",
             ),
-            field=t1.node_at(1).to(Id.Field),
-            refs=[
-                t2.node_at(1).to(Id.FieldRef),
-                t3.node_at(1).to(Id.FieldRef),
-            ],
+            field=t1 @ 1,
+            refs=[t2 @ 1, t3 @ 1],
         )
 
     def test_call(self):
@@ -129,7 +123,7 @@ class TestFieldReferences(TestReferences):
         )
 
         self.assertFieldReferenced(
-            fake_workspace(self.fs, t),
-            field=t.node_at(1).to(Id.Field),
-            refs=[t.node_at(2).to(Id.FieldRef)],
+            self.workspace(t),
+            field=t @ 1,
+            refs=[t @ 2],
         )
