@@ -57,62 +57,58 @@ class DefinitionProvider:
         return (
             binding
             for call in maybe(enclosing_node(ref, A.Call, level=2))
-            for fn in self.find_callee(call)
+            for fn in self.find_fn(call.callee)
             for param in fn.params
             if param.id.name == ref.name
             for binding in maybe(param.id.binding)
         )
 
-    def find_callee(self, call: A.Call) -> Iterable[A.Fn]:
-        """Given a function call, finds the definition of the function."""
+    def find_fn(self, node: A.AST) -> Iterable[A.Fn]:
+        """Given a function returning AST node, finds the definition of the function."""
+        match node:
+            case A.Call():
+                return (
+                    fn
+                    for callee in self.find_fn(node.callee)
+                    for tail in callee.body.tails
+                    for fn in self.find_fn(tail)
+                )
 
-        def find(node: A.AST) -> Iterable[A.Fn]:
-            match node:
-                case A.Call():
-                    return (
-                        fn
-                        for callee in self.find_callee(node)
-                        for tail in callee.body.tails
-                        for fn in find(tail)
-                    )
+            case A.Field() if isinstance(fn := node.value, A.Fn):
+                return maybe(fn)
 
-                case A.Field() if isinstance(fn := node.value, A.Fn):
-                    return maybe(fn)
+            case A.FieldAccess():
+                return self.find_fn(node.field)
 
-                case A.FieldAccess():
-                    return find(node.field)
+            case A.Fn():
+                return maybe(node)
 
-                case A.Fn():
-                    return maybe(node)
+            case A.Id.FieldRef():
+                return (
+                    fn
+                    for binding in self.find_field_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
 
-                case A.Id.FieldRef():
-                    return (
-                        fn
-                        for binding in self.find_field_binding(node)
-                        for fn in find(binding.target)
-                    )
+            case A.Id.VarRef():
+                return (
+                    fn
+                    for binding in self.find_var_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
 
-                case A.Id.VarRef():
-                    return (
-                        fn
-                        for binding in self.find_var_binding(node)
-                        for fn in find(binding.target)
-                    )
+            case A.Import() if node.type == A.ImportType.Default:
+                return (
+                    fn
+                    for importee in maybe(self.loader.get_importee(node.importee))
+                    for fn in self.find_fn(importee)
+                )
 
-                case A.Import() if node.type == A.ImportType.Default:
-                    return (
-                        fn
-                        for importee in maybe(self.loader.get_importee(node.importee))
-                        for fn in find(importee)
-                    )
+            case A.Expr() if list(node.tails) != [node]:
+                return (fn for tail in node.tails for fn in self.find_fn(tail))
 
-                case A.Expr() if list(node.tails) != [node]:
-                    return (fn for tail in node.tails for fn in find(tail))
-
-                case _:
-                    return ()
-
-        return find(call.callee)
+            case _:
+                return ()
 
     def find_field_scope(self, node: A.AST) -> Iterable[FieldScope]:
         """Finds the object field scopes an AST node tracks.
@@ -186,7 +182,7 @@ class DefinitionProvider:
                 #   defintion of field `f`.
                 return (
                     scope
-                    for fn in self.find_callee(node)
+                    for fn in self.find_fn(node.callee)
                     for tail in fn.body.tails
                     for scope in self.find_field_scope(tail)
                 )
@@ -258,7 +254,7 @@ class DefinitionProvider:
                     for path in self.loader.list_source_files(root_path)
                     for tree in maybe(self.loader.get(path.as_uri()))
                     for call in tree.calls
-                    for callee in self.find_callee(call)
+                    for callee in self.find_fn(call.callee)
                     if callee == fn
                     for arg in maybe(call.arg_of_param(node))
                 )
