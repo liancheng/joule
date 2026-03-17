@@ -75,6 +75,9 @@ class ScopeResolver(Visitor):
 
         super().visit_for_spec(s, new_next)
 
+    def visit_import(self, e: A.Import):
+        self.tree.importees.append(e.importee)
+
     def visit_local(self, e: A.Local):
         with self.activate_var_scope(self.var_scope.nest(owner=e)):
             for b in e.binds:

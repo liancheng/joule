@@ -1,6 +1,6 @@
+import dataclasses as D
 import logging
 import os
-from itertools import chain
 from pathlib import Path
 from typing import Iterable
 
@@ -15,6 +15,19 @@ from .scope_resolver import ScopeResolver
 log = logging.getLogger(__name__)
 
 
+@D.dataclass(frozen=True)
+class ImporteeCacheKey:
+    importer_uri: URI
+    importee_path: str
+
+    @classmethod
+    def of(cls, importee: A.Importee):
+        return cls(
+            importer_uri=importee.location.uri,
+            importee_path=importee.value,
+        )
+
+
 class DocumentLoader:
     def __init__(
         self,
@@ -24,6 +37,8 @@ class DocumentLoader:
         self.trees: dict[URI, A.Document] = {}
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
         self.config_factory: JouleConfigFactory = config_factory
+        self.importee_paths_cache: dict[ImporteeCacheKey, Path] = {}
+        self.importer_cache: dict[URI, Iterable[A.Document]] = {}
 
     @property
     def config(self) -> JouleConfig:
@@ -34,6 +49,18 @@ class DocumentLoader:
         return path.read_text() if path.is_file() else None
 
     def resolve_importee(self, importee: A.Importee) -> Path | None:
+        key = ImporteeCacheKey.of(importee)
+        match self.importee_paths_cache.get(key):
+            case None:
+                for path in maybe(self._resolve_importee(importee)):
+                    self.importee_paths_cache[key] = path
+                    return path
+            case path:
+                return path
+
+        return None
+
+    def _resolve_importee(self, importee: A.Importee) -> Path | None:
         if (path := Path(importee.value)).is_absolute():
             return path
 
@@ -53,10 +80,35 @@ class DocumentLoader:
         )
 
     def get_importee(self, importee: A.Importee) -> A.Document | None:
-        if path := self.resolve_importee(importee):
-            return self.get(path.as_uri())
-        else:
-            return None
+        return head_or_none(
+            tree
+            for path in maybe(self.resolve_importee(importee))
+            for tree in maybe(self.get(path.as_uri()))
+        )
+
+    def transitive_importees(self, tree: A.Document) -> Iterable[A.Document]:
+        for importee in tree.importees:
+            for importee_doc in maybe(self.get_importee(importee)):
+                yield importee_doc
+                yield from self.transitive_importees(importee_doc)
+
+    def transitive_importers(self, tree: A.Document) -> Iterable[A.Document]:
+        match self.importer_cache.get(tree.location.uri):
+            case None:
+                importers = (
+                    candidate
+                    for workspace_path in maybe(self.workspace_path)
+                    for path in self.list_source_files(workspace_path)
+                    for candidate in maybe(self.get(path.as_uri()))
+                    if any(
+                        importee.location.uri == tree.location.uri
+                        for importee in self.transitive_importees(candidate)
+                    )
+                )
+                self.importer_cache[tree.location.uri] = importers
+                return importers
+            case importers:
+                return importers
 
     def load(self, uri: URI, source: str | None = None) -> A.Document | None:
         if source is None:

@@ -331,6 +331,7 @@ class Document(Expr):
         super().__post_init__()
         self.analysis_phase = AnalysisPhase.Unresolved
         self.top_level_scope: VarScope | None = None
+        self.importees: list[Importee] = []
         self.field_refs: list[Id.FieldRef] = []
         self.calls: list[Call] = []
 

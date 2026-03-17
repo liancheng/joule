@@ -661,3 +661,25 @@ class TestParamFieldDefinition(TestDefinition):
             keys=[],
             refs=[t @ 1],
         )
+
+    def test_transitive_importers(self):
+        t1 = FakeDocument("1", uri="file:///tmp/doc1.jsonnet")
+        t2 = FakeDocument("import 'doc1.jsonnet'", uri="file:///tmp/doc2.jsonnet")
+        t3 = FakeDocument("import 'doc2.jsonnet'", uri="file:///tmp/doc3.jsonnet")
+        w = self.workspace([t1, t2, t3], root_uri="file:///tmp")
+
+        self.assertSequenceEqual(
+            sorted(
+                w.transitive_importees(t3.ast),
+                key=lambda doc: doc.location.uri,
+            ),
+            [t1.ast, t2.ast],
+        )
+
+        self.assertSequenceEqual(
+            sorted(
+                w.transitive_importers(t1.ast),
+                key=lambda doc: doc.location.uri,
+            ),
+            [t2.ast, t3.ast],
+        )
