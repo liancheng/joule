@@ -1,16 +1,14 @@
 from pathlib import Path
 from typing import Iterable
 
-from pyfakefs.fake_filesystem_unittest import TestCase
-
 from joule.config import JouleConfig
 from joule.model.document_loader import DocumentLoader
+from tests import FakeWorkspaceTestCase
 
 
-class TestDocumentLoader(TestCase):
+class TestDocumentLoader(FakeWorkspaceTestCase):
     def setUp(self) -> None:
-        self.setUpPyfakefs()
-
+        super().setUp()
         self.project_root = Path("/tmp/project")
         self.fs.create_dir(self.project_root)
         self.fs.create_file(self.project_root.joinpath(".git", "config"))
@@ -18,10 +16,6 @@ class TestDocumentLoader(TestCase):
         self.fs.create_file(self.project_root.joinpath("vendor", "d1", "f1.jsonnet"))
         self.fs.create_file(self.project_root.joinpath("vendor", "d2", "f2.libsonnet"))
         self.fs.create_file(self.project_root.joinpath("test", "test_f1.jsonnet"))
-
-    def tearDown(self) -> None:
-        self.tearDownPyfakefs()
-        return super().tearDown()
 
     def assertPathsEqual(self, obtained: Iterable[Path], expected: Iterable[Path]):
         self.assertSequenceEqual(sorted(obtained), sorted(expected))
