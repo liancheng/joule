@@ -18,7 +18,7 @@ from typing import (
 import lsprotocol.types as L
 import tree_sitter as T
 
-from joule.maybe import head_or_none, maybe
+from joule.maybe import head_or_none, maybe, must
 from joule.pretty import PrettyTree
 
 URI = Annotated[str, "URI"]
@@ -531,6 +531,29 @@ class Operator(StrEnum):
     BitOr = "|"
     And = "&&"
     Or = "||"
+
+
+@D.dataclass
+class Unary(Expr):
+    op: Operator
+    operand: Expr
+
+    @property
+    def children(self) -> Iterable[AST]:
+        return [self.operand]
+
+    @staticmethod
+    def from_cst(uri: URI, node: T.Node) -> "Unary":
+        assert node.type == "unary"
+        op, operand, *_ = strip_comments(node.named_children)
+
+        return Unary(
+            location=location_of(uri, node),
+            op=Operator(must(op.text).decode()),
+            operand=Expr.from_cst(uri, operand),
+        )
+
+    AST.register(from_cst, "unary")
 
 
 @D.dataclass

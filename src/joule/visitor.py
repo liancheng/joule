@@ -48,6 +48,8 @@ class Visitor:
                 self.visit_str(tree)
             case A.Super():
                 self.visit_super(tree)
+            case A.Unary():
+                self.visit_unary(tree)
 
     def visit_arg(self, a: A.Arg):
         if a.id is not None:
@@ -207,6 +209,9 @@ class Visitor:
 
     def visit_super(self, e: A.Super):
         del e
+
+    def visit_unary(self, e: A.Unary):
+        self.visit(e.operand)
 
     def visit_var_ref(self, e: A.Id.VarRef):
         del e

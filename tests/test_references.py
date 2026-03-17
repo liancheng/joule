@@ -53,6 +53,18 @@ class TestVarReferences(TestReferences):
             ref_marks=[2],
         )
 
+    def test_if(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                function(p) if p > 0 then p else -p
+                         ^1    ^2         ^3      ^4
+                """
+            )
+        )
+
+        self.assertVarReferenced(t, var_mark=1, ref_marks=[2, 3, 4])
+
 
 class TestFieldReferences(TestReferences):
     def test_local(self):
