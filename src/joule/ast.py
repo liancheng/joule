@@ -2,7 +2,7 @@ import codecs
 import dataclasses as D
 import sys
 from enum import Enum, StrEnum, auto
-from itertools import chain, dropwhile
+from itertools import dropwhile
 from textwrap import dedent
 from typing import (
     Annotated,
@@ -645,7 +645,8 @@ class Local(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(self.binds, [self.body])
+        yield from self.binds
+        yield self.body
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Local":
@@ -674,7 +675,8 @@ class Param(AST):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.id], iter(maybe(self.default)))
+        yield self.id
+        yield from maybe(self.default)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Param":
@@ -700,7 +702,8 @@ class Fn(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(self.params, [self.body])
+        yield from self.params
+        yield self.body
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Fn":
@@ -735,7 +738,8 @@ class Arg(AST):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.value], maybe(self.id))
+        yield self.value
+        yield from maybe(self.id)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Arg":
@@ -763,7 +767,8 @@ class Call(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.callee], self.args)
+        yield self.callee
+        yield from self.args
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Call":
@@ -854,7 +859,9 @@ class ListComp(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.expr, self.for_spec], self.comp_spec)
+        yield self.expr
+        yield self.for_spec
+        yield from self.comp_spec
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ListComp":
@@ -923,7 +930,8 @@ class Assert(AST):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.condition], maybe(self.message))
+        yield self.condition
+        yield from maybe(self.message)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Assert":
@@ -1173,7 +1181,9 @@ class Object(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(self.binds, self.assertions, self.fields)
+        yield from self.binds
+        yield from self.assertions
+        yield from self.fields
 
     @classmethod
     def has_field_scope(cls) -> bool:
@@ -1221,13 +1231,11 @@ class ObjComp(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(
-            [self.field],
-            self.binds,
-            self.asserts,
-            [self.for_spec],
-            self.comp_spec,
-        )
+        yield self.field
+        yield from self.binds
+        yield from self.asserts
+        yield self.for_spec
+        yield from self.comp_spec
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "ObjComp":
@@ -1326,11 +1334,10 @@ class Slice(Expr):
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain(
-            [self.array, self.begin],
-            maybe(self.end),
-            maybe(self.step),
-        )
+        yield self.array
+        yield self.begin
+        yield from maybe(self.end)
+        yield from maybe(self.step)
 
     @staticmethod
     def from_cst(uri: URI, node: T.Node) -> "Slice":
@@ -1366,18 +1373,18 @@ class If(Expr):
 
     @property
     def tails(self) -> Iterable[Expr]:
-        return chain(
-            self.consequence.tails,
-            (
-                tail
-                for alternative in maybe(self.alternative)
-                for tail in alternative.tails
-            ),
+        yield from self.consequence.tails
+        yield from (
+            tail
+            for alternative in maybe(self.alternative)
+            for tail in alternative.tails
         )
 
     @property
     def children(self) -> Iterable[AST]:
-        return chain([self.condition, self.consequence], maybe(self.alternative))
+        yield self.condition
+        yield self.consequence
+        yield from maybe(self.alternative)
 
     @property
     def branches(self) -> Iterable[Expr]:

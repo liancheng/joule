@@ -37,19 +37,18 @@ class DocumentLoader:
         if (path := Path(importee.value)).is_absolute():
             return path
 
-        search_dirs = chain(
-            [Path.from_uri(importee.location.uri).parent],
-            (
+        def search_dirs() -> Iterable[Path]:
+            yield Path.from_uri(importee.location.uri).parent
+            yield from (
                 dir
                 for path in maybe(self.workspace_path)
                 for dir in self.list_library_search_paths(path)
-            ),
-            maybe(self.workspace_path),
-        )
+            )
+            yield from maybe(self.workspace_path)
 
         return head_or_none(
             path.resolve()
-            for dir in search_dirs
+            for dir in search_dirs()
             if (path := dir.joinpath(importee.value)).is_file()
         )
 
