@@ -48,7 +48,7 @@ class DocumentLoader:
         )
 
         return head_or_none(
-            path
+            path.resolve()
             for dir in search_dirs
             if (path := dir.joinpath(importee.value)).is_file()
         )
