@@ -1,3 +1,4 @@
+import unittest
 from textwrap import dedent
 
 from pyfakefs.fake_filesystem_unittest import TestCase
@@ -665,5 +666,22 @@ class TestParamFieldDefinition(TestDefinition):
         self.assertFieldDefined(
             fake_workspace(self.fs, t),
             keys=[t.node_at(2).to(Id.Field)],
+            refs=[t.node_at(1).to(Id.FieldRef)],
+        )
+
+    @unittest.skip("FIXME")
+    def test_field_fn_of_param(self):
+        t = FakeDocument(
+            dedent(
+                """\
+                function(p) p.f()
+                              ^1
+                """
+            )
+        )
+
+        self.assertFieldDefined(
+            fake_workspace(self.fs, t),
+            keys=[],
             refs=[t.node_at(1).to(Id.FieldRef)],
         )
