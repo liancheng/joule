@@ -1,4 +1,3 @@
-import dataclasses as D
 import logging
 import os
 from pathlib import Path
@@ -15,19 +14,6 @@ from .scope_resolver import ScopeResolver
 log = logging.getLogger(__name__)
 
 
-@D.dataclass(frozen=True)
-class ImporteeCacheKey:
-    importer_uri: URI
-    importee_path: str
-
-    @classmethod
-    def of(cls, importee: A.Importee):
-        return cls(
-            importer_uri=importee.location.uri,
-            importee_path=importee.value,
-        )
-
-
 class DocumentLoader:
     def __init__(
         self,
@@ -38,7 +24,7 @@ class DocumentLoader:
         self.workspace_uri = workspace_uri
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
         self.config_factory: JouleConfigFactory = config_factory
-        self.importee_paths_cache: dict[ImporteeCacheKey, Path] = {}
+        self.importee_paths_cache: dict[A.ImporteeKey, Path] = {}
         self.importer_cache: dict[URI, Iterable[A.Document]] = {}
 
     @property
@@ -65,7 +51,7 @@ class DocumentLoader:
                 if (path := dir.joinpath(importee.value)).is_file()
             )
 
-        key = ImporteeCacheKey.of(importee)
+        key = A.ImporteeKey.of(importee)
 
         return self.importee_paths_cache.get(key) or head_or_none(
             self.importee_paths_cache.setdefault(key, path)

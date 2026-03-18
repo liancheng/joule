@@ -32,6 +32,36 @@ ParseCST = Callable[[str, T.Node], "AST"]
 ASTType = TypeVar("ASTType", bound="AST")
 
 
+@D.dataclass(frozen=True)
+class PositionKey:
+    line: int
+    character: int
+
+    @classmethod
+    def of(cls, origin: L.Position) -> "PositionKey":
+        return cls(origin.line, origin.character)
+
+
+@D.dataclass(frozen=True)
+class RangeKey:
+    start: PositionKey
+    end: PositionKey
+
+    @classmethod
+    def of(cls, origin: L.Range) -> "RangeKey":
+        return cls(PositionKey.of(origin.start), PositionKey.of(origin.end))
+
+
+@D.dataclass(frozen=True)
+class LocationKey:
+    uri: URI
+    range: RangeKey
+
+    @classmethod
+    def of(cls, origin: L.Location) -> "LocationKey":
+        return cls(origin.uri, RangeKey.of(origin.range))
+
+
 @D.dataclass
 class AST:
     location: L.Location
@@ -896,6 +926,16 @@ class ImportType(StrEnum):
 @D.dataclass
 class Importee(Str):
     pass
+
+
+@D.dataclass(frozen=True)
+class ImporteeKey:
+    uri: URI
+    path: str
+
+    @classmethod
+    def of(cls, origin: Importee) -> "ImporteeKey":
+        return cls(origin.location.uri, origin.value)
 
 
 @D.dataclass
