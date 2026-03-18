@@ -31,7 +31,7 @@ class TestDocumentLoader(FakeWorkspaceTestCase):
         )
 
         self.assertPathsEqual(
-            loader.list_source_files(self.project_root),
+            loader.source_files(self.project_root),
             [self.project_root.joinpath("vendor", "d1", "f1.jsonnet")],
         )
 
@@ -46,7 +46,7 @@ class TestDocumentLoader(FakeWorkspaceTestCase):
         )
 
         self.assertPathsEqual(
-            loader.list_source_files(self.project_root),
+            loader.source_files(self.project_root),
             [
                 self.project_root.joinpath("vendor", "d1", "f1.jsonnet"),
                 self.project_root.joinpath("vendor", "d2", "f2.libsonnet"),
@@ -60,7 +60,7 @@ class TestDocumentLoader(FakeWorkspaceTestCase):
         )
 
         self.assertPathsEqual(
-            loader.list_library_search_paths(self.project_root),
+            loader.extra_library_search_paths(self.project_root),
             [
                 self.project_root.joinpath("vendor"),
             ],

@@ -38,7 +38,7 @@ class DefinitionProvider:
             case A.Id.VarRef() as ref:
                 return (b.id.location for b in self.find_var_binding(ref))
             case A.Importee():
-                return (doc.location for doc in maybe(self.loader.get_importee(node)))
+                return (doc.location for doc in maybe(self.loader.from_importee(node)))
             case _:
                 return ()
 
@@ -100,7 +100,7 @@ class DefinitionProvider:
             case A.Import() if node.type == A.ImportType.Default:
                 return (
                     fn
-                    for importee in maybe(self.loader.get_importee(node.importee))
+                    for importee in maybe(self.loader.from_importee(node.importee))
                     for fn in self.find_fn(importee)
                 )
 
@@ -235,7 +235,7 @@ class DefinitionProvider:
             case A.Import() if node.type == A.ImportType.Default:
                 return (
                     scope
-                    for importee in maybe(self.loader.get_importee(node.importee))
+                    for importee in maybe(self.loader.from_importee(node.importee))
                     for scope in self.find_field_scope(importee)
                 )
 
@@ -251,8 +251,8 @@ class DefinitionProvider:
                 call_args = (
                     arg
                     for fn in maybe(enclosing_node(node, A.Fn, level=1))
-                    for path in self.loader.list_source_files(root_path)
-                    for tree in maybe(self.loader.get(path.as_uri()))
+                    for path in self.loader.source_files(root_path)
+                    for tree in maybe(self.loader.from_uri(path.as_uri()))
                     for call in tree.calls
                     for callee in self.find_fn(call.callee)
                     if callee == fn

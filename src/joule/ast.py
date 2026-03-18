@@ -1,6 +1,5 @@
 import codecs
 import dataclasses as D
-import sys
 from enum import Enum, StrEnum, auto
 from itertools import dropwhile
 from textwrap import dedent
@@ -1607,7 +1606,7 @@ def enclosing_node(
     node: AST | None,
     expected_type: type[ASTType],
     *,
-    level: int = sys.maxsize,
+    level: int | None = None,
 ) -> ASTType | None:
     match node, level:
         case None, _:
@@ -1616,5 +1615,7 @@ def enclosing_node(
             return None
         case _ if isinstance(node, expected_type):
             return node
-        case _:
+        case _, None:
+            return enclosing_node(node.parent, expected_type, level=None)
+        case _, int():
             return enclosing_node(node.parent, expected_type, level=level - 1)

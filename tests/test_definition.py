@@ -1,7 +1,7 @@
 import unittest
 from textwrap import dedent
 
-from joule.ast import AST, Id
+from joule.ast import AST, Document, Id, enclosing_node
 from joule.maybe import must
 from joule.model import DocumentLoader
 from joule.providers import DefinitionProvider
@@ -35,7 +35,7 @@ class TestDefinition(FakeWorkspaceTestCase):
 
         for ref in refs:
             ref_location = ref.to(Id.ParamRef).location
-            tree = must(loader.get(ref_location.uri))
+            tree = must(enclosing_node(ref, Document))
             self.assertSequenceEqual(
                 def_provider.serve(tree, ref_location.range.start),
                 param_locations,
@@ -52,7 +52,7 @@ class TestDefinition(FakeWorkspaceTestCase):
 
         for ref in refs:
             ref_location = ref.to(Id.FieldRef).location
-            tree = must(loader.get(ref_location.uri))
+            tree = must(enclosing_node(ref, Document))
             self.assertSequenceEqual(
                 def_provider.serve(tree, ref_location.range.start),
                 key_locations,

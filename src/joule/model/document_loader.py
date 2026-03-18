@@ -44,89 +44,90 @@ class DocumentLoader:
     def config(self) -> JouleConfig:
         return self.config_factory()
 
-    def load_source(self, uri: URI) -> str | None:
-        path = Path.from_uri(uri).absolute()
-        return path.read_text() if path.is_file() else None
-
-    def resolve_importee(self, importee: A.Importee) -> Path | None:
-        key = ImporteeCacheKey.of(importee)
-        match self.importee_paths_cache.get(key):
-            case None:
-                for path in maybe(self._resolve_importee(importee)):
-                    self.importee_paths_cache[key] = path
-                    return path
-            case path:
+    def resolve_importee_path(self, importee: A.Importee) -> Path | None:
+        def resolve(importee: A.Importee) -> Path | None:
+            if (path := Path(importee.value)).is_absolute():
                 return path
 
-        return None
+            def search_dirs() -> Iterable[Path]:
+                yield Path.from_uri(importee.location.uri).parent
+                yield from (
+                    path
+                    for workspace_path in maybe(self.workspace_path)
+                    for path in self.extra_library_search_paths(workspace_path)
+                )
+                yield from maybe(self.workspace_path)
 
-    def _resolve_importee(self, importee: A.Importee) -> Path | None:
-        if (path := Path(importee.value)).is_absolute():
-            return path
-
-        def search_dirs() -> Iterable[Path]:
-            yield Path.from_uri(importee.location.uri).parent
-            yield from (
-                dir
-                for path in maybe(self.workspace_path)
-                for dir in self.list_library_search_paths(path)
+            return head_or_none(
+                path.resolve()
+                for dir in search_dirs()
+                if (path := dir.joinpath(importee.value)).is_file()
             )
-            yield from maybe(self.workspace_path)
 
-        return head_or_none(
-            path.resolve()
-            for dir in search_dirs()
-            if (path := dir.joinpath(importee.value)).is_file()
+        key = ImporteeCacheKey.of(importee)
+
+        return self.importee_paths_cache.get(key) or head_or_none(
+            self.importee_paths_cache.setdefault(key, path)
+            for path in maybe(resolve(importee))
         )
 
-    def get_importee(self, importee: A.Importee) -> A.Document | None:
+    def from_importee(self, importee: A.Importee) -> A.Document | None:
         return head_or_none(
             tree
-            for path in maybe(self.resolve_importee(importee))
-            for tree in maybe(self.get(path.as_uri()))
+            for path in maybe(self.resolve_importee_path(importee))
+            for tree in maybe(self.from_uri(path.as_uri()))
         )
 
     def transitive_importees(self, tree: A.Document) -> Iterable[A.Document]:
         for importee in tree.importees:
-            for importee_doc in maybe(self.get_importee(importee)):
+            for importee_doc in maybe(self.from_importee(importee)):
                 yield importee_doc
                 yield from self.transitive_importees(importee_doc)
 
     def transitive_importers(self, tree: A.Document) -> Iterable[A.Document]:
-        match self.importer_cache.get(tree.location.uri):
-            case None:
-                importers = (
+        return self.importer_cache.get(tree.location.uri) or (
+            self.importer_cache.setdefault(
+                tree.location.uri,
+                (
                     candidate
                     for workspace_path in maybe(self.workspace_path)
-                    for path in self.list_source_files(workspace_path)
-                    for candidate in maybe(self.get(path.as_uri()))
+                    for path in self.source_files(workspace_path)
+                    for candidate in maybe(self.from_uri(path.as_uri()))
                     if any(
                         importee.location.uri == tree.location.uri
                         for importee in self.transitive_importees(candidate)
                     )
-                )
-                self.importer_cache[tree.location.uri] = importers
-                return importers
-            case importers:
-                return importers
+                ),
+            )
+        )
 
-    def load(self, uri: URI, source: str | None = None) -> A.Document | None:
-        if source is None:
-            source = self.load_source(uri)
+    def load_from_uri(self, uri: URI) -> A.Document | None:
+        return head_or_none(
+            self.load_from_source(uri, path.read_text())
+            for path in maybe(Path.from_uri(uri).absolute())
+            if path.is_file()
+        )
 
-        if source is not None:
-            tree = A.AST.from_cst(uri, parse_jsonnet(source))
-            if isinstance(tree, A.Document):
-                scoped_tree = ScopeResolver().resolve(tree)
-                self.trees[uri] = scoped_tree
-                return scoped_tree
+    def load_and_cache_from_uri(self, uri: URI) -> A.Document | None:
+        return head_or_none(
+            self.trees.setdefault(uri, doc) for doc in maybe(self.load_from_uri(uri))
+        )
 
-        return None
+    def load_from_source(self, uri: URI, source: str) -> A.Document:
+        cst = parse_jsonnet(source)
+        doc = A.Document.from_cst(uri, cst)
+        return ScopeResolver().resolve(doc)
 
-    def get(self, uri: URI, source: str | None = None) -> A.Document | None:
-        return self.trees.get(uri) if uri in self.trees else self.load(uri, source)
+    def load_and_cache_from_source(self, uri: URI, source: str) -> A.Document:
+        return self.trees.setdefault(uri, self.load_from_source(uri, source))
 
-    def list_library_search_paths(self, root: Path) -> Iterable[Path]:
+    def from_uri(self, uri: URI) -> A.Document | None:
+        return self.trees.get(uri) or self.load_and_cache_from_uri(uri)
+
+    def from_source(self, uri: URI, source: str) -> A.Document:
+        return self.trees.get(uri) or self.load_and_cache_from_source(uri, source)
+
+    def extra_library_search_paths(self, root: Path) -> Iterable[Path]:
         assert root.is_absolute()
 
         if any(root.full_match(glob) for glob in self.config.library_paths):
@@ -137,10 +138,10 @@ class DocumentLoader:
                 path
                 for entry in entries
                 if entry.is_dir()
-                for path in self.list_library_search_paths(Path(entry.path))
+                for path in self.extra_library_search_paths(Path(entry.path))
             )
 
-    def list_source_files(self, root: Path) -> Iterable[Path]:
+    def source_files(self, root: Path) -> Iterable[Path]:
         assert root.is_absolute()
 
         if any(root.full_match(glob) for glob in self.config.exclude):
@@ -158,5 +159,5 @@ class DocumentLoader:
                 yield from (
                     file
                     for entry in entries
-                    for file in self.list_source_files(Path(entry.path))
+                    for file in self.source_files(Path(entry.path))
                 )

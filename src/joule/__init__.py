@@ -151,11 +151,11 @@ def index(
 
     def run():
         if path.is_file():
-            loader.load(path.as_uri())
+            loader.load_and_cache_from_uri(path.as_uri())
         else:
-            for file_path in loader.list_source_files(path):
+            for file_path in loader.source_files(path):
                 print(file_path)
-                loader.load(file_path.as_uri())
+                loader.load_and_cache_from_uri(file_path.as_uri())
 
     if profile:
         import cProfile

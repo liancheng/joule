@@ -44,14 +44,14 @@ class ReferencesProvider:
                 case A.Document() as tree:
                     return tree
                 case _ if re.search(pattern, source := path.read_text()):
-                    return self.loader.load(uri, source)
+                    return self.loader.load_and_cache_from_source(uri, source)
                 case _:
                     return None
 
         return (
             ref
             for workspace_path in maybe(self.loader.workspace_path)
-            for path in self.loader.list_source_files(workspace_path)
+            for path in self.loader.source_files(workspace_path)
             for tree in maybe(prune(path))
             for ref in tree.field_refs
             if ref.name == field.name
