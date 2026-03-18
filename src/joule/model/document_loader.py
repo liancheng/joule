@@ -100,6 +100,7 @@ class DocumentLoader:
     def load_and_cache_from_uri(self, uri: URI) -> A.Document | None:
         if doc := self.load_from_uri(uri):
             self.trees[uri] = doc
+            self.importer_cache.pop(uri, None)
             return doc
         else:
             self.trees.pop(uri, None)
@@ -113,6 +114,7 @@ class DocumentLoader:
     def load_and_cache_from_source(self, uri: URI, source: str) -> A.Document:
         doc = self.load_from_source(uri, source)
         self.trees[uri] = doc
+        self.importer_cache.pop(uri, None)
         return doc
 
     def from_uri(self, uri: URI) -> A.Document | None:
