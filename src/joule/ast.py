@@ -826,8 +826,8 @@ class Call(Expr):
             arg.value for arg in self.args for id in maybe(arg.id) if id.name == name
         )
 
-    def find_arg_by_position(self, index: int) -> Expr | None:
-        return self.args[index].value if 0 <= index <= len(self.args) else None
+    def arg_by_position(self, index: int) -> Expr | None:
+        return self.args[index].value if 0 <= index < len(self.args) else None
 
     def arg_of_param(self, param: Param) -> Expr | None:
         return self.arg_by_name(param.id.name) or head_or_none(
