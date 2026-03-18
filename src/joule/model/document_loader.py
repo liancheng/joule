@@ -25,7 +25,7 @@ class DocumentLoader:
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
         self.config_factory: JouleConfigFactory = config_factory
         self.importee_paths_cache: dict[A.ImporteeKey, Path] = {}
-        self.importer_cache: dict[URI, Iterable[A.Document]] = {}
+        self.importer_cache: dict[URI, list[A.Document]] = {}
 
     @property
     def config(self) -> JouleConfig:
@@ -51,12 +51,14 @@ class DocumentLoader:
                 if (path := dir.joinpath(importee.value)).is_file()
             )
 
-        key = A.ImporteeKey.of(importee)
+        cache_key = A.ImporteeKey.of(importee)
 
-        return self.importee_paths_cache.get(key) or head_or_none(
-            self.importee_paths_cache.setdefault(key, path)
-            for path in maybe(resolve(importee))
-        )
+        if cache_key in self.importee_paths_cache:
+            return self.importee_paths_cache[cache_key]
+        elif path := resolve(importee):
+            return self.importee_paths_cache.setdefault(cache_key, path)
+        else:
+            return None
 
     def from_importee(self, importee: A.Importee) -> A.Document | None:
         return head_or_none(
@@ -86,9 +88,7 @@ class DocumentLoader:
                 )
             )
 
-        return self.importer_cache.get(doc_uri) or (
-            self.importer_cache.setdefault(doc_uri, search())
-        )
+        return self.importer_cache.setdefault(doc_uri, list(search()))
 
     def load_from_uri(self, uri: URI) -> A.Document | None:
         return head_or_none(
@@ -98,9 +98,12 @@ class DocumentLoader:
         )
 
     def load_and_cache_from_uri(self, uri: URI) -> A.Document | None:
-        return head_or_none(
-            self.trees.setdefault(uri, doc) for doc in maybe(self.load_from_uri(uri))
-        )
+        if doc := self.load_from_uri(uri):
+            self.trees[uri] = doc
+            return doc
+        else:
+            self.trees.pop(uri, None)
+            return None
 
     def load_from_source(self, uri: URI, source: str) -> A.Document:
         cst = parse_jsonnet(source)
@@ -108,7 +111,9 @@ class DocumentLoader:
         return ScopeResolver().resolve(doc)
 
     def load_and_cache_from_source(self, uri: URI, source: str) -> A.Document:
-        return self.trees.setdefault(uri, self.load_from_source(uri, source))
+        doc = self.load_from_source(uri, source)
+        self.trees[uri] = doc
+        return doc
 
     def from_uri(self, uri: URI) -> A.Document | None:
         return self.trees.get(uri) or self.load_and_cache_from_uri(uri)
