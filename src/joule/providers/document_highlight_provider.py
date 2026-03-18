@@ -13,22 +13,26 @@ class DocumentHighlightProvider:
 
         def to_highlight() -> Iterable[A.AST]:
             match node := tree.node_at(pos):
+                case A.Field() if isinstance(node.value, A.Fn):
+                    yield from node.value.body.tails
+
                 case A.Field():
-                    match value := node.value:
-                        case A.Fn():
-                            yield from value.body.tails
-                        case _:
-                            yield from value.tails
+                    yield from node.value.tails
+
                 case A.Fn():
                     yield from node.body.tails
+
                 case A.Id.Var():
                     yield from node.references
                     yield node
+
                 case A.Id.VarRef() if node.var is not None:
                     yield node.var
                     yield from node.var.references
+
                 case A.If() | A.Local():
                     yield from node.tails
+
                 case _:
                     pass
 

@@ -153,9 +153,9 @@ class DefinitionProvider:
                 rhs_scopes = list(self.find_field_scope(node.rhs))
 
                 match lhs_scopes, rhs_scopes:
-                    case _ if len(lhs_scopes) == 0:
+                    case [], _:
                         return rhs_scopes
-                    case _ if len(rhs_scopes) == 0:
+                    case _, []:
                         return lhs_scopes
                     case _:
                         return (
