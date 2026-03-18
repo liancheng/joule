@@ -245,11 +245,7 @@ class DefinitionProvider:
                 call_args = (
                     arg
                     for fn in maybe(enclosing_node(node, A.Fn, level=1))
-                    for doc in maybe(enclosing_node(fn, A.Document))
-                    for tree in chain(self.loader.transitive_importers(doc), [doc])
-                    for call in tree.calls
-                    for callee in self.find_fn(call.callee)
-                    if callee == fn
+                    for call in self.find_callers(fn)
                     for arg in maybe(call.arg_of_param(node))
                 )
 
@@ -276,3 +272,13 @@ class DefinitionProvider:
 
             case _:
                 return ()
+
+    def find_callers(self, fn: A.Fn) -> Iterable[A.Call]:
+        return (
+            call
+            for doc in maybe(enclosing_node(fn, A.Document))
+            for tree in chain(self.loader.transitive_importers(doc), [doc])
+            for call in tree.calls
+            for callee in self.find_fn(call.callee)
+            if callee == fn
+        )
