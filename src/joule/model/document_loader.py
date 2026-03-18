@@ -35,6 +35,7 @@ class DocumentLoader:
         config_factory: JouleConfigFactory = lambda: JouleConfig(),
     ) -> None:
         self.trees: dict[URI, A.Document] = {}
+        self.workspace_uri = workspace_uri
         self.workspace_path = Path.from_uri(workspace_uri) if workspace_uri else None
         self.config_factory: JouleConfigFactory = config_factory
         self.importee_paths_cache: dict[ImporteeCacheKey, Path] = {}
@@ -85,20 +86,22 @@ class DocumentLoader:
                 yield from self.transitive_importees(importee_doc)
 
     def transitive_importers(self, tree: A.Document) -> Iterable[A.Document]:
-        return self.importer_cache.get(tree.location.uri) or (
-            self.importer_cache.setdefault(
-                tree.location.uri,
-                (
-                    candidate
-                    for workspace_path in maybe(self.workspace_path)
-                    for path in self.source_files(workspace_path)
-                    for candidate in maybe(self.from_uri(path.as_uri()))
-                    if any(
-                        importee.location.uri == tree.location.uri
-                        for importee in self.transitive_importees(candidate)
-                    )
-                ),
+        doc_uri = tree.location.uri
+
+        def search() -> Iterable[A.Document]:
+            yield from (
+                candidate
+                for root_uri in maybe(self.workspace_uri or doc_uri)
+                for path in self.source_files(Path.from_uri(root_uri))
+                for candidate in maybe(self.from_uri(path.as_uri()))
+                if any(
+                    importee.location.uri == tree.location.uri
+                    for importee in self.transitive_importees(candidate)
+                )
             )
+
+        return self.importer_cache.get(doc_uri) or (
+            self.importer_cache.setdefault(doc_uri, search())
         )
 
     def load_from_uri(self, uri: URI) -> A.Document | None:
