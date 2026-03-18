@@ -68,10 +68,17 @@ class DocumentLoader:
         )
 
     def transitive_importees(self, tree: A.Document) -> Iterable[A.Document]:
-        for importee in tree.importees:
-            for importee_doc in maybe(self.from_importee(importee)):
-                yield importee_doc
-                yield from self.transitive_importees(importee_doc)
+        visited: set[URI] = set()
+
+        def search(tree: A.Document, visited: set[URI]):
+            for importee in tree.importees:
+                for importee_doc in maybe(self.from_importee(importee)):
+                    if importee_doc.location.uri not in visited:
+                        visited.add(importee_doc.location.uri)
+                        yield importee_doc
+                        yield from search(importee_doc, visited)
+
+        return search(tree, visited)
 
     def transitive_importers(self, tree: A.Document) -> Iterable[A.Document]:
         doc_uri = tree.location.uri
