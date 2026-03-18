@@ -38,7 +38,7 @@ class ReferencesProvider:
 
     def find_field_references(self, field: A.Id.Field) -> Iterable[A.Id.FieldRef]:
         def prune(path: Path) -> A.Document | None:
-            pattern = re.compile(f"\\b{field.name}\\b")
+            pattern = re.compile(rf"\b{re.escape(field.name)}\b")
             uri = path.absolute().as_uri()
             match self.loader.trees.get(uri):
                 case A.Document() as tree:
