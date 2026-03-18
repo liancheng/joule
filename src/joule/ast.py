@@ -1,5 +1,6 @@
 import codecs
 import dataclasses as D
+from copy import copy
 from enum import Enum, StrEnum, auto
 from itertools import dropwhile
 from textwrap import dedent
@@ -1584,10 +1585,15 @@ class FieldScope:
         self.children.append(child)
         return child
 
-    def add_child(self, child: "FieldScope") -> "FieldScope":
-        child.parent = self
-        self.children.append(child)
-        return child
+    def copy_with_child(self, child: "FieldScope") -> "FieldScope":
+        new_self = copy(self)
+        new_self.children = copy(self.children)
+        new_child = copy(child)
+
+        new_self.children.append(new_child)
+        new_child.parent = new_self
+
+        return new_child
 
     @property
     def pretty_tree(self) -> str:

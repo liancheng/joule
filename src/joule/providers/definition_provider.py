@@ -159,7 +159,7 @@ class DefinitionProvider:
                         return lhs_scopes
                     case _:
                         return (
-                            parent.add_child(child)
+                            parent.copy_with_child(child)
                             for parent in lhs_scopes
                             for child in rhs_scopes
                         )
