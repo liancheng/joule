@@ -1,3 +1,4 @@
+import uuid
 from functools import cached_property
 from pathlib import Path
 
@@ -61,6 +62,28 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         }
     )
 
+    async def register_capabilities():
+        watchers = [
+            L.FileSystemWatcher(
+                glob_pattern=L.RelativePattern(
+                    base_uri=folder,
+                    pattern=f"**/*.{{{','.join(ls.config.suffixes)}}}",
+                ),
+                kind=L.WatchKind.Change | L.WatchKind.Create | L.WatchKind.Delete,
+            )
+            for folder in ls.workspace.folders.values()
+        ]
+
+        registration = L.Registration(
+            id=str(uuid.uuid4()),
+            method=L.WORKSPACE_DID_CHANGE_WATCHED_FILES,
+            register_options=L.DidChangeWatchedFilesRegistrationOptions(watchers),
+        )
+
+        await ls.client_register_capability_async(L.RegistrationParams([registration]))
+
+    await register_capabilities()
+
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
@@ -72,6 +95,15 @@ def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
 def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     ls.loader.load_and_cache_from_source(doc.uri, doc.source)
+
+
+@server.feature(L.WORKSPACE_DID_CHANGE_WATCHED_FILES)
+def did_change_watched_files(
+    ls: JouleLanguageServer,
+    params: L.DidChangeWatchedFilesParams,
+):
+    for change in params.changes:
+        ls.window_log_message(L.LogMessageParams(L.MessageType.Info, f"{change}"))
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
