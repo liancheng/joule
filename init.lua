@@ -2,6 +2,16 @@ vim.lsp.config["joule"] = {
 	cmd = { "joule", "serve" },
 	filetypes = { "jsonnet" },
 	root_markers = { "vendor", "jsonnetfile.json", ".git" },
+	capabilities = {
+		workspace = {
+			didChangeConfiguration = {
+				dynamicRegistration = true,
+			},
+			didChangeWatchedFiles = {
+				dynamicRegistration = true,
+			},
+		},
+	},
 	settings = {
 		library_paths = { "**/vendor", "**/jsonnet" },
 		exclude = { "**/.*" },
