@@ -1,4 +1,6 @@
+import asyncio
 import uuid
+from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from pygls.lsp.server import LanguageServer
 from joule.ast import URI
 from joule.config import JouleConfig
 from joule.model import DocumentLoader
+from joule.model.document_store import DocumentStore
 from joule.providers import (
     DefinitionProvider,
     DocumentHighlightProvider,
@@ -20,7 +23,34 @@ from joule.providers import (
 
 
 class JouleLanguageServer(LanguageServer):
-    config: JouleConfig = JouleConfig()
+    class State(IntEnum):
+        Created = 0
+        Initialized = 1
+
+    state: State = State.Created
+
+    _config: JouleConfig | None = None
+
+    @property
+    def config(self) -> JouleConfig:
+        assert self.state == self.State.Initialized and self._config is not None
+        return self._config
+
+    @config.setter
+    def config(self, value: JouleConfig):
+        self._config = value
+
+    _document_store: DocumentStore | None = None
+
+    @property
+    def document_store(self) -> DocumentStore:
+        assert self.state == self.State.Initialized and self._document_store is not None
+        return self._document_store
+
+    @document_store.setter
+    def document_store(self, value: DocumentStore):
+        assert self.state == self.State.Created
+        self._document_store = value
 
     @cached_property
     def loader(self) -> DocumentLoader:
@@ -54,7 +84,7 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         )
     )
 
-    ls.config = JouleConfig(
+    config = JouleConfig(
         **{
             section: config
             for section, config in zip(JouleConfig.model_fields, config_values)
@@ -62,12 +92,51 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         }
     )
 
+    match list(ls.workspace.folders.keys()):
+        case [_, _, *_]:
+            raise RuntimeError("Joule does not support multi-workspace.")
+        case [uri]:
+            workspace_uri = uri
+        case _ if (uri := ls.workspace.root_uri) is not None:
+            workspace_uri = Path.from_uri(uri).resolve().as_uri()
+        case _ if (path := ls.workspace.root_path) is not None:
+            workspace_uri = Path(path).resolve().as_uri()
+        case _:
+            raise RuntimeError("No valid workspace URI detected.")
+
+    workspace_path = Path.from_uri(workspace_uri)
+    document_store = DocumentStore(config, workspace_uri)
+
+    token = str(uuid.uuid4())
+    await ls.work_done_progress.create_async(token)
+
+    ls.work_done_progress.begin(
+        token,
+        L.WorkDoneProgressBegin(title="Indexing", cancellable=True),
+    )
+
+    def load_workspace():
+        def callback(path: Path):
+            ls.work_done_progress.report(
+                token,
+                L.WorkDoneProgressReport(
+                    cancellable=True,
+                    message=path.relative_to(workspace_path).as_posix(),
+                ),
+            )
+
+        document_store.load_workspace(callback=callback)
+
+    await asyncio.to_thread(load_workspace)
+
+    ls.work_done_progress.end(token, L.WorkDoneProgressEnd())
+
     async def register_capabilities():
         watchers = [
             L.FileSystemWatcher(
                 glob_pattern=L.RelativePattern(
                     base_uri=folder,
-                    pattern=f"**/*.{{{','.join(ls.config.suffixes)}}}",
+                    pattern=f"**/*.{{{','.join(config.suffixes)}}}",
                 ),
                 kind=L.WatchKind.Change | L.WatchKind.Create | L.WatchKind.Delete,
             )
@@ -83,6 +152,10 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         await ls.client_register_capability_async(L.RegistrationParams([registration]))
 
     await register_capabilities()
+
+    ls.config = config
+    ls.document_store = document_store
+    ls.state = JouleLanguageServer.State.Initialized
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_OPEN)
