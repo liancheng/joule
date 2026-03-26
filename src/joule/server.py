@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from enum import IntEnum
+from enum import IntEnum, auto
 from functools import cached_property
 from pathlib import Path
 
@@ -24,8 +24,9 @@ from joule.providers import (
 
 class JouleLanguageServer(LanguageServer):
     class State(IntEnum):
-        Created = 0
-        Initialized = 1
+        Created = auto()
+        Initializing = auto()
+        Initialized = auto()
 
     state: State = State.Created
 
@@ -38,6 +39,7 @@ class JouleLanguageServer(LanguageServer):
 
     @config.setter
     def config(self, value: JouleConfig):
+        assert self.state == self.State.Initializing
         self._config = value
 
     _document_store: DocumentStore | None = None
@@ -49,7 +51,7 @@ class JouleLanguageServer(LanguageServer):
 
     @document_store.setter
     def document_store(self, value: DocumentStore):
-        assert self.state == self.State.Created
+        assert self.state == self.State.Initializing
         self._document_store = value
 
     @cached_property
@@ -78,6 +80,8 @@ server = JouleLanguageServer("joule", "v0.1")
 
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
+    ls.state = JouleLanguageServer.State.Initializing
+
     config_values = await ls.workspace_configuration_async(
         L.ConfigurationParams(
             [L.ConfigurationItem(section=field) for field in JouleConfig.model_fields]
@@ -112,23 +116,32 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
 
     ls.work_done_progress.begin(
         token,
-        L.WorkDoneProgressBegin(title="Indexing", cancellable=True),
+        L.WorkDoneProgressBegin(
+            title="Loading workspace...",
+            cancellable=True,
+            percentage=0,
+        ),
     )
 
     def load_workspace():
-        def callback(path: Path):
+        paths = list(document_store.enumerate(workspace_path))
+        total = len(paths)
+        processed = 0
+
+        def callback(_: Path):
+            nonlocal processed
+
+            processed += 1
+            percentage = min(int(processed * 100.0 / total), 100)
+
             ls.work_done_progress.report(
                 token,
-                L.WorkDoneProgressReport(
-                    cancellable=True,
-                    message=path.relative_to(workspace_path).as_posix(),
-                ),
+                L.WorkDoneProgressReport(percentage=percentage),
             )
 
-        document_store.load_workspace(callback=callback)
+        document_store.load_workspace(paths, callback)
 
     await asyncio.to_thread(load_workspace)
-
     ls.work_done_progress.end(token, L.WorkDoneProgressEnd())
 
     async def register_capabilities():
