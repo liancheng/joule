@@ -6,6 +6,7 @@ from typing import Callable, Iterable
 import joule.ast as A
 from joule.ast import URI
 from joule.config import JouleConfig
+from joule.maybe import head_or_none, maybe
 from joule.model.scope_resolver import ScopeResolver
 from joule.parsing import parse_jsonnet
 
@@ -13,11 +14,10 @@ from joule.parsing import parse_jsonnet
 class DocumentStore:
     config: JouleConfig = JouleConfig()
     workspace_uri: URI
-    trees: dict[URI, A.AST] = {}
     library_paths: list[Path] = []
-    importees: dict[A.ImporteeKey, Path] = {}
-    imports: dict[URI, list[URI]] = {}
-    importedBy: dict[URI, list[URI]] = {}
+    trees: dict[URI, A.Document] = {}
+    imports: dict[URI, set[URI]] = {}
+    importedBy: dict[URI, set[URI]] = {}
 
     def __init__(self, config: JouleConfig, workspace_uri: URI) -> None:
         self.config = config
@@ -27,7 +27,7 @@ class DocumentStore:
     def workspace_path(self) -> Path:
         return Path.from_uri(self.workspace_uri)
 
-    def enumerate(
+    def scan(
         self,
         root: Path,
     ) -> Iterable[Path]:
@@ -48,9 +48,7 @@ class DocumentStore:
 
             with os.scandir(root.as_posix()) as entries:
                 yield from (
-                    file
-                    for entry in entries
-                    for file in self.enumerate(Path(entry.path))
+                    file for entry in entries for file in self.scan(Path(entry.path))
                 )
 
     def load_workspace(
@@ -73,3 +71,45 @@ class DocumentStore:
                     self.trees[uri] = ScopeResolver().resolve(ast)
                 finally:
                     pass
+
+        for ast in self.trees.values():
+            self.index_importees(ast)
+
+    def index_importees(self, ast: A.Document):
+        for importee in ast.importees:
+            for uri in maybe(self.resolve_importee(importee)):
+                self.imports[ast.location.uri].add(uri)
+                self.importedBy[uri].add(ast.location.uri)
+
+    def invalidate(self, uri: URI):
+        for importer_uri in self.importedBy[uri]:
+            self.invalidate(importer_uri)
+
+        del self.imports[uri]
+        del self.importedBy[uri]
+        del self.trees[uri]
+
+    def resolve_importee(self, importee: A.Importee) -> URI | None:
+        if (path := Path(importee.value)).is_absolute():
+            return path.as_uri()
+
+        def search_dirs() -> Iterable[Path]:
+            yield Path.from_uri(importee.location.uri).parent
+            yield from self.library_paths
+            yield self.workspace_path
+
+        return head_or_none(
+            path.resolve().as_uri()
+            for dir in search_dirs()
+            if (path := dir.joinpath(importee.value)).is_file()
+        )
+
+    def recursive_importers(self, uri: URI) -> Iterable[URI]:
+        def recurse(uri: URI, visited: set[URI]) -> Iterable[URI]:
+            if uri not in visited:
+                visited.add(uri)
+                for importer_uri in self.importedBy[uri]:
+                    yield importer_uri
+                    yield from self.recursive_importers(importer_uri)
+
+        yield from recurse(uri, set())
