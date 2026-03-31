@@ -53,9 +53,12 @@ class DocumentStore:
 
     def load_workspace(
         self,
-        paths: Iterable[Path],
+        paths: Iterable[Path] | None = None,
         callback: Callable[[Path], None] | None = None,
     ):
+        if paths is None:
+            paths = self.scan(self.workspace_path)
+
         for path in paths:
             if callback is not None:
                 callback(path)

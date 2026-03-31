@@ -10,8 +10,7 @@ from rich.console import Console
 
 from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
 from joule.config import JouleConfig
-from joule.model import ScopeResolver
-from joule.model.document_loader import DocumentLoader
+from joule.model import DocumentStore, ScopeResolver
 from joule.parsing import parse_jsonnet
 from joule.server import server
 
@@ -147,15 +146,10 @@ def index(
         include=include,
         suffixes=suffixes,
     )
-    loader = DocumentLoader(workspace_path.as_uri(), lambda: config)
+    loader = DocumentStore(config, workspace_path.as_uri())
 
     def run():
-        if path.is_file():
-            loader.load_and_cache_from_uri(path.as_uri())
-        else:
-            for file_path in loader.source_files(path):
-                print(file_path)
-                loader.load_and_cache_from_uri(file_path.as_uri())
+        loader.load_workspace()
 
     if profile:
         import cProfile
