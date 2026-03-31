@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import cached_property
 from pathlib import Path
@@ -9,6 +10,8 @@ from joule.config import JouleConfig
 from joule.maybe import head_or_none, maybe
 from joule.model.scope_resolver import ScopeResolver
 from joule.parsing import parse_jsonnet
+
+log = logging.getLogger(__name__)
 
 
 class DocumentStore:
@@ -69,11 +72,9 @@ class DocumentStore:
             elif path.is_file():
                 uri = path.as_uri()
                 try:
-                    cst = parse_jsonnet(path.read_text())
-                    ast = A.Document.from_cst(uri, cst)
-                    self.trees[uri] = ScopeResolver().resolve(ast)
+                    self.load_uri(uri)
                 finally:
-                    pass
+                    log.error("Failed to load source file: %s", uri)
 
         for ast in self.trees.values():
             self.index_importees(ast)
@@ -84,13 +85,12 @@ class DocumentStore:
                 self.imports[ast.location.uri].add(uri)
                 self.importedBy[uri].add(ast.location.uri)
 
-    def invalidate(self, uri: URI):
-        for importer_uri in self.importedBy[uri]:
-            self.invalidate(importer_uri)
-
-        del self.imports[uri]
-        del self.importedBy[uri]
-        del self.trees[uri]
+    def load_uri(self, uri: URI) -> A.Document:
+        cst = parse_jsonnet(Path.from_uri(uri).read_text())
+        ast = A.Document.from_cst(uri, cst)
+        resolved = ScopeResolver().resolve(ast)
+        self.trees[uri] = resolved
+        return resolved
 
     def resolve_importee(self, importee: A.Importee) -> URI | None:
         if (path := Path(importee.value)).is_absolute():
