@@ -8,7 +8,7 @@ from . import FakeWorkspaceTestCase
 from .dsl import FakeDocument, fake_workspace
 
 
-class TestReferences(FakeWorkspaceTestCase):
+class ReferencesTestCase(FakeWorkspaceTestCase):
     def assertVarReferenced(
         self,
         doc: FakeDocument,
@@ -38,7 +38,7 @@ class TestReferences(FakeWorkspaceTestCase):
         )
 
 
-class TestVarReferences(TestReferences):
+class TestVarReferences(ReferencesTestCase):
     def test_local(self):
         self.assertVarReferenced(
             FakeDocument(
@@ -66,7 +66,7 @@ class TestVarReferences(TestReferences):
         self.assertVarReferenced(t, var_mark=1, ref_marks=[2, 3, 4])
 
 
-class TestFieldReferences(TestReferences):
+class TestFieldReferences(ReferencesTestCase):
     def test_local(self):
         t = FakeDocument(
             dedent(

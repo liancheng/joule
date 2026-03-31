@@ -10,7 +10,7 @@ from . import FakeWorkspaceTestCase
 from .dsl import FakeDocument
 
 
-class TestDefinition(FakeWorkspaceTestCase):
+class DefinitionTestCase(FakeWorkspaceTestCase):
     def assertVarDefined(self, doc: FakeDocument, var_mark: int, ref_marks: list[int]):
         var_node = doc.node_at(doc.start_of(var_mark))
         self.assertIsInstance(var_node, Id.Var)
@@ -59,7 +59,7 @@ class TestDefinition(FakeWorkspaceTestCase):
             )
 
 
-class TestVarDefinition(TestDefinition):
+class TestVarDefinition(DefinitionTestCase):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
@@ -184,7 +184,7 @@ class TestVarDefinition(TestDefinition):
         self.assertVarDefined(t, var_mark=2, ref_marks=[3])
 
 
-class TestParamDefinition(TestDefinition):
+class TestParamDefinition(DefinitionTestCase):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
@@ -280,7 +280,7 @@ class TestParamDefinition(TestDefinition):
         )
 
 
-class TestFieldDefinition(TestDefinition):
+class TestFieldDefinition(DefinitionTestCase):
     def setUp(self) -> None:
         self.setUpPyfakefs()
 
@@ -498,7 +498,7 @@ class TestFieldDefinition(TestDefinition):
         )
 
 
-class TestParamFieldDefinition(TestDefinition):
+class TestParamFieldDefinition(DefinitionTestCase):
     def test_literal_arg(self):
         t = FakeDocument(
             dedent(

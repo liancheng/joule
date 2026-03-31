@@ -101,7 +101,7 @@ class JouleLanguageServer(LanguageServer):
         )
 
         workspace_path = self.workspace_path
-        paths = list(self._document_store.scan(workspace_path))
+        paths = list(self._document_store.scan())
         processed = 0
 
         def callback(path: Path):

@@ -20,7 +20,7 @@ class DocumentStore:
     library_paths: list[Path]
     trees: dict[URI, A.Document]
     imports: dict[URI, set[URI]]
-    importedBy: dict[URI, set[URI]]
+    imported_by: dict[URI, set[URI]]
 
     def __init__(self, config: JouleConfig, workspace_uri: URI) -> None:
         self.config = config
@@ -28,35 +28,36 @@ class DocumentStore:
         self.library_paths = []
         self.trees = {}
         self.imports = {}
-        self.importedBy = {}
+        self.imported_by = {}
 
     @cached_property
     def workspace_path(self) -> Path:
         return Path.from_uri(self.workspace_uri)
 
-    def scan(
-        self,
-        root: Path,
-    ) -> Iterable[Path]:
-        assert root.is_absolute()
+    def scan(self) -> Iterable[Path]:
+        def walk(root: Path) -> Iterable[Path]:
+            assert root.is_absolute()
 
-        if any(root.full_match(glob) for glob in self.config.exclude):
-            return
+            if any(root.full_match(glob) for glob in self.config.exclude):
+                return
 
-        if (
-            root.is_file()
-            and any(root.full_match(glob) for glob in self.config.include)
-            and any(root.name.endswith(suffix) for suffix in self.config.suffixes)
-        ):
-            yield root
+            if (
+                root.is_file()
+                and any(root.full_match(glob) for glob in self.config.include)
+                and any(root.name.endswith(suffix) for suffix in self.config.suffixes)
+            ):
+                yield root
 
-        if root.is_dir():
-            yield root
+            if root.is_dir():
+                if any(root.full_match(glob) for glob in self.config.library_paths):
+                    yield root
 
-            with os.scandir(root.as_posix()) as entries:
-                yield from (
-                    file for entry in entries for file in self.scan(Path(entry.path))
-                )
+                with os.scandir(root.as_posix()) as entries:
+                    yield from (
+                        file for entry in entries for file in walk(Path(entry.path))
+                    )
+
+        yield from walk(self.workspace_path)
 
     def load_workspace(
         self,
@@ -64,7 +65,7 @@ class DocumentStore:
         callback: Callable[[Path], None] | None = None,
     ):
         if paths is None:
-            paths = self.scan(self.workspace_path)
+            paths = self.scan()
 
         for path in paths:
             if callback is not None:
@@ -87,7 +88,7 @@ class DocumentStore:
         for importee in ast.importees:
             for uri in maybe(self.resolve_importee(importee)):
                 self.imports.setdefault(ast.location.uri, set()).add(uri)
-                self.importedBy.setdefault(uri, set()).add(ast.location.uri)
+                self.imported_by.setdefault(uri, set()).add(ast.location.uri)
 
     def load_uri(self, uri: URI) -> A.Document:
         cst = parse_jsonnet(Path.from_uri(uri).read_text())
@@ -115,7 +116,7 @@ class DocumentStore:
         def recurse(uri: URI, visited: set[URI]) -> Iterable[URI]:
             if uri not in visited:
                 visited.add(uri)
-                for importer_uri in self.importedBy[uri]:
+                for importer_uri in self.imported_by[uri]:
                     yield importer_uri
                     yield from self.recursive_importers(importer_uri)
 

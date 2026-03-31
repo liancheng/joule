@@ -1,49 +1,93 @@
-from itertools import tee
 from pathlib import Path
 from textwrap import dedent
-from typing import Iterable
 
+from joule.ast import URI
+from joule.config import JouleConfig
+from joule.model import DocumentStore
 from tests import TempWorkspaceTestCase
 
 
 class DocumentStoreTestCase(TempWorkspaceTestCase):
-    def assertPathsEquals(
-        self,
-        obtained: Iterable[Path],
-        dirs: Iterable[Path],
-        files: Iterable[Path],
-    ):
-        i1, i2 = tee(obtained)
-        obtained_dirs = filter(lambda path: path.is_dir(), i1)
-        obtained_files = filter(lambda path: path.is_file(), i2)
+    def _build_import_graph(self, graph: dict[str, set[str]]) -> dict[URI, set[URI]]:
+        return {
+            self.to_uri(k): set(map(lambda i: self.to_uri(i), v))
+            for k, v in graph.items()
+        }
 
-        self.assertSequenceEqual(sorted(obtained_dirs), sorted(dirs))
-        self.assertSequenceEqual(sorted(obtained_files), sorted(files))
+    def checkScan(self, store: DocumentStore, sub_paths: list[str]):
+        self.assertSequenceEqual(
+            sorted(store.scan()),
+            sorted(Path.from_uri(self.to_uri(sub_path)) for sub_path in sub_paths),
+        )
+
+    def checkTrees(self, store: DocumentStore, sub_paths: list[str]):
+        self.assertSequenceEqual(
+            sorted(store.trees),
+            sorted(self.to_uri(sub_path) for sub_path in sub_paths),
+        )
+
+    def checkLibraryPaths(self, store: DocumentStore, sub_paths: list[str]):
+        self.assertSequenceEqual(
+            sorted(store.library_paths),
+            sorted(Path.from_uri(self.to_uri(sub_path)) for sub_path in sub_paths),
+        )
+
+    def checkImports(self, store: DocumentStore, imports: dict[str, set[str]]):
+        self.assertDictEqual(store.imports, self._build_import_graph(imports))
+
+    def checkImportedBy(self, store: DocumentStore, imported_by: dict[str, set[str]]):
+        self.assertDictEqual(store.imported_by, self._build_import_graph(imported_by))
 
 
 class TestDocumentStoreScan(DocumentStoreTestCase):
-    def test_scan(self):
-        self.write_file("", self.to_uri(".git/config"))
-        self.write_file("", self.to_uri("d2/__init__.py"))
+    def test_exclude(self):
+        self.write_file("", self.to_uri(".DS_Store"))
 
         store = self.fake_document_store(
-            [
-                self.fake_document("1", sub_path="d1/f1.jsonnet"),
-                self.fake_document("2", sub_path="d2/f2.jsonnet"),
-            ],
+            [self.fake_document("0", sub_path="d/f.jsonnet")],
+            config=JouleConfig(exclude=["**/.DS_Store"]),
             load=False,
         )
 
-        self.assertPathsEquals(
-            store.scan(self.workspace_root),
-            dirs=[
-                self.workspace_root,
-                self.workspace_root.joinpath("d1"),
-                self.workspace_root.joinpath("d2"),
+        self.checkScan(
+            store,
+            ["d/f.jsonnet"],
+        )
+
+    def test_include(self):
+        store = self.fake_document_store(
+            [
+                self.fake_document("0", "src/f.jsonnet"),
+                self.fake_document("0", "test/f.jsonnet"),
             ],
-            files=[
-                self.workspace_root.joinpath("d1/f1.jsonnet"),
-                self.workspace_root.joinpath("d2/f2.jsonnet"),
+            config=JouleConfig(include=["**/src/**"]),
+            load=False,
+        )
+
+        self.checkScan(
+            store,
+            ["src/f.jsonnet"],
+        )
+
+    def test_library_paths(self):
+        store = self.fake_document_store(
+            [
+                self.fake_document("0", sub_path="d1/f1.jsonnet"),
+                self.fake_document("0", sub_path="vendor/d2/f2.jsonnet"),
+                self.fake_document("0", sub_path="d3/vendor/d4/f3.jsonnet"),
+            ],
+            config=JouleConfig(library_paths=["**/vendor"]),
+            load=False,
+        )
+
+        self.checkScan(
+            store,
+            [
+                "vendor",
+                "d3/vendor",
+                "d1/f1.jsonnet",
+                "vendor/d2/f2.jsonnet",
+                "d3/vendor/d4/f3.jsonnet",
             ],
         )
 
@@ -71,56 +115,39 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
             ]
         )
 
-        self.assertSequenceEqual(
-            sorted(store.trees.keys()),
-            sorted(
-                [
-                    self.to_uri("f1.jsonnet"),
-                    self.to_uri("f2.jsonnet"),
-                    self.to_uri("f3.jsonnet"),
-                    self.to_uri("f4.jsonnet"),
-                    self.to_uri("f6.jsonnet"),
-                    self.to_uri("vendor/f5.jsonnet"),
-                ]
-            ),
+        self.checkTrees(
+            store,
+            [
+                "f1.jsonnet",
+                "f2.jsonnet",
+                "f3.jsonnet",
+                "f4.jsonnet",
+                "f6.jsonnet",
+                "vendor/f5.jsonnet",
+            ],
         )
 
-        self.assertDictEqual(
-            store.imports,
+        self.checkLibraryPaths(
+            store,
+            ["vendor"],
+        )
+
+        self.checkImports(
+            store,
             {
-                self.to_uri("f2.jsonnet"): {
-                    self.to_uri("f1.jsonnet"),
-                },
-                self.to_uri("f3.jsonnet"): {
-                    self.to_uri("f2.jsonnet"),
-                },
-                self.to_uri("f4.jsonnet"): {
-                    self.to_uri("f1.jsonnet"),
-                },
-                self.to_uri("f6.jsonnet"): {
-                    self.to_uri("f2.jsonnet"),
-                    self.to_uri("f3.jsonnet"),
-                    self.to_uri("vendor/f5.jsonnet"),
-                },
+                "f2.jsonnet": {"f1.jsonnet"},
+                "f3.jsonnet": {"f2.jsonnet"},
+                "f4.jsonnet": {"f1.jsonnet"},
+                "f6.jsonnet": {"f2.jsonnet", "f3.jsonnet", "vendor/f5.jsonnet"},
             },
         )
 
-        self.assertDictEqual(
-            store.importedBy,
+        self.checkImportedBy(
+            store,
             {
-                self.to_uri("f1.jsonnet"): {
-                    self.to_uri("f2.jsonnet"),
-                    self.to_uri("f4.jsonnet"),
-                },
-                self.to_uri("f2.jsonnet"): {
-                    self.to_uri("f3.jsonnet"),
-                    self.to_uri("f6.jsonnet"),
-                },
-                self.to_uri("f3.jsonnet"): {
-                    self.to_uri("f6.jsonnet"),
-                },
-                self.to_uri("vendor/f5.jsonnet"): {
-                    self.to_uri("f6.jsonnet"),
-                },
+                "f1.jsonnet": {"f2.jsonnet", "f4.jsonnet"},
+                "f2.jsonnet": {"f3.jsonnet", "f6.jsonnet"},
+                "f3.jsonnet": {"f6.jsonnet"},
+                "vendor/f5.jsonnet": {"f6.jsonnet"},
             },
         )
