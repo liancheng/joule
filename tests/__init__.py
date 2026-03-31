@@ -23,37 +23,14 @@ class FakeWorkspaceTestCase(TestCase):
         return fake_workspace(self.fs, docs, root_uri)
 
 
-def fake_document_store(
-    docs: list[FakeDocument] | FakeDocument,
-    workspace_uri: URI | None = None,
-    config: JouleConfig = JouleConfig(),
-):
-    if isinstance(docs, FakeDocument):
-        docs = [docs]
-
-    match docs, workspace_uri:
-        case [doc], None:
-            workspace_uri = Path.from_uri(doc.uri).parent.as_uri()
-        case _, None:
-            raise ValueError("Mutiple documents provided. Missing workspace root URI.")
-        case _:
-            pass
-
-    for doc in docs:
-        doc_path = Path.from_uri(doc.uri)
-        doc_path.parent.mkdir(parents=True, exist_ok=True)
-        doc_path.write_text(doc.source)
-
-    store = DocumentStore(config, workspace_uri)
-    store.load_workspace()
-
-    return store
-
-
 class TempWorkspaceTestCase(unittest.TestCase):
     temp_dir: TemporaryDirectory
     workspace_root: Path
     workspace_uri: URI
+
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.maxDiff = None
 
     def setUp(self) -> None:
         self.temp_dir = TemporaryDirectory(ignore_cleanup_errors=True)
@@ -64,11 +41,26 @@ class TempWorkspaceTestCase(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def fake_document(self, source: str, sub_path: str = "f.jsonnet") -> FakeDocument:
-        return FakeDocument(source, uri=self.workspace_root.joinpath(sub_path).as_uri())
+        return FakeDocument(source, uri=self.to_uri(sub_path))
+
+    def write_file(self, content: str, uri: URI):
+        path = Path.from_uri(uri)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
 
     def fake_document_store(
         self,
         docs: list[FakeDocument] | FakeDocument,
         config: JouleConfig = JouleConfig(),
+        load: bool = True,
     ) -> DocumentStore:
-        return fake_document_store(docs, self.workspace_uri, config)
+        for doc in [docs] if isinstance(docs, FakeDocument) else docs:
+            self.write_file(doc.source, doc.uri)
+
+        store = DocumentStore(config, self.workspace_uri)
+        if load:
+            store.load_workspace()
+        return store
+
+    def to_uri(self, sub_path: str) -> URI:
+        return self.workspace_root.joinpath(sub_path).resolve().as_uri()
