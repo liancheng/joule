@@ -82,8 +82,8 @@ class DocumentStore:
                 uri = path.as_uri()
                 try:
                     self.load_uri(uri)
-                finally:
-                    log.error("Failed to load source file: %s", uri)
+                except Exception:
+                    log.exception("Failed to load source file: %s", uri)
 
         for ast in self.trees.values():
             self.index_importees(ast)
