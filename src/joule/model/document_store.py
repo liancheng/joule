@@ -81,7 +81,7 @@ class DocumentStore:
             elif path.is_file():
                 uri = path.as_uri()
                 try:
-                    self.load_uri(uri)
+                    self.trees[uri] = self.scoped_ast_from_uri(uri)
                 except Exception:
                     log.exception("Failed to load source file: %s", uri)
 
@@ -94,11 +94,10 @@ class DocumentStore:
                 self.imports.setdefault(ast.location.uri, set()).add(uri)
                 self.imported_by.setdefault(uri, set()).add(ast.location.uri)
 
-    def load_uri(self, uri: URI) -> A.Document:
+    def scoped_ast_from_uri(self, uri: URI) -> A.Document:
         cst = parse_jsonnet(Path.from_uri(uri).read_text())
         ast = A.Document.from_cst(uri, cst)
         resolved = ScopeResolver().resolve(ast)
-        self.trees[uri] = resolved
         return resolved
 
     def resolve_importee(self, importee: A.Importee) -> URI | None:
@@ -117,17 +116,28 @@ class DocumentStore:
         )
 
     def recursive_importers(self, uri: URI) -> Iterable[URI]:
-        def recurse(uri: URI, visited: set[URI]) -> Iterable[URI]:
-            if uri in visited:
-                return
+        """Distinct recursive importers of the document identified by `uri`."""
 
-            visited.add(uri)
-
+        def recurse(uri: URI, importers: set[URI]):
             for importer in self.imported_by.get(uri, set()):
-                yield importer
-                for recursive_importer in self.recursive_importers(importer):
-                    if recursive_importer not in visited:
-                        visited.add(recursive_importer)
-                        yield recursive_importer
+                if importer not in importers:
+                    importers.add(importer)
+                    recurse(importer, importers)
 
-        yield from recurse(uri, set())
+        importers = set()
+        recurse(uri, importers)
+        yield from importers
+
+    def add(self, uri: URI):
+        ast = self.scoped_ast_from_uri(uri)
+        self.trees[uri] = ast
+        self.index_importees(ast)
+
+    def delete(self, uri: URI):
+        self.trees.pop(uri)
+
+        for importee in self.imports.pop(uri, set()):
+            self.imported_by.get(importee, set()).discard(uri)
+
+        for importer in self.imported_by.pop(uri, set()):
+            self.imports.get(importer, set()).discard(uri)
