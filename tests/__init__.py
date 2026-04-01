@@ -51,10 +51,21 @@ class TempWorkspaceTestCase(unittest.TestCase):
 
     def fake_document_store(
         self,
-        docs: list[FakeDocument] | FakeDocument,
+        docs: list[FakeDocument] | FakeDocument | dict[str, str],
         config: JouleConfig = JouleConfig(),
         load: bool = True,
     ) -> DocumentStore:
+        match docs:
+            case FakeDocument():
+                docs = [docs]
+            case dict():
+                docs = [
+                    FakeDocument(source, self.to_uri(sub_path))
+                    for sub_path, source in docs.items()
+                ]
+            case _:
+                pass
+
         for doc in [docs] if isinstance(docs, FakeDocument) else docs:
             self.write_file(doc.source, doc.uri)
 

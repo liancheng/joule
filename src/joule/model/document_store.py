@@ -137,7 +137,13 @@ class DocumentStore:
         self.trees.pop(uri)
 
         for importee in self.imports.pop(uri, set()):
-            self.imported_by.get(importee, set()).discard(uri)
+            importers = self.imported_by.get(importee, set())
+            importers.discard(uri)
+            if len(importers) == 0:
+                self.imported_by.pop(importee)
 
         for importer in self.imported_by.pop(uri, set()):
-            self.imports.get(importer, set()).discard(uri)
+            importees = self.imports.get(importer, set())
+            importees.discard(uri)
+            if len(importees) == 0:
+                self.imports.pop(importer)

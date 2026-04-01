@@ -1,5 +1,3 @@
-from textwrap import dedent
-
 from joule.ast import URI
 from joule.config import JouleConfig
 from joule.model import DocumentStore
@@ -16,7 +14,7 @@ class DocumentStoreTestCase(TempWorkspaceTestCase):
             sorted(self.to_paths(sub_paths)),
         )
 
-    def assertIndexedDocumentsEqual(self, store: DocumentStore, sub_paths: list[str]):
+    def assertDocumentURIsEqual(self, store: DocumentStore, sub_paths: list[str]):
         self.assertSequenceEqual(
             sorted(store.trees),
             sorted(self.to_uris(sub_paths)),
@@ -102,138 +100,131 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
 
 
 class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
-    store: DocumentStore
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.store = self.fake_document_store(
-            [
-                self.fake_document(
-                    "1",
-                    sub_path="f1.jsonnet",
-                ),
-                self.fake_document(
-                    'import "f1.jsonnet"',
-                    sub_path="f2.jsonnet",
-                ),
-                self.fake_document(
-                    'import "f2.jsonnet"',
-                    sub_path="f3.jsonnet",
-                ),
-                self.fake_document(
-                    'import "f1.jsonnet"',
-                    sub_path="f4.jsonnet",
-                ),
-                self.fake_document(
-                    "2",
-                    sub_path="vendor/f5.jsonnet",
-                ),
-                self.fake_document(
-                    dedent(
-                        """\
-                        local v1 = import 'f2.jsonnet';
-                        local v2 = import 'f3.jsonnet';
-                        local v3 = import 'f5.jsonnet';
-                        v1 + v2 + v3
-                        """
-                    ),
-                    sub_path="f6.jsonnet",
-                ),
-            ],
+    def test_import_graph(self):
+        store = self.fake_document_store(
+            {
+                "f1.jsonnet": "0",
+                "f2.jsonnet": 'import "f1.jsonnet"',
+                "f3.jsonnet": 'import "f2.jsonnet"',
+            },
             load=False,
         )
 
-    def test_load_workspace(self):
-        self.store.load_workspace()
+        store.load_workspace()
 
-        self.assertIndexedDocumentsEqual(
-            self.store,
+        self.assertDocumentURIsEqual(
+            store,
             [
                 "f1.jsonnet",
                 "f2.jsonnet",
                 "f3.jsonnet",
-                "f4.jsonnet",
-                "f6.jsonnet",
-                "vendor/f5.jsonnet",
             ],
         )
 
-        self.assertLibraryPathsEqual(
-            self.store,
-            ["vendor"],
-        )
-
         self.assertImportsEqual(
-            self.store,
+            store,
             {
                 "f2.jsonnet": {"f1.jsonnet"},
                 "f3.jsonnet": {"f2.jsonnet"},
-                "f4.jsonnet": {"f1.jsonnet"},
-                "f6.jsonnet": {"f2.jsonnet", "f3.jsonnet", "vendor/f5.jsonnet"},
             },
         )
 
         self.assertImportedByEqual(
-            self.store,
+            store,
             {
-                "f1.jsonnet": {"f2.jsonnet", "f4.jsonnet"},
-                "f2.jsonnet": {"f3.jsonnet", "f6.jsonnet"},
-                "f3.jsonnet": {"f6.jsonnet"},
-                "vendor/f5.jsonnet": {"f6.jsonnet"},
+                "f1.jsonnet": {"f2.jsonnet"},
+                "f2.jsonnet": {"f3.jsonnet"},
             },
         )
 
         self.assertRecursiveImportersEqual(
-            self.store,
+            store,
             importee="f1.jsonnet",
             importers=[
                 "f2.jsonnet",
                 "f3.jsonnet",
-                "f4.jsonnet",
-                "f6.jsonnet",
             ],
         )
 
-    def test_delete(self):
-        self.store.load_workspace()
-        self.store.delete(self.to_uri("f2.jsonnet"))
+    def test_library_paths(self):
+        store = self.fake_document_store(
+            {
+                "f1.jsonnet": "0",
+                # Should resolve to "f1.jsonnet" instead of 'lib/f1.jsonnet'.
+                "f2.jsonnet": 'import "f1.jsonnet"',
+                # Should resolve to "lib/f3.jsonnet".
+                "f4.jsonnet": 'import "f3.jsonnet"',
+                "lib/f1.jsonnet": "0",
+                "lib/f3.jsonnet": "0",
+            },
+            config=JouleConfig(library_paths=["**/lib"]),
+        )
 
-        self.assertIndexedDocumentsEqual(
-            self.store,
+        self.assertDocumentURIsEqual(
+            store,
+            [
+                "f1.jsonnet",
+                "f2.jsonnet",
+                "f4.jsonnet",
+                "lib/f1.jsonnet",
+                "lib/f3.jsonnet",
+            ],
+        )
+
+        self.assertLibraryPathsEqual(store, ["lib"])
+
+        self.assertImportsEqual(
+            store,
+            {
+                "f2.jsonnet": {"f1.jsonnet"},
+                "f4.jsonnet": {"lib/f3.jsonnet"},
+            },
+        )
+
+    def test_delete(self):
+        store = self.fake_document_store(
+            {
+                "f1.jsonnet": "1",
+                "f2.jsonnet": 'import "f1.jsonnet"',
+                "f3.jsonnet": 'import "f2.jsonnet"',
+                "f4.jsonnet": 'import "f1.jsonnet"',
+                "f5.jsonnet": 'import "f4.jsonnet"',
+            }
+        )
+
+        store.delete(self.to_uri("f2.jsonnet"))
+
+        self.assertDocumentURIsEqual(
+            store,
             [
                 "f1.jsonnet",
                 "f3.jsonnet",
                 "f4.jsonnet",
-                "f6.jsonnet",
-                "vendor/f5.jsonnet",
+                "f5.jsonnet",
             ],
         )
 
-        self.assertLibraryPathsEqual(
-            self.store,
-            ["vendor"],
-        )
-
         self.assertImportsEqual(
-            self.store,
+            store,
             {
-                "f3.jsonnet": set(),
                 "f4.jsonnet": {"f1.jsonnet"},
-                "f6.jsonnet": {"f3.jsonnet", "vendor/f5.jsonnet"},
+                "f5.jsonnet": {"f4.jsonnet"},
             },
         )
 
         self.assertImportedByEqual(
-            self.store,
+            store,
             {
                 "f1.jsonnet": {"f4.jsonnet"},
-                "f3.jsonnet": {"f6.jsonnet"},
-                "vendor/f5.jsonnet": {"f6.jsonnet"},
+                "f4.jsonnet": {"f5.jsonnet"},
             },
         )
 
         self.assertRecursiveImportersEqual(
-            self.store,
+            store,
             importee="f1.jsonnet",
-            importers=["f4.jsonnet"],
+            importers=[
+                "f4.jsonnet",
+                "f5.jsonnet",
+            ],
         )
