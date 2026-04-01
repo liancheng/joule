@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Iterable
 
 from pyfakefs.fake_filesystem_unittest import TestCase
 
@@ -62,5 +63,14 @@ class TempWorkspaceTestCase(unittest.TestCase):
             store.load_workspace()
         return store
 
+    def to_path(self, sub_path: str) -> Path:
+        return self.workspace_root.joinpath(sub_path).resolve()
+
+    def to_paths(self, sub_paths: Iterable[str]) -> Iterable[Path]:
+        return (self.to_path(sub_path) for sub_path in sub_paths)
+
     def to_uri(self, sub_path: str) -> URI:
-        return self.workspace_root.joinpath(sub_path).resolve().as_uri()
+        return self.to_path(sub_path).as_uri()
+
+    def to_uris(self, sub_paths: Iterable[str]) -> Iterable[URI]:
+        return (self.to_uri(sub_path) for sub_path in sub_paths)

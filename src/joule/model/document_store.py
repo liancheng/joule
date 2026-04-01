@@ -35,6 +35,8 @@ class DocumentStore:
         return Path.from_uri(self.workspace_uri)
 
     def scan(self) -> Iterable[Path]:
+        """Scans the workspace for source files and library search paths."""
+
         def walk(root: Path) -> Iterable[Path]:
             assert root.is_absolute()
 
@@ -64,6 +66,8 @@ class DocumentStore:
         paths: Iterable[Path] | None = None,
         callback: Callable[[Path], None] | None = None,
     ):
+        """Loads and indexes all source files in the workspace."""
+
         if paths is None:
             paths = self.scan()
 
@@ -114,10 +118,16 @@ class DocumentStore:
 
     def recursive_importers(self, uri: URI) -> Iterable[URI]:
         def recurse(uri: URI, visited: set[URI]) -> Iterable[URI]:
-            if uri not in visited:
-                visited.add(uri)
-                for importer_uri in self.imported_by[uri]:
-                    yield importer_uri
-                    yield from self.recursive_importers(importer_uri)
+            if uri in visited:
+                return
+
+            visited.add(uri)
+
+            for importer in self.imported_by.get(uri, set()):
+                yield importer
+                for recursive_importer in self.recursive_importers(importer):
+                    if recursive_importer not in visited:
+                        visited.add(recursive_importer)
+                        yield recursive_importer
 
         yield from recurse(uri, set())

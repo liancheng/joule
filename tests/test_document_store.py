@@ -1,4 +1,3 @@
-from pathlib import Path
 from textwrap import dedent
 
 from joule.ast import URI
@@ -9,34 +8,46 @@ from tests import TempWorkspaceTestCase
 
 class DocumentStoreTestCase(TempWorkspaceTestCase):
     def _build_import_graph(self, graph: dict[str, set[str]]) -> dict[URI, set[URI]]:
-        return {
-            self.to_uri(k): set(map(lambda i: self.to_uri(i), v))
-            for k, v in graph.items()
-        }
+        return {self.to_uri(k): set(self.to_uris(v)) for k, v in graph.items()}
 
-    def checkScan(self, store: DocumentStore, sub_paths: list[str]):
+    def assertScannedPathsEqual(self, store: DocumentStore, sub_paths: list[str]):
         self.assertSequenceEqual(
             sorted(store.scan()),
-            sorted(Path.from_uri(self.to_uri(sub_path)) for sub_path in sub_paths),
+            sorted(self.to_paths(sub_paths)),
         )
 
-    def checkTrees(self, store: DocumentStore, sub_paths: list[str]):
+    def assertIndexedDocumentsEqual(self, store: DocumentStore, sub_paths: list[str]):
         self.assertSequenceEqual(
             sorted(store.trees),
-            sorted(self.to_uri(sub_path) for sub_path in sub_paths),
+            sorted(self.to_uris(sub_paths)),
         )
 
-    def checkLibraryPaths(self, store: DocumentStore, sub_paths: list[str]):
+    def assertLibraryPathsEqual(self, store: DocumentStore, sub_paths: list[str]):
         self.assertSequenceEqual(
             sorted(store.library_paths),
-            sorted(Path.from_uri(self.to_uri(sub_path)) for sub_path in sub_paths),
+            sorted(self.to_paths(sub_paths)),
         )
 
-    def checkImports(self, store: DocumentStore, imports: dict[str, set[str]]):
+    def assertImportsEqual(self, store: DocumentStore, imports: dict[str, set[str]]):
         self.assertDictEqual(store.imports, self._build_import_graph(imports))
 
-    def checkImportedBy(self, store: DocumentStore, imported_by: dict[str, set[str]]):
+    def assertImportedByEqual(
+        self,
+        store: DocumentStore,
+        imported_by: dict[str, set[str]],
+    ):
         self.assertDictEqual(store.imported_by, self._build_import_graph(imported_by))
+
+    def assertRecursiveImportersEqual(
+        self,
+        store: DocumentStore,
+        importee: str,
+        importers: list[str],
+    ):
+        self.assertSequenceEqual(
+            sorted(store.recursive_importers(self.to_uri(importee))),
+            sorted(self.to_uris(importers)),
+        )
 
 
 class TestDocumentStoreScan(DocumentStoreTestCase):
@@ -49,7 +60,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
             load=False,
         )
 
-        self.checkScan(
+        self.assertScannedPathsEqual(
             store,
             ["d/f.jsonnet"],
         )
@@ -64,7 +75,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
             load=False,
         )
 
-        self.checkScan(
+        self.assertScannedPathsEqual(
             store,
             ["src/f.jsonnet"],
         )
@@ -80,7 +91,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
             load=False,
         )
 
-        self.checkScan(
+        self.assertScannedPathsEqual(
             store,
             [
                 "vendor",
@@ -115,7 +126,7 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
             ]
         )
 
-        self.checkTrees(
+        self.assertIndexedDocumentsEqual(
             store,
             [
                 "f1.jsonnet",
@@ -127,12 +138,12 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
             ],
         )
 
-        self.checkLibraryPaths(
+        self.assertLibraryPathsEqual(
             store,
             ["vendor"],
         )
 
-        self.checkImports(
+        self.assertImportsEqual(
             store,
             {
                 "f2.jsonnet": {"f1.jsonnet"},
@@ -142,7 +153,7 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
             },
         )
 
-        self.checkImportedBy(
+        self.assertImportedByEqual(
             store,
             {
                 "f1.jsonnet": {"f2.jsonnet", "f4.jsonnet"},
@@ -150,4 +161,15 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
                 "f3.jsonnet": {"f6.jsonnet"},
                 "vendor/f5.jsonnet": {"f6.jsonnet"},
             },
+        )
+
+        self.assertRecursiveImportersEqual(
+            store,
+            importee="f1.jsonnet",
+            importers=[
+                "f2.jsonnet",
+                "f3.jsonnet",
+                "f4.jsonnet",
+                "f6.jsonnet",
+            ],
         )
