@@ -25,7 +25,6 @@ dev = [
     "debugpy>=1.8.19",
     "green>=4.0.2",
     "parsy>=2.2",
-    "pyfakefs>=6.1.1",
     "ruff>=0.15.0",
 ]
 
