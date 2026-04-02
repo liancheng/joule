@@ -52,7 +52,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
     def test_exclude(self):
         self.write_file("", self.to_uri(".DS_Store"))
 
-        store = self.workspace(
+        store = self.fake_workspace(
             [self.fake_document("0", sub_path="d/f.jsonnet")],
             config=JouleConfig(exclude=["**/.DS_Store"]),
             load=False,
@@ -64,7 +64,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
         )
 
     def test_include(self):
-        store = self.workspace(
+        store = self.fake_workspace(
             [
                 self.fake_document("0", "src/f.jsonnet"),
                 self.fake_document("0", "test/f.jsonnet"),
@@ -79,7 +79,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
         )
 
     def test_library_paths(self):
-        store = self.workspace(
+        store = self.fake_workspace(
             [
                 self.fake_document("0", sub_path="vendor/f.jsonnet"),
                 self.fake_document("0", sub_path="d/vendor/f.jsonnet"),
@@ -101,7 +101,7 @@ class TestDocumentStoreScan(DocumentStoreTestCase):
 
 class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
     def test_import_graph(self):
-        store = self.workspace(
+        store = self.fake_workspace(
             {
                 "f1.jsonnet": "0",
                 "f2.jsonnet": 'import "f1.jsonnet"',
@@ -147,7 +147,7 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
         )
 
     def test_library_paths(self):
-        store = self.workspace(
+        store = self.fake_workspace(
             {
                 "f1.jsonnet": "0",
                 # Should resolve to "f1.jsonnet" instead of 'lib/f1.jsonnet'.
@@ -182,7 +182,7 @@ class TestDocumentStoreLoadWorkspace(DocumentStoreTestCase):
         )
 
     def test_delete(self):
-        store = self.workspace(
+        store = self.fake_workspace(
             {
                 "f1.jsonnet": "1",
                 "f2.jsonnet": 'import "f1.jsonnet"',

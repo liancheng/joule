@@ -15,7 +15,7 @@ class DefinitionTestCase(TempWorkspaceTestCase):
         var_node = doc.node_at(doc.start_of(var_mark))
         self.assertIsInstance(var_node, Id.Var)
 
-        store = self.workspace(doc)
+        store = self.fake_workspace(doc)
         def_provider = DefinitionProvider(store)
 
         for ref_mark in ref_marks:
@@ -44,11 +44,11 @@ class DefinitionTestCase(TempWorkspaceTestCase):
     def assertFieldDefined(
         self,
         store: DocumentStore,
-        keys: list[AST],
+        fields: list[AST],
         refs: list[AST],
     ):
         def_provider = DefinitionProvider(store)
-        key_locations = [key.to(Id.Field).location for key in keys]
+        key_locations = [key.to(Id.Field).location for key in fields]
 
         for ref in refs:
             ref_location = ref.to(Id.FieldRef).location
@@ -195,7 +195,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
         self.assertParamDefined(
-            self.workspace(t),
+            self.fake_workspace(t),
             params=[t @ 1],
             refs=[t @ 2],
         )
@@ -215,7 +215,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
         self.assertParamDefined(
-            self.workspace(t),
+            self.fake_workspace(t),
             params=[t @ 1],
             refs=[t @ 2],
         )
@@ -237,7 +237,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
         self.assertParamDefined(
-            self.workspace(t),
+            self.fake_workspace(t),
             params=[t @ 1, t @ 2],
             refs=[t @ 3],
         )
@@ -265,7 +265,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
         self.assertParamDefined(
-            self.workspace([t1, t2]),
+            self.fake_workspace([t1, t2]),
             params=[t1 @ 1],
             refs=[t2 @ 1],
         )
@@ -283,8 +283,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 2],
         )
 
@@ -299,14 +299,14 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 3],
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 2],
             refs=[t @ 4],
         )
 
@@ -321,8 +321,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 2],
             refs=[t @ 1],
         )
 
@@ -337,8 +337,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1, t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 1, t @ 2],
             refs=[t @ 3],
         )
 
@@ -353,8 +353,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 2],
         )
 
@@ -374,8 +374,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1, t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 1, t @ 2],
             refs=[t @ 3],
         )
 
@@ -422,8 +422,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(docs=[t1, t2, t3, t4]),
-            keys=[t1 @ 1, t2 @ 1],
+            self.fake_workspace(docs=[t1, t2, t3, t4]),
+            fields=[t1 @ 1, t2 @ 1],
             refs=[t4 @ 1],
         )
 
@@ -436,8 +436,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 2],
         )
 
@@ -452,11 +452,11 @@ class TestFieldDefinition(DefinitionTestCase):
             """
         )
 
-        w = self.workspace(t)
+        w = self.fake_workspace(t)
 
         self.assertFieldDefined(
             w,
-            keys=[t @ 1],
+            fields=[t @ 1],
             refs=[t @ 3],
         )
 
@@ -477,8 +477,8 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2, t @ 3],
+            self.fake_workspace(t),
+            fields=[t @ 2, t @ 3],
             refs=[t @ 1],
         )
 
@@ -497,8 +497,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 2],
             refs=[t @ 1],
         )
 
@@ -516,8 +516,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 2],
             refs=[t @ 1],
         )
 
@@ -544,8 +544,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(docs=[t1, t2]),
-            keys=[t2 @ 1],
+            self.fake_workspace(docs=[t1, t2]),
+            fields=[t2 @ 1],
             refs=[t1 @ 1],
         )
 
@@ -572,8 +572,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace([t1, t2]),
-            keys=[t1 @ 1, t2 @ 1],
+            self.fake_workspace([t1, t2]),
+            fields=[t1 @ 1, t2 @ 1],
             refs=[t1 @ 2],
         )
 
@@ -586,8 +586,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 2],
         )
 
@@ -600,8 +600,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 1],
+            self.fake_workspace(t),
+            fields=[t @ 1],
             refs=[t @ 2],
         )
 
@@ -619,8 +619,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[t @ 2],
+            self.fake_workspace(t),
+            fields=[t @ 2],
             refs=[t @ 1],
         )
 
@@ -636,7 +636,7 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
         self.assertFieldDefined(
-            self.workspace(t),
-            keys=[],
+            self.fake_workspace(t),
+            fields=[],
             refs=[t @ 1],
         )

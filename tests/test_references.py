@@ -15,7 +15,7 @@ class ReferencesTestCase(TempWorkspaceTestCase):
         var_mark: int,
         ref_marks: list[int],
     ):
-        store = self.workspace(doc)
+        store = self.fake_workspace(doc)
         ref_provider = ReferencesProvider(store)
         self.assertSequenceEqual(
             [doc.node_at(ref_mark) for ref_mark in ref_marks],
@@ -78,7 +78,7 @@ class TestFieldReferences(ReferencesTestCase):
         )
 
         self.assertFieldReferenced(
-            self.workspace(t),
+            self.fake_workspace(t),
             field=t @ 1,
             refs=[t @ 2],
         )
@@ -115,7 +115,7 @@ class TestFieldReferences(ReferencesTestCase):
         )
 
         self.assertFieldReferenced(
-            self.workspace([t1, t2, t3]),
+            self.fake_workspace([t1, t2, t3]),
             field=t1 @ 1,
             refs=[t2 @ 1, t3 @ 1],
         )
@@ -131,7 +131,7 @@ class TestFieldReferences(ReferencesTestCase):
         )
 
         self.assertFieldReferenced(
-            self.workspace(t),
+            self.fake_workspace(t),
             field=t @ 1,
             refs=[t @ 2],
         )

@@ -35,7 +35,7 @@ class TempWorkspaceTestCase(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def workspace(
+    def fake_workspace(
         self,
         docs: list[FakeDocument] | FakeDocument | dict[str, str],
         config: JouleConfig = JouleConfig(),
