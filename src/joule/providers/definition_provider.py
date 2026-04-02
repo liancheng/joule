@@ -12,12 +12,12 @@ from joule.ast import (
     enclosing_node,
 )
 from joule.maybe import maybe
-from joule.model import DocumentLoader
+from joule.model import DocumentStore
 
 
 class DefinitionProvider:
-    def __init__(self, loader: DocumentLoader) -> None:
-        self.loader = loader
+    def __init__(self, store: DocumentStore) -> None:
+        self.store = store
 
     def serve(self, tree: A.Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
@@ -37,20 +37,16 @@ class DefinitionProvider:
             case A.Id.VarRef() as ref:
                 return (b.id.location for b in self.find_var_binding(ref))
             case A.Importee():
-                return (doc.location for doc in maybe(self.loader.from_importee(node)))
+                return (
+                    doc.location
+                    for uri in maybe(self.store.resolve_importee(node))
+                    for doc in maybe(self.store.get(uri))
+                )
             case _:
                 return ()
 
     def find_var_binding(self, ref: A.Id.VarRef) -> Iterable[VarBinding]:
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
-
-    def find_field_binding(self, ref: A.Id.FieldRef) -> Iterable[FieldBinding]:
-        return (
-            binding
-            for field_access in maybe(enclosing_node(ref, A.FieldAccess, level=1))
-            for scope in self.find_field_scope(field_access.obj)
-            for binding in maybe(scope.get(ref.name))
-        )
 
     def find_param_binding(self, ref: A.Id.ParamRef) -> Iterable[VarBinding]:
         return (
@@ -62,52 +58,13 @@ class DefinitionProvider:
             for binding in maybe(param.id.binding)
         )
 
-    def find_fn(self, node: A.AST) -> Iterable[A.Fn]:
-        """Given a function returning AST node, finds the definition of the function."""
-        match node:
-            case A.Call():
-                return (
-                    fn
-                    for callee in self.find_fn(node.callee)
-                    for tail in callee.body.tails
-                    for fn in self.find_fn(tail)
-                )
-
-            case A.Field() if isinstance(fn := node.value, A.Fn):
-                return maybe(fn)
-
-            case A.FieldAccess():
-                return self.find_fn(node.field)
-
-            case A.Fn():
-                return maybe(node)
-
-            case A.Id.FieldRef():
-                return (
-                    fn
-                    for binding in self.find_field_binding(node)
-                    for fn in self.find_fn(binding.target)
-                )
-
-            case A.Id.VarRef():
-                return (
-                    fn
-                    for binding in self.find_var_binding(node)
-                    for fn in self.find_fn(binding.target)
-                )
-
-            case A.Import() if node.type == A.ImportType.Default:
-                return (
-                    fn
-                    for importee in maybe(self.loader.from_importee(node.importee))
-                    for fn in self.find_fn(importee)
-                )
-
-            case A.Expr() if list(node.tails) != [node]:
-                return (fn for tail in node.tails for fn in self.find_fn(tail))
-
-            case _:
-                return ()
+    def find_field_binding(self, ref: A.Id.FieldRef) -> Iterable[FieldBinding]:
+        return (
+            binding
+            for field_access in maybe(enclosing_node(ref, A.FieldAccess, level=1))
+            for scope in self.find_field_scope(field_access.obj)
+            for binding in maybe(scope.get(ref.name))
+        )
 
     def find_field_scope(self, node: A.AST) -> Iterable[FieldScope]:
         """Given an AST node returning an object, finds the field scopes of the object.
@@ -234,7 +191,8 @@ class DefinitionProvider:
             case A.Import() if node.type == A.ImportType.Default:
                 return (
                     scope
-                    for importee in maybe(self.loader.from_importee(node.importee))
+                    for uri in maybe(self.store.resolve_importee(node.importee))
+                    for importee in maybe(self.store.get(uri))
                     for scope in self.find_field_scope(importee)
                 )
 
@@ -277,8 +235,60 @@ class DefinitionProvider:
         return (
             call
             for doc in maybe(enclosing_node(fn, A.Document))
-            for tree in chain(self.loader.transitive_importers(doc), [doc])
+            for uri in chain(
+                self.store.recursive_importers(doc.location.uri),
+                [doc.location.uri],
+            )
+            for tree in maybe(self.store.get(uri))
             for call in tree.calls
             for callee in self.find_fn(call.callee)
             if callee == fn
         )
+
+    def find_fn(self, node: A.AST) -> Iterable[A.Fn]:
+        """Given a function returning AST node, finds the definition of the function."""
+        match node:
+            case A.Call():
+                return (
+                    fn
+                    for callee in self.find_fn(node.callee)
+                    for tail in callee.body.tails
+                    for fn in self.find_fn(tail)
+                )
+
+            case A.Field() if isinstance(fn := node.value, A.Fn):
+                return maybe(fn)
+
+            case A.FieldAccess():
+                return self.find_fn(node.field)
+
+            case A.Fn():
+                return maybe(node)
+
+            case A.Id.FieldRef():
+                return (
+                    fn
+                    for binding in self.find_field_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
+
+            case A.Id.VarRef():
+                return (
+                    fn
+                    for binding in self.find_var_binding(node)
+                    for fn in self.find_fn(binding.target)
+                )
+
+            case A.Import() if node.type == A.ImportType.Default:
+                return (
+                    fn
+                    for uri in maybe(self.store.resolve_importee(node.importee))
+                    for importee in maybe(self.store.get(uri))
+                    for fn in self.find_fn(importee)
+                )
+
+            case A.Expr() if list(node.tails) != [node]:
+                return (fn for tail in node.tails for fn in self.find_fn(tail))
+
+            case _:
+                return ()

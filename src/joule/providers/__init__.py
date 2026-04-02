@@ -7,11 +7,11 @@ from .references_provider import ReferencesProvider
 from .rename_provider import RenameProvider
 
 __all__ = [
-    "DefinitionProvider",
     "DocumentHighlightProvider",
     "DocumentSymbolProvider",
     "FoldingRangeProvider",
     "InlayHintProvider",
+    "DefinitionProvider",
     "ReferencesProvider",
     "RenameProvider",
 ]

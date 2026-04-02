@@ -1,16 +1,12 @@
 from itertools import accumulate, chain
-from pathlib import Path
-from typing import Sequence
 
 import lsprotocol.types as L
 import tree_sitter as T
-from pyfakefs.fake_filesystem import FakeFilesystem
 from rich.text import Text
 
 from joule import ast as A
-from joule.ast import URI
 from joule.maybe import must
-from joule.model import DocumentLoader, ScopeResolver
+from joule.model import ScopeResolver
 from joule.parsing import parse_jsonnet
 
 from .marked_range import parse_marked_locations
@@ -284,30 +280,3 @@ class FakeDocument:
 
     def dollar(self, *, at: int) -> A.Dollar:
         return A.Dollar(self.at(at))
-
-
-def fake_workspace(
-    fs: FakeFilesystem,
-    docs: FakeDocument | Sequence[FakeDocument],
-    root_uri: URI | None = None,
-) -> DocumentLoader:
-    if isinstance(docs, FakeDocument):
-        docs = [docs]
-
-    match docs, root_uri:
-        case [doc], None:
-            root_uri = Path.from_uri(doc.uri).parent.as_uri()
-        case _, None:
-            raise ValueError("Mutiple documents provided. Missing workspace root URI.")
-        case _:
-            pass
-
-    for doc in docs:
-        path = Path.from_uri(doc.uri).as_posix()
-
-        if fs.exists(path):
-            fs.remove(path)
-
-        fs.create_file(file_path=path, contents=doc.source)
-
-    return DocumentLoader(root_uri)

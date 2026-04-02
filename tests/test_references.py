@@ -1,22 +1,22 @@
 from textwrap import dedent
 
 from joule.ast import AST, Id
-from joule.model.document_loader import DocumentLoader
+from joule.model import DocumentStore
 from joule.providers import ReferencesProvider
 
-from . import FakeWorkspaceTestCase
-from .dsl import FakeDocument, fake_workspace
+from . import TempWorkspaceTestCase
+from .dsl import FakeDocument
 
 
-class ReferencesTestCase(FakeWorkspaceTestCase):
+class ReferencesTestCase(TempWorkspaceTestCase):
     def assertVarReferenced(
         self,
         doc: FakeDocument,
         var_mark: int,
         ref_marks: list[int],
     ):
-        loader = self.workspace(doc)
-        ref_provider = ReferencesProvider(loader)
+        store = self.workspace(doc)
+        ref_provider = ReferencesProvider(store)
         self.assertSequenceEqual(
             [doc.node_at(ref_mark) for ref_mark in ref_marks],
             list(ref_provider.find_references(doc.node_at(var_mark))),
@@ -24,11 +24,11 @@ class ReferencesTestCase(FakeWorkspaceTestCase):
 
     def assertFieldReferenced(
         self,
-        loader: DocumentLoader,
+        store: DocumentStore,
         field: AST,
         refs: list[AST],
     ):
-        ref_provider = ReferencesProvider(loader)
+        ref_provider = ReferencesProvider(store)
         self.assertSequenceEqual(
             [ref.to(Id.FieldRef) for ref in refs],
             sorted(
@@ -41,7 +41,7 @@ class ReferencesTestCase(FakeWorkspaceTestCase):
 class TestVarReferences(ReferencesTestCase):
     def test_local(self):
         self.assertVarReferenced(
-            FakeDocument(
+            self.fake_document(
                 dedent(
                     """\
                     local v = 1; v
@@ -54,7 +54,7 @@ class TestVarReferences(ReferencesTestCase):
         )
 
     def test_if(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 function(p) if p > 0 then p else -p
@@ -68,7 +68,7 @@ class TestVarReferences(ReferencesTestCase):
 
 class TestFieldReferences(ReferencesTestCase):
     def test_local(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = { f: 1 }; v.f
@@ -84,48 +84,44 @@ class TestFieldReferences(ReferencesTestCase):
         )
 
     def test_import(self):
-        t1 = FakeDocument(
+        t1 = self.fake_document(
             dedent(
                 """\
                 { f: 1 }
                   ^1
                 """
             ),
-            uri="file:///tmp/doc1.jsonnet",
+            "doc1.jsonnet",
         )
 
-        t2 = FakeDocument(
+        t2 = self.fake_document(
             dedent(
                 """\
                 (import "doc1.jsonnet").f
                                         ^1
                 """
             ),
-            uri="file:///tmp/doc2.jsonnet",
+            "doc2.jsonnet",
         )
 
-        t3 = FakeDocument(
+        t3 = self.fake_document(
             dedent(
                 """\
                 (import "doc1.jsonnet").f
                                         ^1
                 """
             ),
-            uri="file:///tmp/doc3.jsonnet",
+            "doc3.jsonnet",
         )
 
         self.assertFieldReferenced(
-            fake_workspace(
-                self.fs,
-                docs=[t1, t2, t3],
-                root_uri="file:///tmp",
-            ),
+            self.workspace([t1, t2, t3]),
             field=t1 @ 1,
             refs=[t2 @ 1, t3 @ 1],
         )
 
     def test_call(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local fn() = { f: 1 }; fn().f

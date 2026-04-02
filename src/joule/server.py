@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 from enum import IntEnum, auto
-from functools import cached_property, partial
+from functools import partial
 from pathlib import Path
 
 import lsprotocol.types as L
@@ -9,7 +9,7 @@ from pygls.lsp.server import LanguageServer
 
 from joule.ast import URI
 from joule.config import JouleConfig
-from joule.model import DocumentLoader
+from joule.maybe import head_or_none, maybe
 from joule.model.document_store import DocumentStore
 from joule.providers import (
     DefinitionProvider,
@@ -29,6 +29,17 @@ class JouleLanguageServer(LanguageServer):
         Initialized = auto()
 
     state: State = State.Created
+
+    _ready: asyncio.Future | None = None
+
+    @property
+    def ready(self) -> asyncio.Future:
+        assert self._ready is not None
+        return self._ready
+
+    @ready.setter
+    def ready(self, value: asyncio.Future):
+        self._ready = value
 
     @property
     def workspace_uri(self) -> URI:
@@ -82,7 +93,7 @@ class JouleLanguageServer(LanguageServer):
     _document_store: DocumentStore | None = None
 
     @property
-    def document_store(self) -> DocumentStore:
+    def store(self) -> DocumentStore:
         assert self.state == self.State.Initialized
         assert self._document_store is not None
         return self._document_store
@@ -151,28 +162,13 @@ class JouleLanguageServer(LanguageServer):
 
         await self.client_register_capability_async(L.RegistrationParams(registrations))
 
-    @cached_property
-    def loader(self) -> DocumentLoader:
-        workspace_uri: URI | None = None
-
-        match list(self.workspace.folders.keys()):
-            # Two or more workspace folders, not supported
-            case [_, _, *_]:
-                raise RuntimeError("Joule does not support multi-workspace.")
-            # Single workspace folder
-            case [workspace_uri]:
-                pass
-            # Falls back to workspace root URI, if any
-            case _ if (uri := self.workspace.root_uri) is not None:
-                workspace_uri = Path.from_uri(uri).resolve().as_uri()
-            # Falls back to workspace path, if any
-            case _ if (workspace_path := self.workspace.root_path) is not None:
-                workspace_uri = Path(workspace_path).resolve().as_uri()
-
-        return DocumentLoader(workspace_uri, lambda: self.config)
-
 
 server = JouleLanguageServer("joule", "v0.1")
+
+
+@server.feature(L.INITIALIZE)
+async def initialize(ls: JouleLanguageServer, _: L.InitializeParams):
+    ls.ready = asyncio.get_running_loop().create_future()
 
 
 @server.feature(L.INITIALIZED)
@@ -184,112 +180,107 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
     await ls.register_capabilities()
 
     ls.state = JouleLanguageServer.State.Initialized
-
-
-@server.feature(L.TEXT_DOCUMENT_DID_OPEN)
-def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
-    doc = params.text_document
-    ls.loader.load_and_cache_from_source(doc.uri, doc.text)
+    ls.ready.set_result(True)
 
 
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
-def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
+async def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    ls.document_store.update(doc.uri)
-    ls.loader.load_and_cache_from_source(doc.uri, doc.source)
+    ls.store.update(doc.uri)
 
 
 @server.feature(L.WORKSPACE_DID_CHANGE_WATCHED_FILES)
-def did_change_watched_files(
+async def did_change_watched_files(
     ls: JouleLanguageServer,
     params: L.DidChangeWatchedFilesParams,
 ):
+    await ls.ready
     for change in params.changes:
         match change.type:
             case L.FileChangeType.Changed:
-                ls.document_store.update(change.uri)
+                ls.store.update(change.uri)
             case L.FileChangeType.Created:
-                ls.document_store.add(change.uri)
+                ls.store.add(change.uri)
             case L.FileChangeType.Deleted:
-                ls.document_store.delete(change.uri)
+                ls.store.delete(change.uri)
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
-def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
+async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
-        DocumentSymbolProvider().serve(tree)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+    return head_or_none(
+        DocumentSymbolProvider().serve(tree) for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
-def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
+async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
-        DefinitionProvider(ls.loader).serve(tree, params.position)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+    return head_or_none(
+        DefinitionProvider(ls.store).serve(tree, params.position)
+        for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
-def references(ls: JouleLanguageServer, params: L.ReferenceParams):
-    # TODO: Add progress reporting
+async def references(ls: JouleLanguageServer, params: L.ReferenceParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
-        ReferencesProvider(ls.loader).serve(tree, params.position)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+    return head_or_none(
+        ReferencesProvider(ls.store).serve(tree, params.position)
+        for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_INLAY_HINT)
-def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
+async def inlay_hint(ls: JouleLanguageServer, params: L.InlayHintParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
-        InlayHintProvider().serve(tree)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+    return head_or_none(
+        InlayHintProvider().serve(tree) for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
-def document_highlight(ls: JouleLanguageServer, params: L.DocumentHighlightParams):
+async def document_highlight(
+    ls: JouleLanguageServer,
+    params: L.DocumentHighlightParams,
+):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
+    return head_or_none(
         DocumentHighlightProvider().serve(tree, params.position)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+        for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_RENAME)
-def rename(ls: JouleLanguageServer, params: L.RenameParams):
+async def rename(ls: JouleLanguageServer, params: L.RenameParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
+    return head_or_none(
         RenameProvider().serve(tree, params.position, params.new_name)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+        for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_PREPARE_RENAME)
-def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
+async def prepare_rename(ls: JouleLanguageServer, params: L.PrepareRenameParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
+    return head_or_none(
         RenameProvider().prepare(tree, params.position)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+        for tree in maybe(ls.store.get(doc.uri))
     )
 
 
 @server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
-def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
+async def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
+    await ls.ready
     doc = ls.workspace.get_text_document(params.text_document.uri)
-    return (
-        FoldingRangeProvider().serve(tree)
-        if (tree := ls.loader.from_source(doc.uri, doc.source))
-        else None
+    return head_or_none(
+        FoldingRangeProvider().serve(tree) for tree in maybe(ls.store.get(doc.uri))
     )

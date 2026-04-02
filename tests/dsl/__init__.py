@@ -1,8 +1,7 @@
-from .fake_document import FakeDocument, fake_workspace
+from .fake_document import FakeDocument
 from .util import side_by_side
 
 __all__ = [
     "FakeDocument",
-    "fake_workspace",
     "side_by_side",
 ]

@@ -3,25 +3,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
 
-from pyfakefs.fake_filesystem_unittest import TestCase
-
 from joule.ast import URI
 from joule.config import JouleConfig
-from joule.model import DocumentLoader, DocumentStore
+from joule.model import DocumentStore
 
-from .dsl import FakeDocument, fake_workspace
-
-
-class FakeWorkspaceTestCase(TestCase):
-    def setUp(self) -> None:
-        self.setUpPyfakefs()
-
-    def workspace(
-        self,
-        docs: FakeDocument | list[FakeDocument],
-        root_uri: URI | None = None,
-    ) -> DocumentLoader:
-        return fake_workspace(self.fs, docs, root_uri)
+from .dsl import FakeDocument
 
 
 class TempWorkspaceTestCase(unittest.TestCase):
@@ -49,7 +35,7 @@ class TempWorkspaceTestCase(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def fake_document_store(
+    def workspace(
         self,
         docs: list[FakeDocument] | FakeDocument | dict[str, str],
         config: JouleConfig = JouleConfig(),

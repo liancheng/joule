@@ -3,20 +3,20 @@ from textwrap import dedent
 
 from joule.ast import AST, Document, Id, enclosing_node
 from joule.maybe import must
-from joule.model import DocumentLoader
-from joule.providers import DefinitionProvider
+from joule.model.document_store import DocumentStore
+from joule.providers.definition_provider import DefinitionProvider
+from tests.dsl.fake_document import FakeDocument
 
-from . import FakeWorkspaceTestCase
-from .dsl import FakeDocument
+from . import TempWorkspaceTestCase
 
 
-class DefinitionTestCase(FakeWorkspaceTestCase):
+class DefinitionTestCase(TempWorkspaceTestCase):
     def assertVarDefined(self, doc: FakeDocument, var_mark: int, ref_marks: list[int]):
         var_node = doc.node_at(doc.start_of(var_mark))
         self.assertIsInstance(var_node, Id.Var)
 
-        loader = self.workspace(doc, "file:///tmp")
-        def_provider = DefinitionProvider(loader)
+        store = self.workspace(doc)
+        def_provider = DefinitionProvider(store)
 
         for ref_mark in ref_marks:
             self.assertSequenceEqual(
@@ -26,11 +26,11 @@ class DefinitionTestCase(FakeWorkspaceTestCase):
 
     def assertParamDefined(
         self,
-        loader: DocumentLoader,
+        store: DocumentStore,
         params: list[AST],
         refs: list[AST],
     ):
-        def_provider = DefinitionProvider(loader)
+        def_provider = DefinitionProvider(store)
         param_locations = [param.to(Id.Var).location for param in params]
 
         for ref in refs:
@@ -43,11 +43,11 @@ class DefinitionTestCase(FakeWorkspaceTestCase):
 
     def assertFieldDefined(
         self,
-        loader: DocumentLoader,
+        store: DocumentStore,
         keys: list[AST],
         refs: list[AST],
     ):
-        def_provider = DefinitionProvider(loader)
+        def_provider = DefinitionProvider(store)
         key_locations = [key.to(Id.Field).location for key in keys]
 
         for ref in refs:
@@ -60,12 +60,9 @@ class DefinitionTestCase(FakeWorkspaceTestCase):
 
 
 class TestVarDefinition(DefinitionTestCase):
-    def setUp(self) -> None:
-        self.setUpPyfakefs()
-
     def test_assert_expr(self):
         self.assertVarDefined(
-            FakeDocument(
+            self.fake_document(
                 dedent(
                     """\
                     local v = 1;
@@ -81,7 +78,7 @@ class TestVarDefinition(DefinitionTestCase):
 
     def test_local(self):
         self.assertVarDefined(
-            FakeDocument(
+            self.fake_document(
                 dedent(
                     """\
                     local x = 1; x
@@ -95,7 +92,7 @@ class TestVarDefinition(DefinitionTestCase):
 
     def test_local_shadowing(self):
         self.assertVarDefined(
-            FakeDocument(
+            self.fake_document(
                 dedent(
                     """\
                     local x = 1; local x = 2; x
@@ -108,7 +105,7 @@ class TestVarDefinition(DefinitionTestCase):
         )
 
     def test_fn_params(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """
                 function(p1=p2, p2, p3=p1) p1 + p2 + p3
@@ -122,7 +119,7 @@ class TestVarDefinition(DefinitionTestCase):
         self.assertVarDefined(t, var_mark=4, ref_marks=[8])
 
     def test_fn_params_field_fn(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 { f(p1=p2, p2, p3=p1): p1 + p2 + p3 }
@@ -136,7 +133,7 @@ class TestVarDefinition(DefinitionTestCase):
         self.assertVarDefined(t, var_mark=4, ref_marks=[8])
 
     def test_list_comp(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 [local v = 0; i + v for i in [2, 3]]
@@ -149,7 +146,7 @@ class TestVarDefinition(DefinitionTestCase):
         self.assertVarDefined(t, var_mark=4, ref_marks=[2])
 
     def test_obj_comp(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = 1;
@@ -171,7 +168,7 @@ class TestVarDefinition(DefinitionTestCase):
         self.assertVarDefined(t, var_mark=6, ref_marks=[3])
 
     def test_slice_var_index(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local f = 'f'; local v = { f: 0 }; v[f]
@@ -185,11 +182,8 @@ class TestVarDefinition(DefinitionTestCase):
 
 
 class TestParamDefinition(DefinitionTestCase):
-    def setUp(self) -> None:
-        self.setUpPyfakefs()
-
     def test_local_fn(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local f(p) = p + 1;
@@ -207,7 +201,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
     def test_field_fn(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = {
@@ -227,7 +221,7 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
     def test_local_fn_if(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v =
@@ -249,17 +243,17 @@ class TestParamDefinition(DefinitionTestCase):
         )
 
     def test_imported_fn_call_arg(self):
-        t1 = FakeDocument(
+        t1 = self.fake_document(
             dedent(
                 """\
                 function(p) = p + 1
                          ^1
                 """
             ),
-            uri="file:///tmp/doc1.jsonnet",
+            "doc1.jsonnet",
         )
 
-        t2 = FakeDocument(
+        t2 = self.fake_document(
             dedent(
                 """\
                 local f = import 'doc1.jsonnet';
@@ -267,25 +261,19 @@ class TestParamDefinition(DefinitionTestCase):
                   ^1
                 """
             ),
-            uri="file:///tmp/doc2.jsonnet",
+            "doc2.jsonnet",
         )
 
         self.assertParamDefined(
-            self.workspace(
-                docs=[t1, t2],
-                root_uri="file:///tmp",
-            ),
+            self.workspace([t1, t2]),
             params=[t1 @ 1],
             refs=[t2 @ 1],
         )
 
 
 class TestFieldDefinition(DefinitionTestCase):
-    def setUp(self) -> None:
-        self.setUpPyfakefs()
-
     def test_local(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = { f: 0 }; v.f
@@ -301,7 +289,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_local_nested_field(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = { f: { g: 0 } }; v.f.g
@@ -323,7 +311,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_dollar(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 { f: 1, g: { h: $.i, i: 2 }, i: 3 }
@@ -339,7 +327,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_local_if(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = if true then { f: 1 } else { f: 2 }; v.f
@@ -355,7 +343,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_local_if_no_else(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v = if true then { f: 1 }; v.f
@@ -371,7 +359,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_local_if_in_var(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local v1 = { f: 1 };
@@ -392,27 +380,27 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_import(self):
-        t1 = FakeDocument(
+        t1 = self.fake_document(
             dedent(
                 """\
                 { f: 1 }
                   ^1
                 """
             ),
-            uri="file:///tmp/doc1.jsonnet",
+            "doc1.jsonnet",
         )
 
-        t2 = FakeDocument(
+        t2 = self.fake_document(
             dedent(
                 """\
                 { f: 2 }
                   ^1
                 """
             ),
-            uri="file:///tmp/doc2.jsonnet",
+            "doc2.jsonnet",
         )
 
-        t3 = FakeDocument(
+        t3 = self.fake_document(
             dedent(
                 """\
                 if true
@@ -420,30 +408,27 @@ class TestFieldDefinition(DefinitionTestCase):
                 else import "doc2.jsonnet"
                 """
             ),
-            uri="file:///tmp/doc3.jsonnet",
+            "doc3.jsonnet",
         )
 
-        t4 = FakeDocument(
+        t4 = self.fake_document(
             dedent(
                 """\
                 (import "doc3.jsonnet").f
                                         ^1
                 """
             ),
-            uri="file:///tmp/doc4.jsonnet",
+            "doc4.jsonnet",
         )
 
         self.assertFieldDefined(
-            self.workspace(
-                docs=[t1, t2, t3, t4],
-                root_uri="file:///tmp",
-            ),
+            self.workspace(docs=[t1, t2, t3, t4]),
             keys=[t1 @ 1, t2 @ 1],
             refs=[t4 @ 1],
         )
 
     def test_self(self):
-        t = FakeDocument(
+        t = self.fake_document(
             """\
             { local root = self, f(p): p, g: root.f(1) }
                                  ^1               ^2
@@ -457,7 +442,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_obj_extend(self):
-        t = FakeDocument(
+        t = self.fake_document(
             """\
             local v1 = { func(p): p + 1 };
             local v2 = { func(p): p + 2 };
@@ -482,7 +467,7 @@ class TestFieldDefinition(DefinitionTestCase):
         )
 
     def test_for_spec(self):
-        t = FakeDocument(
+        t = self.fake_document(
             """\
             [
                 v.f for v in [{ f: 1 }, { f: 2 }]
@@ -500,7 +485,7 @@ class TestFieldDefinition(DefinitionTestCase):
 
 class TestParamFieldDefinition(DefinitionTestCase):
     def test_literal_arg(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local f(p) = p.f;
@@ -518,7 +503,7 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
     def test_local_var_arg(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local f(p) = p.f;
@@ -537,17 +522,17 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
     def test_imported_fn(self):
-        t1 = FakeDocument(
+        t1 = self.fake_document(
             dedent(
                 """\
                 function(p) p.f
                               ^1
                 """
             ),
-            uri="file:///tmp/doc1.jsonnet",
+            "doc1.jsonnet",
         )
 
-        t2 = FakeDocument(
+        t2 = self.fake_document(
             dedent(
                 """\
                 local f = import 'doc1.jsonnet';
@@ -555,30 +540,27 @@ class TestParamFieldDefinition(DefinitionTestCase):
                     ^1
                 """
             ),
-            uri="file:///tmp/doc2.jsonnet",
+            "doc2.jsonnet",
         )
 
         self.assertFieldDefined(
-            self.workspace(
-                docs=[t1, t2],
-                root_uri="file:///tmp",
-            ),
+            self.workspace(docs=[t1, t2]),
             keys=[t2 @ 1],
             refs=[t1 @ 1],
         )
 
     def test_imported_fn_param_default(self):
-        t1 = FakeDocument(
+        t1 = self.fake_document(
             dedent(
                 """\
                 function(p={ f: 1 }) p.f
                              ^1        ^2
                 """
             ),
-            uri="file:///tmp/doc1.jsonnet",
+            "doc1.jsonnet",
         )
 
-        t2 = FakeDocument(
+        t2 = self.fake_document(
             dedent(
                 """\
                 local f = import 'doc1.jsonnet';
@@ -586,20 +568,17 @@ class TestParamFieldDefinition(DefinitionTestCase):
                     ^1
                 """
             ),
-            uri="file:///tmp/doc2.jsonnet",
+            "doc2.jsonnet",
         )
 
         self.assertFieldDefined(
-            self.workspace(
-                docs=[t1, t2],
-                root_uri="file:///tmp",
-            ),
+            self.workspace([t1, t2]),
             keys=[t1 @ 1, t2 @ 1],
             refs=[t1 @ 2],
         )
 
     def test_param_default(self):
-        t = FakeDocument(
+        t = self.fake_document(
             """\
             function(p={ f: 1 }) p.f
                          ^1        ^2
@@ -613,7 +592,7 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
     def test_field_fn_param_default(self):
-        t = FakeDocument(
+        t = self.fake_document(
             """\
             { f(p={ f: 1 }): p.f }
                     ^1         ^2
@@ -627,7 +606,7 @@ class TestParamFieldDefinition(DefinitionTestCase):
         )
 
     def test_fn_returned_fn(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 local f(p) = p.f;
@@ -647,7 +626,7 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
     @unittest.skip("FIXME")
     def test_field_fn_of_param(self):
-        t = FakeDocument(
+        t = self.fake_document(
             dedent(
                 """\
                 function(p) p.f()
@@ -660,26 +639,4 @@ class TestParamFieldDefinition(DefinitionTestCase):
             self.workspace(t),
             keys=[],
             refs=[t @ 1],
-        )
-
-    def test_transitive_importers(self):
-        t1 = FakeDocument("1", uri="file:///tmp/doc1.jsonnet")
-        t2 = FakeDocument("import 'doc1.jsonnet'", uri="file:///tmp/doc2.jsonnet")
-        t3 = FakeDocument("import 'doc2.jsonnet'", uri="file:///tmp/doc3.jsonnet")
-        w = self.workspace([t1, t2, t3], root_uri="file:///tmp")
-
-        self.assertSequenceEqual(
-            sorted(
-                w.transitive_importees(t3.ast),
-                key=lambda doc: doc.location.uri,
-            ),
-            [t1.ast, t2.ast],
-        )
-
-        self.assertSequenceEqual(
-            sorted(
-                w.transitive_importers(t1.ast),
-                key=lambda doc: doc.location.uri,
-            ),
-            [t2.ast, t3.ast],
         )

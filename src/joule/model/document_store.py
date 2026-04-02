@@ -128,6 +128,9 @@ class DocumentStore:
         recurse(uri, importers)
         yield from importers
 
+    def get(self, uri: URI) -> A.Document | None:
+        return self.trees.get(uri)
+
     def add(self, uri: URI):
         ast = self.scoped_ast_from_uri(uri)
         self.trees[uri] = ast
