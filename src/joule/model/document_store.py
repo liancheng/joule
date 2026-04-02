@@ -131,6 +131,31 @@ class DocumentStore:
     def add(self, uri: URI):
         ast = self.scoped_ast_from_uri(uri)
         self.trees[uri] = ast
+
+        # TODO: This does not handle a correctness corner case.
+        #
+        # When a document is added in a search path with a higher priority, it may
+        # override another document with the same file name but in a search path with a
+        # lower priority.
+        #
+        # Assuming that "lib" is a library path, with the following two documents:
+        #
+        #   # lib/f1.jsonnet
+        #   0
+        #
+        #   # f2.jsonnet
+        #   import "f1.jsonnet"
+        #          ^^^^^^^^^^^^(1)
+        #
+        # The import at (1) obviously resolves to `lib/f1.jsonnet`. However, if we add
+        # another document:
+        #
+        #   # f1.jsonnet
+        #   1
+        #
+        # Suddenly the import at (1) resolves to `f1.jsonnet`. This is because the
+        # parent folder of the importer document has a higher priority than the library
+        # path `lib`.
         self.index_importees(ast)
 
     def delete(self, uri: URI):
