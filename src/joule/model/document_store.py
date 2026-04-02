@@ -172,3 +172,7 @@ class DocumentStore:
             importees.discard(uri)
             if len(importees) == 0:
                 self.imports.pop(importer)
+
+    def update(self, uri: URI):
+        self.delete(uri)
+        self.add(uri)

@@ -195,6 +195,7 @@ def did_open(ls: JouleLanguageServer, params: L.DidOpenTextDocumentParams):
 @server.feature(L.TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls: JouleLanguageServer, params: L.DidChangeTextDocumentParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
+    ls.document_store.update(doc.uri)
     ls.loader.load_and_cache_from_source(doc.uri, doc.source)
 
 
@@ -204,7 +205,13 @@ def did_change_watched_files(
     params: L.DidChangeWatchedFilesParams,
 ):
     for change in params.changes:
-        ls.window_log_message(L.LogMessageParams(L.MessageType.Info, f"{change}"))
+        match change.type:
+            case L.FileChangeType.Changed:
+                ls.document_store.update(change.uri)
+            case L.FileChangeType.Created:
+                ls.document_store.add(change.uri)
+            case L.FileChangeType.Deleted:
+                ls.document_store.delete(change.uri)
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
