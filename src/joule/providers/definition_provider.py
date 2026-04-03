@@ -1,4 +1,7 @@
+import inspect
+import logging
 from itertools import chain
+from pathlib import Path
 from typing import Iterable
 
 import lsprotocol.types as L
@@ -13,6 +16,31 @@ from joule.ast import (
 )
 from joule.maybe import maybe
 from joule.model import DocumentStore
+
+log = logging.getLogger(__name__)
+
+
+def log_node(node: A.AST) -> bool:
+    caller = next(
+        caller
+        for frame in maybe(inspect.currentframe())
+        for caller in maybe(frame.f_back)
+    )
+
+    py_file_name = Path(inspect.getfile(caller)).name
+    py_line = caller.f_lineno
+    py_src = f"{py_file_name}:{py_line}"
+
+    fn_name = caller.f_code.co_name
+    node_class = node.__class__.__qualname__
+
+    jsonnet_file_path = Path.from_uri(node.location.uri)
+    jsonnet_line = node.location.range.start.line + 1
+    jsonnet_char = node.location.range.start.character + 1
+    jsonnet_src = f"{jsonnet_file_path}:{jsonnet_line}:{jsonnet_char}"
+
+    log.debug(f"{py_src} {fn_name} {node_class} {jsonnet_src}")
+    return True
 
 
 class DefinitionProvider:
@@ -30,6 +58,7 @@ class DefinitionProvider:
         ]
 
     def find_definition(self, node: A.AST) -> Iterable[L.Location]:
+        log_node(node)
         match node:
             case A.Id.FieldRef() as ref:
                 return (b.id.location for b in self.find_field_binding(ref))
@@ -47,9 +76,11 @@ class DefinitionProvider:
                 return ()
 
     def find_var_binding(self, ref: A.Id.VarRef) -> Iterable[VarBinding]:
+        log_node(ref)
         return (binding for var in maybe(ref.var) for binding in maybe(var.binding))
 
     def find_param_binding(self, ref: A.Id.ParamRef) -> Iterable[VarBinding]:
+        log_node(ref)
         return (
             binding
             for call in maybe(enclosing_node(ref, A.Call, level=2))
@@ -60,6 +91,7 @@ class DefinitionProvider:
         )
 
     def find_field_binding(self, ref: A.Id.FieldRef) -> Iterable[FieldBinding]:
+        log_node(ref)
         return (
             binding
             for field_access in maybe(enclosing_node(ref, A.FieldAccess, level=1))
@@ -98,6 +130,8 @@ class DefinitionProvider:
             `val` at 3 tracks the two field scopes owned by objects at 1 and 2, each
             contributes a definition of field reference `f` at 4.
         """
+        log_node(node)
+
         match node:
             case A.Array():
                 return (
@@ -233,7 +267,10 @@ class DefinitionProvider:
                 return ()
 
     def find_callers(self, fn: A.Fn) -> Iterable[A.Call]:
+        log_node(fn)
+
         def find(fn: A.Fn) -> Iterable[A.Call]:
+            log_node(fn)
             return (
                 call
                 for doc in maybe(enclosing_node(fn, A.Document))
@@ -256,6 +293,8 @@ class DefinitionProvider:
 
     def find_fn(self, node: A.AST) -> Iterable[A.Fn]:
         """Given a function returning AST node, finds the definition of the function."""
+        log_node(node)
+
         match node:
             case A.Call():
                 return (
