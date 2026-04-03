@@ -18,6 +18,7 @@ from joule.model import DocumentStore
 class DefinitionProvider:
     def __init__(self, store: DocumentStore) -> None:
         self.store = store
+        self.seen_callers: dict[A.LocationKey, list[A.Call]] = {}
 
     def serve(self, tree: A.Document, pos: L.Position) -> list[L.Location]:
         assert tree.analysis_phase == AnalysisPhase.ScopeResolved
@@ -232,18 +233,26 @@ class DefinitionProvider:
                 return ()
 
     def find_callers(self, fn: A.Fn) -> Iterable[A.Call]:
-        return (
-            call
-            for doc in maybe(enclosing_node(fn, A.Document))
-            for uri in chain(
-                self.store.recursive_importers(doc.location.uri),
-                [doc.location.uri],
+        def find(fn: A.Fn) -> Iterable[A.Call]:
+            return (
+                call
+                for doc in maybe(enclosing_node(fn, A.Document))
+                for uri in chain(
+                    self.store.recursive_importers(doc.location.uri),
+                    [doc.location.uri],
+                )
+                for tree in maybe(self.store.get(uri))
+                for call in tree.calls
+                for callee in self.find_fn(call.callee)
+                if callee == fn
             )
-            for tree in maybe(self.store.get(uri))
-            for call in tree.calls
-            for callee in self.find_fn(call.callee)
-            if callee == fn
-        )
+
+        key = A.LocationKey.of(fn.location)
+
+        if key not in self.seen_callers:
+            self.seen_callers.setdefault(key, []).extend(find(fn))
+
+        return self.seen_callers[key]
 
     def find_fn(self, node: A.AST) -> Iterable[A.Fn]:
         """Given a function returning AST node, finds the definition of the function."""

@@ -1,4 +1,3 @@
-import unittest
 from textwrap import dedent
 
 from joule.ast import AST, Document, Id, enclosing_node
@@ -624,7 +623,6 @@ class TestParamFieldDefinition(DefinitionTestCase):
             refs=[t @ 1],
         )
 
-    @unittest.skip("FIXME")
     def test_field_fn_of_param(self):
         t = self.fake_document(
             dedent(
