@@ -1,0 +1,6 @@
+{
+  "library_paths": ["**/vendor"],
+  "exclude": ["**/.*"],
+  "include": ["**"],
+  "suffixes": ["jsonnet", "libsonnet"]
+}

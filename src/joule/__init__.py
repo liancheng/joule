@@ -103,30 +103,18 @@ def index(
             allow_dash=False,
         ),
     ],
-    exclude: Annotated[
-        list[str],
+    config_path: Annotated[
+        Path | None,
         typer.Option(
-            "-x",
-            "--exclude",
-            help="Glob patterns of folders to exclude",
+            "-c",
+            "--config",
+            help="The Joule configuration file path.",
+            file_okay=True,
+            dir_okay=False,
+            exists=True,
+            readable=True,
         ),
-    ] = [".git"],
-    include: Annotated[
-        list[str],
-        typer.Option(
-            "-i",
-            "--include",
-            help="Glob patterns of folders to include",
-        ),
-    ] = ["**/vendor"],
-    suffixes: Annotated[
-        list[str],
-        typer.Option(
-            "-s",
-            "--suffix",
-            help="Suffixes of files to include",
-        ),
-    ] = ["*.jsonnet", "*.libsonnet"],
+    ] = None,
     profile: Annotated[
         Path | None,
         typer.Option(
@@ -142,11 +130,14 @@ def index(
 ):
     path = path.absolute()
     workspace_path = path.parent if path.is_file() else path
-    config = JouleConfig(
-        exclude=exclude,
-        include=include,
-        suffixes=suffixes,
-    )
+
+    if config_path is None:
+        config = JouleConfig()
+    else:
+        import json
+
+        config = JouleConfig(**json.loads(config_path.read_text()))
+
     loader = DocumentStore(config, workspace_path.as_uri())
 
     def run():
