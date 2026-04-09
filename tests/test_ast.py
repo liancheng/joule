@@ -6,13 +6,49 @@ import tree_sitter as T
 from joule import ast as A
 from joule.parsing import LANG_JSONNET
 
-from .dsl import FakeDocument
+from .dsl import (
+    FakeDocument,
+    assert_expr,
+    binary,
+    bind,
+    false,
+    field,
+    fixed_key,
+    get_field,
+    param,
+    true,
+)
 
 
 class TestAST(unittest.TestCase):
+    QUERY = T.Query(
+        LANG_JSONNET,
+        dedent(
+            """\
+            (fieldname) @field_key
+
+            (assert) @assert
+
+            (bind
+              function: (_)
+              params: (_)
+              body: (_)) @local_function
+            """
+        ),
+    )
+
     def __init__(self, methodName: str = "runTest") -> None:
         super().__init__(methodName)
         self.maxDiff = None
+
+    def query(self, doc: FakeDocument, capture: str) -> list[A.AST]:
+        return [
+            A.AST.from_cst(doc.uri, node)
+            for node in T.QueryCursor(self.QUERY).captures(doc.cst)[capture]
+        ]
+
+    def query_one(self, doc: FakeDocument, capture: str) -> A.AST:
+        return next(iter(self.query(doc, capture)))
 
     def assertAstEqual(self, tree_or_source: A.AST | str, expected: A.AST | str):
         match tree_or_source, expected:
@@ -147,10 +183,10 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            A.Assert(
-                t.at(1),
-                condition=A.Bool(t.at(2), True),
-            ).guard(A.Num(t.at(3), 1)),
+            assert_expr(
+                A.Assert(t.at(1), condition=true(t.at(2))),
+                A.Num(t.at(3), 1),
+            ),
         )
 
     def test_local(self):
@@ -158,8 +194,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 local x = 1; x
-                      ^1  ^2 ^3
-                ^^^^^^^^^^^^^^4
+                ^1:   ^2  ^3 ^4,:1
                 """
             )
         )
@@ -167,11 +202,14 @@ class TestAST(unittest.TestCase):
         self.assertAstEqual(
             t.body,
             A.Local(
-                t.at(4),
+                t.at(1),
                 binds=[
-                    A.Id.Var(t.at(1), "x").bind(A.Num(t.at(2), 1)),
+                    bind(
+                        A.Id.Var(t.at(2), "x"),
+                        A.Num(t.at(3), 1),
+                    ),
                 ],
-                body=A.Id.VarRef(t.at(3), "x"),
+                body=A.Id.VarRef(t.at(4), "x"),
             ),
         )
 
@@ -180,32 +218,35 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 local v = 0;
-                ^1:   ^2  ^3
                 assert true;
-                ^^^^^^^^^^^4
-                       ^^^^5
+                ^4:    ^^^^:,5
                 assert false;
-                ^^^^^^^^^^^^6
-                       ^^^^^7
+                ^6:    ^^^^^:,7
                 v + 2
                 ^8  ^9
-                    ^:1
                 """
             )
         )
 
+        obtained1, obtained2 = self.query(t, "assert")
+
         self.assertAstEqual(
-            t.body,
-            A.Local(
-                t.at(1),
-                binds=[
-                    A.Id.Var(t.at(2), "v").bind(A.Num(t.at(3), 0)),
-                ],
-                body=A.Assert(t.at(4), condition=A.Bool(t.at(5), True)).guard(
-                    A.Assert(t.at(6), condition=A.Bool(t.at(7), False)).guard(
-                        A.Id.VarRef(t.at(8), "v") + A.Num(t.at(9), 2)
-                    )
+            obtained2,
+            assert_expr(
+                A.Assert(t.at(6), condition=false(t.at(7))),
+                binary(
+                    A.Operator.Plus,
+                    A.Id.VarRef(t.at(8), "v"),
+                    A.Num(t.at(9), 2),
                 ),
+            ),
+        )
+
+        self.assertAstEqual(
+            obtained1,
+            assert_expr(
+                A.Assert(t.at(4), condition=true(t.at(5))),
+                obtained2.to(A.Expr),
             ),
         )
 
@@ -221,57 +262,44 @@ class TestAST(unittest.TestCase):
                     ^^^^^^^^^^^^^^^6
                     ^7^8 ^9   ^10 ^11
                 g(f(3), z = 4)
-                ^^^^^^^^^^^^^^12
-                  ^^^^13
-                ^14 ^15 ^16 ^17
-                  ^18
                 """
             )
         )
 
-        bind_f = A.Id.Var(t.at(2), "f").bind(
-            A.Fn(
-                t.at(1),
-                params=[A.Id.Var(t.at(3), "x").param()],
-                body=A.Id.VarRef(t.at(4), "x") + A.Num(t.at(5), 1),
-            )
-        )
+        bind_f, bind_g = self.query(t, "local_function")
 
-        g = A.Id.Var(t.at(7), "g")
-        y_param = A.Id.Var(t.at(8), "y").param()
-        y_ref = A.Id.VarRef(t.at(10), "y")
-        z_param = A.Id.Var(t.at(9), "z").param()
-        z_ref = A.Id.VarRef(t.at(11), "z")
-
-        bind_g = g.bind(
-            A.Fn(
-                t.at(6),
-                params=[y_param, z_param],
-                body=y_ref + z_ref,
-            )
-        )
-
-        call_g = A.Call(
-            t.at(13),
-            callee=A.Id.VarRef(t.at(18), "f"),
-            args=[A.Num(t.at(15), 3).arg()],
-        )
-
-        call_f = A.Call(
-            t.at(12),
-            callee=A.Id.VarRef(t.at(14), "g"),
-            args=[
-                call_g.arg(),
-                A.Num(t.at(17), 4).arg(A.Id.ParamRef(t.at(16), "z")),
-            ],
+        self.assertAstEqual(
+            bind_f,
+            bind(
+                A.Id.Var(t.at(2), "f"),
+                A.Fn(
+                    t.at(1),
+                    params=[param(A.Id.Var(t.at(3), "x"))],
+                    body=binary(
+                        A.Operator.Plus,
+                        A.Id.VarRef(t.at(4), "x"),
+                        A.Num(t.at(5), 1),
+                    ),
+                ),
+            ),
         )
 
         self.assertAstEqual(
-            t.body,
-            A.Local(
-                t.location,
-                binds=[bind_f, bind_g],
-                body=call_f,
+            bind_g,
+            bind(
+                A.Id.Var(t.at(7), "g"),
+                A.Fn(
+                    t.at(6),
+                    params=[
+                        param(A.Id.Var(t.at(8), "y")),
+                        param(A.Id.Var(t.at(9), "z")),
+                    ],
+                    body=binary(
+                        A.Operator.Plus,
+                        A.Id.VarRef(t.at(10), "y"),
+                        A.Id.VarRef(t.at(11), "z"),
+                    ),
+                ),
             ),
         )
 
@@ -292,10 +320,14 @@ class TestAST(unittest.TestCase):
             A.Local(
                 t.location,
                 binds=[
-                    A.Id.Var(t.at(1), "x").bind(A.Num(t.at(2), 1)),
-                    A.Id.Var(t.at(3), "y").bind(A.Num(t.at(4), 2)),
+                    bind(A.Id.Var(t.at(1), "x"), A.Num(t.at(2), 1)),
+                    bind(A.Id.Var(t.at(3), "y"), A.Num(t.at(4), 2)),
                 ],
-                body=A.Id.VarRef(t.at(5), "x") + A.Id.VarRef(t.at(6), "y"),
+                body=binary(
+                    A.Operator.Plus,
+                    A.Id.VarRef(t.at(5), "x"),
+                    A.Id.VarRef(t.at(6), "y"),
+                ),
             ),
         )
 
@@ -324,7 +356,7 @@ class TestAST(unittest.TestCase):
                 t.at(1),
                 values=[
                     A.Num(t.at(2), 1),
-                    A.Bool(t.at(3), True),
+                    true(t.at(3)),
                     A.Str(t.at(4), "3"),
                 ],
             ),
@@ -343,7 +375,11 @@ class TestAST(unittest.TestCase):
 
             self.assertAstEqual(
                 t.body,
-                A.Id.VarRef(t.at(1), "a").bin_op(op, A.Id.VarRef(t.at(2), "b")),
+                binary(
+                    op,
+                    A.Id.VarRef(t.at(1), "a"),
+                    A.Id.VarRef(t.at(2), "b"),
+                ),
             )
 
     def test_implicit_plus(self):
@@ -358,7 +394,11 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            A.Id.VarRef(t.at(1), "a") + A.Object(t.at(2)),
+            binary(
+                A.Operator.Plus,
+                A.Id.VarRef(t.at(1), "a"),
+                A.Object(t.at(2)),
+            ),
         )
 
     def test_binary_precedence(self):
@@ -371,13 +411,17 @@ class TestAST(unittest.TestCase):
             )
         )
 
-        a = A.Id.VarRef(t.at(1), "a")
-        b = A.Id.VarRef(t.at(2), "b")
-        c = A.Id.VarRef(t.at(3), "c")
-
         self.assertAstEqual(
             t.body,
-            a + (b * c),
+            binary(
+                A.Operator.Plus,
+                A.Id.VarRef(t.at(1), "a"),
+                binary(
+                    A.Operator.Multiply,
+                    A.Id.VarRef(t.at(2), "b"),
+                    A.Id.VarRef(t.at(3), "c"),
+                ),
+            ),
         )
 
     def test_binary_precedence_with_paren(self):
@@ -395,7 +439,11 @@ class TestAST(unittest.TestCase):
             A.Binary(
                 t.body.location,
                 op=A.Operator.Multiply,
-                lhs=A.Id.VarRef(t.at(1), "a") + A.Id.VarRef(t.at(2), "b"),
+                lhs=binary(
+                    A.Operator.Plus,
+                    A.Id.VarRef(t.at(1), "a"),
+                    A.Id.VarRef(t.at(2), "b"),
+                ),
                 rhs=A.Id.VarRef(t.at(3), "c"),
             ),
         )
@@ -436,7 +484,11 @@ class TestAST(unittest.TestCase):
                 comp_spec=[
                     A.IfSpec(
                         t.at(8),
-                        condition=A.Id.VarRef(t.at(9), "x") > A.Num(t.at(10), 3),
+                        condition=binary(
+                            A.Operator.GT,
+                            A.Id.VarRef(t.at(9), "x"),
+                            A.Num(t.at(10), 3),
+                        ),
                     )
                 ],
             ),
@@ -457,10 +509,14 @@ class TestAST(unittest.TestCase):
             A.Fn(
                 t.at(1),
                 params=[
-                    A.Id.Var(t.at(2), "x").param(),
-                    A.Id.Var(t.at(3), "y").param(A.Num(t.at(4), 2)),
+                    param(A.Id.Var(t.at(2), "x")),
+                    param(A.Id.Var(t.at(3), "y"), default=A.Num(t.at(4), 2)),
                 ],
-                body=A.Id.VarRef(t.at(5), "x") + A.Id.VarRef(t.at(6), "y"),
+                body=binary(
+                    A.Operator.Plus,
+                    A.Id.VarRef(t.at(5), "x"),
+                    A.Id.VarRef(t.at(6), "y"),
+                ),
             ),
         )
 
@@ -553,8 +609,9 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            A.Assert(t.at(1), condition=A.Bool(t.at(2), True)).guard(
-                A.Bool(t.at(3), False)
+            assert_expr(
+                A.Assert(t.at(1), condition=true(t.at(2))),
+                false(t.at(3)),
             ),
         )
 
@@ -574,11 +631,14 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.body,
-            A.Assert(
-                t.at(3),
-                condition=A.Bool(t.at(1), True),
-                message=A.Str(t.at(2), "never"),
-            ).guard(A.Bool(t.at(4), False)),
+            assert_expr(
+                A.Assert(
+                    t.at(3),
+                    condition=true(t.at(1)),
+                    message=A.Str(t.at(2), "never"),
+                ),
+                false(t.at(4)),
+            ),
         )
 
     def test_assert_expr_in_bind(self):
@@ -598,14 +658,24 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
+            self.query_one(t, "assert"),
+            assert_expr(
+                A.Assert(t.at(3), condition=true(t.at(4))),
+                false(t.at(5)),
+            ),
+        )
+
+        self.assertAstEqual(
             t.body,
             A.Local(
                 t.at(1),
                 binds=[
-                    A.Id.Var(t.at(2), "x").bind(
-                        A.Assert(t.at(3), condition=A.Bool(t.at(4), True)).guard(
-                            A.Bool(t.at(5), False)
-                        )
+                    bind(
+                        A.Id.Var(t.at(2), "x"),
+                        assert_expr(
+                            A.Assert(t.at(3), condition=true(t.at(4))),
+                            false(t.at(5)),
+                        ),
                     )
                 ],
                 body=A.Id.VarRef(t.at(6), "x"),
@@ -617,36 +687,28 @@ class TestAST(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                assert true; assert false; x
-                ^^^^^^^^^^^1        ^^^^^2 ^3
-                       ^^^^4 ^^^^^^^^^^^^5
+                assert true;    assert false;    x
+                ^1:    ^^^^:1,4 ^2:    ^^^^^:2,5 ^3
                 """
             )
         )
 
-        assert1 = A.Assert(t.at(1), condition=A.Bool(t.at(4), True))
-        assert2 = A.Assert(t.at(5), condition=A.Bool(t.at(2), False))
+        assert1 = A.Assert(t.at(1), condition=true(t.at(4)))
+        assert2 = A.Assert(t.at(2), condition=false(t.at(5)))
 
         self.assertAstEqual(
             t.body,
-            assert1.guard(
-                assert2.guard(
+            assert_expr(
+                assert1,
+                assert_expr(
+                    assert2,
                     A.Id.VarRef(t.at(3), "x"),
                 ),
             ),
         )
 
-    def assertAstEqualByQuery(
-        self, doc: FakeDocument, query: T.Query, capture: str, expected: A.AST
-    ):
-        captures = T.QueryCursor(query).captures(doc.cst)
-        [node] = captures[capture]
-        self.assertAstEqual(A.AST.from_cst(doc.uri, node), expected)
-
     def test_object_field_name(self):
-        ts_query = T.Query(LANG_JSONNET, "(fieldname) @field_key")
-
-        t = FakeDocument(
+        t1 = FakeDocument(
             dedent(
                 """\
                 local x = 'f'; { [x]: 1 }
@@ -657,11 +719,11 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.node_at(2).to(A.ComputedKey),
-            A.ComputedKey(t.at(2), expr=A.Id.VarRef(t.at(1), "x")),
+            t1.node_at(2).to(A.ComputedKey),
+            A.ComputedKey(t1.at(2), expr=A.Id.VarRef(t1.at(1), "x")),
         )
 
-        t = FakeDocument(
+        t2 = FakeDocument(
             dedent(
                 """\
                 { x: 1 }
@@ -671,11 +733,11 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.query_one(ts_query, "field_key"),
-            A.FixedKey(t.at(1), A.Id.Field(t.at(1), "x")),
+            self.query_one(t2, "field_key"),
+            fixed_key(t2.at(1), "x"),
         )
 
-        t = FakeDocument(
+        t3 = FakeDocument(
             dedent(
                 """\
                 { 'x': 1 }
@@ -685,8 +747,8 @@ class TestAST(unittest.TestCase):
         )
 
         self.assertAstEqual(
-            t.query_one(ts_query, "field_key"),
-            A.FixedKey(t.at(1), A.Id.Field(t.at(1), "x")),
+            self.query_one(t3, "field_key"),
+            fixed_key(t3.at(1), "x"),
         )
 
     def test_field(self):
@@ -702,7 +764,10 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(2), A.Id.Field(t.at(2), "x")).map_to(A.Num(t.at(3), 1)),
+            field(
+                fixed_key(t.at(2), "x"),
+                A.Num(t.at(3), 1),
+            ),
         )
 
     def test_hidden_field(self):
@@ -718,7 +783,8 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(2), A.Id.Field(t.at(2), "x")).map_to(
+            field(
+                fixed_key(t.at(2), "x"),
                 A.Num(t.at(3), 1),
                 visibility=A.Visibility.Forced,
                 inherited=True,
@@ -738,14 +804,19 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(3), A.Id.Field(t.at(3), "func")).map_to(
+            field(
+                fixed_key(t.at(3), "func"),
                 A.Fn(
                     t.at(2),
                     params=[
-                        A.Id.Var(t.at(4), "p").param(),
-                        A.Id.Var(t.at(5), "q").param(A.Num(t.at(6), 0)),
+                        param(A.Id.Var(t.at(4), "p")),
+                        param(A.Id.Var(t.at(5), "q"), default=A.Num(t.at(6), 0)),
                     ],
-                    body=A.Id.VarRef(t.at(7), "p") + A.Id.VarRef(t.at(8), "q"),
+                    body=binary(
+                        A.Operator.Plus,
+                        A.Id.VarRef(t.at(7), "p"),
+                        A.Id.VarRef(t.at(8), "q"),
+                    ),
                 ),
                 visibility=A.Visibility.Hidden,
             ),
@@ -765,7 +836,8 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(3), A.Id.Field(t.at(3), "f")).map_to(
+            field(
+                fixed_key(t.at(3), "f"),
                 A.Fn(
                     t.at(2),
                     params=[],
@@ -779,9 +851,8 @@ class TestAST(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                function() assert true; 1
-                ^1:        ^^^^^^^^^^^2 ^:1,3
-                                  ^^^^4
+                function() assert true;    1
+                ^1:        ^2:    ^^^^:2,4 ^:1,3
                 """
             )
         )
@@ -791,8 +862,9 @@ class TestAST(unittest.TestCase):
             A.Fn(
                 t.at(1),
                 params=[],
-                body=A.Assert(t.at(2), condition=A.Bool(t.at(4), True)).guard(
-                    A.Num(t.at(3), 1)
+                body=assert_expr(
+                    A.Assert(t.at(2), condition=true(t.at(4))),
+                    A.Num(t.at(3), 1),
                 ),
             ),
         )
@@ -801,25 +873,17 @@ class TestAST(unittest.TestCase):
         t = FakeDocument(
             dedent(
                 """\
-                { f(): assert true; 1 }
-                  ^^^^^^^^^^^^^^^^^^^1
-                  ^2
-                   ^3: ^^^^^^^^^^^4 ^:3,5
-                              ^^^^6
+                { f(): assert true;    1 }
+                       ^1:    ^^^^:1,2 ^3
                 """
             )
         )
 
         self.assertAstEqual(
-            t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(2), A.Id.Field(t.at(2), "f")).map_to(
-                A.Fn(
-                    t.at(3),
-                    params=[],
-                    body=A.Assert(t.at(4), condition=A.Bool(t.at(6), True)).guard(
-                        A.Num(t.at(5), 1)
-                    ),
-                )
+            self.query_one(t, "assert"),
+            assert_expr(
+                A.Assert(t.at(1), condition=true(t.at(2))),
+                A.Num(t.at(3), 1),
             ),
         )
 
@@ -848,10 +912,18 @@ class TestAST(unittest.TestCase):
 
         key = A.ComputedKey(
             t.at(7),
-            expr=A.Str(t.at(3), "f") + A.Id.VarRef(t.at(4), "y"),
+            expr=binary(
+                A.Operator.Plus,
+                A.Str(t.at(3), "f"),
+                A.Id.VarRef(t.at(4), "y"),
+            ),
         )
 
-        value = A.Id.VarRef(t.at(5), "x") + A.Id.VarRef(t.at(6), "y")
+        value = binary(
+            A.Operator.Plus,
+            A.Id.VarRef(t.at(5), "x"),
+            A.Id.VarRef(t.at(6), "y"),
+        )
 
         array = A.Array(
             t.at(14),
@@ -870,8 +942,15 @@ class TestAST(unittest.TestCase):
         if_spec = A.IfSpec(
             t.at(18),
             condition=(
-                A.Id.VarRef(t.at(15), "x") + A.Id.VarRef(t.at(16), "y")
-                < A.Num(t.at(17), 4)
+                binary(
+                    A.Operator.LT,
+                    binary(
+                        A.Operator.Plus,
+                        A.Id.VarRef(t.at(15), "x"),
+                        A.Id.VarRef(t.at(16), "y"),
+                    ),
+                    A.Num(t.at(17), 4),
+                )
             ),
         )
 
@@ -879,11 +958,11 @@ class TestAST(unittest.TestCase):
             t.body,
             A.ObjComp(
                 location=t.body.location,
-                field=key.map_to(value, A.Visibility.Hidden),
+                field=field(key, value, A.Visibility.Hidden),
                 binds=[
-                    A.Id.Var(t.at(1), "x").bind(A.Num(t.at(2), 1)),
+                    bind(A.Id.Var(t.at(1), "x"), A.Num(t.at(2), 1)),
                 ],
-                asserts=[A.Assert(t.at(8), condition=A.Bool(t.at(9), True))],
+                asserts=[A.Assert(t.at(8), condition=true(t.at(9)))],
                 for_spec=for_spec,
                 comp_spec=[if_spec],
             ),
@@ -905,15 +984,15 @@ class TestAST(unittest.TestCase):
         var = A.Id.Var(t.at(4), "x")
         self.assertAstEqual(t.node_at(t.start_of(4)), var)
 
-        bind = var.bind(A.Num(t.at(7), 1))
-        self.assertAstEqual(t.node_at(t.start_of(5)), bind)
+        bind_x = bind(var, A.Num(t.at(7), 1))
+        self.assertAstEqual(t.node_at(t.start_of(5)), bind_x)
 
-        local = A.Local(t.at(2), binds=[bind], body=A.Id.VarRef(t.at(8), "x"))
+        local = A.Local(t.at(2), binds=[bind_x], body=A.Id.VarRef(t.at(8), "x"))
         self.assertAstEqual(t.node_at(t.start_of(2)), local)
         self.assertAstEqual(t.node_at(t.end_of(6)), local)
 
-        field = A.FixedKey(t.at(1), A.Id.Field(t.at(1), "f")).map_to(local)
-        self.assertAstEqual(t.node_at(t.end_of(3)), field)
+        field_f = field(fixed_key(t.at(1), "f"), local)
+        self.assertAstEqual(t.node_at(t.end_of(3)), field_f)
 
     def test_slice(self):
         t = FakeDocument(
@@ -948,7 +1027,11 @@ class TestAST(unittest.TestCase):
 
         self.assertAstEqual(
             t.node_at(1).to(A.Field),
-            A.FixedKey(t.at(2), A.Id.Field(t.at(2), "g")).map_to(
-                A.Dollar(t.at(3)).get(A.Id.FieldRef(t.at(4), "f")),
+            field(
+                fixed_key(t.at(2), "g"),
+                get_field(
+                    A.Dollar(t.at(3)),
+                    A.Id.FieldRef(t.at(4), "f"),
+                ),
             ),
         )

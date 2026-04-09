@@ -1,7 +1,6 @@
 from itertools import accumulate, chain
 
 import lsprotocol.types as L
-import tree_sitter as T
 from rich.text import Text
 
 from joule import ast as A
@@ -49,10 +48,6 @@ class FakeDocument:
 
     def end_of(self, mark: int) -> L.Position:
         return self.at(mark).range.end
-
-    def query_one(self, query: T.Query, capture: str) -> A.AST:
-        node = T.QueryCursor(query).captures(self.cst)[capture][0]
-        return A.AST.from_cst(self.uri, node)
 
     def highlight(
         self, ranges: tuple[L.Range, str] | list[tuple[L.Range, str]]

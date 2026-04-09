@@ -276,47 +276,6 @@ class Expr(AST):
         """
         return [self]
 
-    def arg(self, name: "Id.ParamRef | None" = None) -> "Arg":
-        location = merge_locations(name, self) if name else self.location
-        return Arg(location, self, name)
-
-    def bin_op(self, op: "Operator", rhs: "Expr") -> "Binary":
-        return Binary(merge_locations(self, rhs), op, self, rhs)
-
-    def __add__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.Plus, rhs)
-
-    def __sub__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.Minus, rhs)
-
-    def __mul__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.Multiply, rhs)
-
-    def __truediv__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.Divide, rhs)
-
-    def __lt__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.LT, rhs)
-
-    def __le__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.LE, rhs)
-
-    def __gt__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.GT, rhs)
-
-    def __ge__(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.GE, rhs)
-
-    def eq(self, rhs: object) -> "Binary":
-        assert isinstance(rhs, Expr)
-        return self.bin_op(Operator.Eq, rhs)
-
-    def not_eq(self, rhs: "Expr") -> "Binary":
-        return self.bin_op(Operator.NotEq, rhs)
-
-    def get(self, field_ref: "Id.FieldRef") -> "FieldAccess":
-        return FieldAccess(merge_locations(self, field_ref), self, field_ref)
-
 
 @D.dataclass
 class Dollar(Expr):
@@ -397,13 +356,6 @@ class Id:
             assert node.type == "id"
             assert node.text is not None
             return Id.Var(location_of(uri, node), node.text.decode())
-
-        def bind(self, value: Expr) -> "Bind":
-            return Bind(merge_locations(self, value), self, value)
-
-        def param(self, default: Expr | None = None) -> "Param":
-            location = merge_locations(self, default) if default else self.location
-            return Param(location, self, default)
 
     @D.dataclass
     class VarRef(Expr):
@@ -995,9 +947,6 @@ class Assert(AST):
             message=message,
         )
 
-    def guard(self, body: Expr) -> "AssertExpr":
-        return AssertExpr(merge_locations(self, body), self, body)
-
 
 @D.dataclass
 class AssertExpr(Expr):
@@ -1101,20 +1050,6 @@ class FieldKey(AST):
             return FixedKey(location, Id.Field(name.location, name.value))
 
     AST.register(from_cst, "fieldname")
-
-    def map_to(
-        self,
-        value: Expr,
-        visibility: Visibility = Visibility.Default,
-        inherited: bool = False,
-    ) -> "Field":
-        return Field(
-            merge_locations(self, value),
-            self,
-            value,
-            visibility,
-            inherited,
-        )
 
 
 @D.dataclass

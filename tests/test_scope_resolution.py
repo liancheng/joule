@@ -4,7 +4,7 @@ from textwrap import dedent
 from joule import ast as A
 from joule.maybe import must
 
-from .dsl import FakeDocument
+from .dsl import FakeDocument, param
 
 
 class TestScopeResolution(unittest.TestCase):
@@ -164,5 +164,5 @@ class TestScopeResolution(unittest.TestCase):
         self.assertVarBinding(
             owner=t.node_at(1).to(A.Fn),
             var=t.node_at(2).to(A.Id.Var),
-            target=A.Id.Var(t.at(2), "p").param(),
+            target=param(A.Id.Var(t.at(2), "p")),
         )

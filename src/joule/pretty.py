@@ -29,6 +29,7 @@ class PrettyTree:
     def __repr__(self):
         def grow(lines: list[str], nodes: list[PrettyTree], branches: str = ""):
             for i, node in enumerate(nodes):
+                # Whether node is the last child of its parent.
                 last_child = i == len(nodes) - 1
                 new_branch = ".   " if last_child else "|   "
                 fork = "`-- " if last_child else "|-- "
