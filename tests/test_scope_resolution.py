@@ -101,7 +101,7 @@ class TestScopeResolution(unittest.TestCase):
                     local x = 1;
                     ^1    ^2  ^3
                     x + i for i in [1, 2]
-                          ^4: ^5        ^:
+                          ^4: ^5        ^:4
                 ]
                 """
             )
@@ -129,7 +129,7 @@ class TestScopeResolution(unittest.TestCase):
                 local v2 = 2,
                       ^^3  ^4
                 for i in [3, 4]
-                ^5: ^6        ^:
+                ^5: ^6        ^:5
             }
             """
         )

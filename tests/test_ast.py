@@ -219,9 +219,9 @@ class TestAST(unittest.TestCase):
                 """\
                 local v = 0;
                 assert true;
-                ^4:    ^^^^:,5
+                ^4:    ^^^^:4,5
                 assert false;
-                ^6:    ^^^^^:,7
+                ^6:    ^^^^^:6,7
                 v + 2
                 ^8  ^9
                 """
@@ -499,7 +499,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 function(x, y = 2) x + y
-                ^1:      ^2 ^3  ^4 ^5  ^6,:
+                ^1:      ^2 ^3  ^4 ^5  ^:1,6
                 """
             )
         )
@@ -525,7 +525,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 function() 1
-                ^1:        ^2,:
+                ^1:        ^:1,2
                 """
             )
         )
@@ -544,7 +544,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 import 'test.jsonnet'
-                ^1:    ^^^^^^^^^^^^^^2,:
+                ^1:    ^^^^^^^^^^^^^^:1,2
                 """
             )
         )
@@ -563,7 +563,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 importbin 'bin'
-                ^1:       ^^^^^2,:
+                ^1:       ^^^^^:1,2
                 """
             )
         )
@@ -582,7 +582,7 @@ class TestAST(unittest.TestCase):
             dedent(
                 """\
                 importstr 'test.jsonnet'
-                ^1:       ^^^^^^^^^^^^^^2,:
+                ^1:       ^^^^^^^^^^^^^^:1,2
                 """
             )
         )
@@ -648,7 +648,7 @@ class TestAST(unittest.TestCase):
                 local x =
                 ^1:   ^2
                     assert true;
-                    ^3:    ^^^^4,:
+                    ^3:    ^^^^:3,4
                     false;
                     ^^^^^5
                 x
@@ -898,10 +898,10 @@ class TestAST(unittest.TestCase):
                      ^^^3  ^4   ^5  ^6
                     ^^^^^^^^^7
                     assert true,
-                    ^8:    ^^^^9,:
+                    ^8:    ^^^^:8,9
                     for x in [2, 3]
                         ^10   ^11^12
-                    ^13:     ^^^^^^14,:
+                    ^13:     ^^^^^^:13,14
                     if x + y < 4
                        ^15 ^16 ^17
                     ^^^^^^^^^^^^18

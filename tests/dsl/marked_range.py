@@ -8,14 +8,12 @@ from joule.ast import URI
 
 @D.dataclass
 class Mark:
-    id: int | None
+    id: int
     open: bool
     close: bool
 
     def __post_init__(self):
-        if self.open:
-            assert self.id is not None
-            assert not self.close
+        assert not self.open or not self.close
 
 
 @D.dataclass
@@ -39,19 +37,13 @@ close_mark = P.seq(
     id=uint,
 ).combine_dict(Mark)
 
-close_last = P.seq(
-    id=P.success(None),
-    open=P.success(False),
-    close=P.string(":").result(True),
-).combine_dict(Mark)
-
 closed_mark = P.seq(
     id=uint,
     open=P.success(False),
     close=P.success(False),
 ).combine_dict(Mark)
 
-mark = open_mark | close_mark | close_last | closed_mark
+mark = open_mark | close_mark | closed_mark
 
 marked_range = P.seq(
     start=P.whitespace.optional() >> P.index,
@@ -66,48 +58,38 @@ def parse_marked_ranges(source: str) -> tuple[str, dict[int, L.Range]]:
     line_no = -1
     source_lines: list[str] = []
     open_marks: dict[int, L.Position] = {}
-    last: int | None = None
     ranges: dict[int, L.Range] = {}
 
     for line in source.splitlines():
-        try:
-            for span in marked_ranges.parse(line):
-                for mark in span.marks:
-                    # Opening mark like "1:".
-                    if mark.open and mark.id is not None:
-                        assert mark.id not in open_marks, f"Duplicate mark: {mark.id}"
-                        start_pos = L.Position(line_no, span.start)
-                        open_marks[mark.id] = start_pos
-                        last = mark.id
-
-                    # Closing mark like ":1".
-                    elif mark.close and mark.id:
-                        assert mark.id in open_marks, f"Open mark not found: {mark.id}"
-                        start_pos = open_marks[mark.id]
-                        end_pos = L.Position(line_no, span.start + span.length)
-                        ranges[mark.id] = L.Range(start_pos, end_pos)
-                        open_marks.pop(mark.id)
-
-                    # Colon mark ":", closing the last mark with ID.
-                    elif mark.close and last:
-                        start_pos = open_marks[last]
-                        end_pos = L.Position(line_no, span.start + span.length)
-                        ranges[last] = L.Range(start_pos, end_pos)
-                        open_marks.pop(last)
-                        last = None
-
-                    # Closed mark like "1".
-                    elif mark.id:
-                        start_pos = L.Position(line_no, span.start)
-                        end_pos = L.Position(line_no, span.start + span.length)
-                        ranges[mark.id] = L.Range(start_pos, end_pos)
-
-                    else:
-                        assert False, f"Invalid mark: mark={mark}, last={last}"
-
-        except P.ParseError:
+        if not line.strip().startswith("^"):
             line_no += 1
             source_lines.append(line)
+        else:
+            for span in marked_ranges.parse(line):
+                for mark in span.marks:
+                    match mark:
+                        # Opening mark like "1:".
+                        case Mark(id, True, False):
+                            assert id not in open_marks, f"Duplicate mark: {id}"
+                            start_pos = L.Position(line_no, span.start)
+                            open_marks[id] = start_pos
+
+                        # Closing mark like ":1".
+                        case Mark(id, False, True):
+                            assert id in open_marks, f"Open mark not found: {id}"
+                            start_pos = open_marks[id]
+                            end_pos = L.Position(line_no, span.start + span.length)
+                            ranges[id] = L.Range(start_pos, end_pos)
+                            open_marks.pop(id)
+
+                        # Closed mark like "1"
+                        case Mark(id, False, False):
+                            start_pos = L.Position(line_no, span.start)
+                            end_pos = L.Position(line_no, span.start + span.length)
+                            ranges[id] = L.Range(start_pos, end_pos)
+
+                        case _:
+                            raise RuntimeError(f"Invalid mark: mark={mark}")
 
     pending_marks = ", ".join([str(k) for k in open_marks.keys()])
     assert len(open_marks) == 0, f"Closing mark(s) missing: {pending_marks}"
