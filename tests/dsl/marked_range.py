@@ -71,45 +71,41 @@ def parse_marked_ranges(source: str) -> tuple[str, dict[int, L.Range]]:
 
     for line in source.splitlines():
         try:
-            parsed: list[MarkedRange] = marked_ranges.parse(line)
-
-            for start, length, mark in [
-                (span.start, span.length, mark)
-                for span in parsed
-                for mark in span.marks
-            ]:
-                match mark:
-                    case _ if mark.open and mark.id is not None:
+            for span in marked_ranges.parse(line):
+                for mark in span.marks:
+                    # Opening mark like "1:".
+                    if mark.open and mark.id is not None:
                         assert mark.id not in open_marks, f"Duplicate mark: {mark.id}"
-                        start_pos = L.Position(line_no, start)
+                        start_pos = L.Position(line_no, span.start)
                         open_marks[mark.id] = start_pos
                         last = mark.id
 
-                    case _ if mark.close and mark.id:
+                    # Closing mark like ":1".
+                    elif mark.close and mark.id:
                         assert mark.id in open_marks, f"Open mark not found: {mark.id}"
                         start_pos = open_marks[mark.id]
-                        end_pos = L.Position(line_no, start + length)
+                        end_pos = L.Position(line_no, span.start + span.length)
                         ranges[mark.id] = L.Range(start_pos, end_pos)
                         open_marks.pop(mark.id)
 
-                    case _ if mark.close and last:
+                    # Colon mark ":", closing the last mark with ID.
+                    elif mark.close and last:
                         start_pos = open_marks[last]
-                        end_pos = L.Position(line_no, start + length)
+                        end_pos = L.Position(line_no, span.start + span.length)
                         ranges[last] = L.Range(start_pos, end_pos)
                         open_marks.pop(last)
                         last = None
 
-                    case _ if mark.id:
-                        start_pos = L.Position(line_no, start)
-                        end_pos = L.Position(line_no, start + length)
+                    # Closed mark like "1".
+                    elif mark.id:
+                        start_pos = L.Position(line_no, span.start)
+                        end_pos = L.Position(line_no, span.start + span.length)
                         ranges[mark.id] = L.Range(start_pos, end_pos)
 
-                    case _:
+                    else:
                         assert False, f"Invalid mark: mark={mark}, last={last}"
 
         except P.ParseError:
-            if line.strip().startswith("^"):
-                marked_ranges.parse(line)
             line_no += 1
             source_lines.append(line)
 
