@@ -195,8 +195,8 @@ class TestParamDefinition(DefinitionTestCase):
 
         self.assertParamDefined(
             self.fake_workspace(t),
-            params=[t @ 1],
-            refs=[t @ 2],
+            params=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_field_fn(self):
@@ -215,8 +215,8 @@ class TestParamDefinition(DefinitionTestCase):
 
         self.assertParamDefined(
             self.fake_workspace(t),
-            params=[t @ 1],
-            refs=[t @ 2],
+            params=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_local_fn_if(self):
@@ -237,8 +237,8 @@ class TestParamDefinition(DefinitionTestCase):
 
         self.assertParamDefined(
             self.fake_workspace(t),
-            params=[t @ 1, t @ 2],
-            refs=[t @ 3],
+            params=[t.node_at(1), t.node_at(2)],
+            refs=[t.node_at(3)],
         )
 
     def test_imported_fn_call_arg(self):
@@ -265,8 +265,8 @@ class TestParamDefinition(DefinitionTestCase):
 
         self.assertParamDefined(
             self.fake_workspace([t1, t2]),
-            params=[t1 @ 1],
-            refs=[t2 @ 1],
+            params=[t1.node_at(1)],
+            refs=[t2.node_at(1)],
         )
 
 
@@ -283,8 +283,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 2],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_local_nested_field(self):
@@ -299,14 +299,14 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 3],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(3)],
         )
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2],
-            refs=[t @ 4],
+            fields=[t.node_at(2)],
+            refs=[t.node_at(4)],
         )
 
     def test_dollar(self):
@@ -321,8 +321,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2],
-            refs=[t @ 1],
+            fields=[t.node_at(2)],
+            refs=[t.node_at(1)],
         )
 
     def test_local_if(self):
@@ -337,8 +337,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1, t @ 2],
-            refs=[t @ 3],
+            fields=[t.node_at(1), t.node_at(2)],
+            refs=[t.node_at(3)],
         )
 
     def test_local_if_no_else(self):
@@ -353,8 +353,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 2],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_local_if_in_var(self):
@@ -374,8 +374,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1, t @ 2],
-            refs=[t @ 3],
+            fields=[t.node_at(1), t.node_at(2)],
+            refs=[t.node_at(3)],
         )
 
     def test_import(self):
@@ -422,8 +422,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(docs=[t1, t2, t3, t4]),
-            fields=[t1 @ 1, t2 @ 1],
-            refs=[t4 @ 1],
+            fields=[t1.node_at(1), t2.node_at(1)],
+            refs=[t4.node_at(1)],
         )
 
     def test_self(self):
@@ -436,8 +436,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 2],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_obj_extend(self):
@@ -455,14 +455,14 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             w,
-            fields=[t @ 1],
-            refs=[t @ 3],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(3)],
         )
 
         self.assertParamDefined(
             w,
-            params=[t @ 2],
-            refs=[t @ 4],
+            params=[t.node_at(2)],
+            refs=[t.node_at(4)],
         )
 
     def test_for_spec(self):
@@ -477,8 +477,8 @@ class TestFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2, t @ 3],
-            refs=[t @ 1],
+            fields=[t.node_at(2), t.node_at(3)],
+            refs=[t.node_at(1)],
         )
 
 
@@ -497,8 +497,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2],
-            refs=[t @ 1],
+            fields=[t.node_at(2)],
+            refs=[t.node_at(1)],
         )
 
     def test_local_var_arg(self):
@@ -516,8 +516,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2],
-            refs=[t @ 1],
+            fields=[t.node_at(2)],
+            refs=[t.node_at(1)],
         )
 
     def test_imported_fn(self):
@@ -544,8 +544,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(docs=[t1, t2]),
-            fields=[t2 @ 1],
-            refs=[t1 @ 1],
+            fields=[t2.node_at(1)],
+            refs=[t1.node_at(1)],
         )
 
     def test_imported_fn_param_default(self):
@@ -572,8 +572,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace([t1, t2]),
-            fields=[t1 @ 1, t2 @ 1],
-            refs=[t1 @ 2],
+            fields=[t1.node_at(1), t2.node_at(1)],
+            refs=[t1.node_at(2)],
         )
 
     def test_param_default(self):
@@ -586,8 +586,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 2],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_field_fn_param_default(self):
@@ -600,8 +600,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 1],
-            refs=[t @ 2],
+            fields=[t.node_at(1)],
+            refs=[t.node_at(2)],
         )
 
     def test_fn_returned_fn(self):
@@ -619,8 +619,8 @@ class TestParamFieldDefinition(DefinitionTestCase):
 
         self.assertFieldDefined(
             self.fake_workspace(t),
-            fields=[t @ 2],
-            refs=[t @ 1],
+            fields=[t.node_at(2)],
+            refs=[t.node_at(1)],
         )
 
     def test_field_fn_of_param(self):
@@ -636,5 +636,5 @@ class TestParamFieldDefinition(DefinitionTestCase):
         self.assertFieldDefined(
             self.fake_workspace(t),
             fields=[],
-            refs=[t @ 1],
+            refs=[t.node_at(1)],
         )

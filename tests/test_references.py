@@ -79,8 +79,8 @@ class TestFieldReferences(ReferencesTestCase):
 
         self.assertFieldReferenced(
             self.fake_workspace(t),
-            field=t @ 1,
-            refs=[t @ 2],
+            field=t.node_at(1),
+            refs=[t.node_at(2)],
         )
 
     def test_import(self):
@@ -116,8 +116,8 @@ class TestFieldReferences(ReferencesTestCase):
 
         self.assertFieldReferenced(
             self.fake_workspace([t1, t2, t3]),
-            field=t1 @ 1,
-            refs=[t2 @ 1, t3 @ 1],
+            field=t1.node_at(1),
+            refs=[t2.node_at(1), t3.node_at(1)],
         )
 
     def test_call(self):
@@ -132,6 +132,6 @@ class TestFieldReferences(ReferencesTestCase):
 
         self.assertFieldReferenced(
             self.fake_workspace(t),
-            field=t @ 1,
-            refs=[t @ 2],
+            field=t.node_at(1),
+            refs=[t.node_at(2)],
         )

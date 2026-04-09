@@ -36,11 +36,13 @@ class FakeDocument:
     def location(self) -> L.Location:
         return self.body.location
 
-    def __matmul__(self, mark: int) -> A.AST:
-        return self.node_at(mark)
-
     def at(self, mark: int) -> L.Location:
         return self.locations[mark]
+
+    def node_at(self, target: int | L.Position | L.Range) -> A.AST:
+        if isinstance(target, int):
+            target = self.at(target).range
+        return must(self.body.node_at(target))
 
     def start_of(self, mark: int) -> L.Position:
         return self.at(mark).range.start
@@ -51,14 +53,6 @@ class FakeDocument:
     def query_one(self, query: T.Query, capture: str) -> A.AST:
         node = T.QueryCursor(query).captures(self.cst)[capture][0]
         return A.AST.from_cst(self.uri, node)
-
-    def node_at(self, target: int | L.Position | L.Range) -> A.AST:
-        if isinstance(target, int):
-            target = self.at(target).range
-        return must(self.body.node_at(target))
-
-    def offset_of(self, pos: L.Position) -> int:
-        return self.line_offsets[pos.line] + pos.character
 
     def highlight(
         self, ranges: tuple[L.Range, str] | list[tuple[L.Range, str]]
@@ -81,6 +75,10 @@ class FakeDocument:
 
         NOTE: To be consistent with LSP, both line and column numbers are 0 based.
         """
+
+        def offset_of(pos: L.Position) -> int:
+            return self.line_offsets[pos.line] + pos.character
+
         if isinstance(ranges, tuple):
             ranges = [ranges]
 
@@ -95,8 +93,8 @@ class FakeDocument:
         for span, style in ranges:
             rendered_source.stylize(
                 style,
-                start=self.offset_of(span.start),
-                end=self.offset_of(span.end),
+                start=offset_of(span.start),
+                end=offset_of(span.end),
             )
 
         raw_lines = self.source.splitlines()
