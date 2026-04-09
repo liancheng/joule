@@ -3,7 +3,7 @@ name = "joule"
 version = "0.1.0"
 description = "A toy Jsonnet language server"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "google-re2>=1.1.20251105",
     "pathspec>=1.0.4",
@@ -25,8 +25,8 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "debugpy>=1.8.19",
-    "green>=4.0.2",
     "parsy>=2.2",
+    "pytest>=9.0.3",
     "ruff>=0.15.0",
 ]
 
@@ -42,3 +42,10 @@ members = [
 
 [tool.uv.sources]
 tree-sitter-jsonnet = { workspace = true }
+
+[tool.pytest]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:int argument support is deprecated",
+    "ignore:'asyncio.iscoroutinefunction' is deprecated",
+]
