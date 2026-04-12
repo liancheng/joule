@@ -278,9 +278,19 @@ class Expr(AST):
 
 
 @D.dataclass
+class Null(Expr):
+    @staticmethod
+    def from_cst(uri: URI, node: T.Node) -> "Null":
+        assert node.type == "null"
+        return Null(location_of(uri, node))
+
+    AST.register(from_cst, "null")
+
+
+@D.dataclass
 class Dollar(Expr):
     @staticmethod
-    def from_cst(uri: URI, node: T.Node) -> "Expr":
+    def from_cst(uri: URI, node: T.Node) -> "Dollar":
         assert node.type == "dollar"
         return Dollar(location_of(uri, node))
 

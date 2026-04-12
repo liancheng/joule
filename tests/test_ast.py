@@ -123,13 +123,13 @@ class TestAST(unittest.TestCase):
             ),
         )
 
+    def test_null(self):
+        t = FakeDocument("null")
+        self.assertAstEqual(t.body, A.Null(t.location))
+
     def test_number(self):
         t = FakeDocument("1")
-
-        self.assertAstEqual(
-            t.body,
-            A.Num(t.location, 1),
-        )
+        self.assertAstEqual(t.body, A.Num(t.location, 1))
 
     def test_string(self):
         for literal, expected in [
