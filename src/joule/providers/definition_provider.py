@@ -140,7 +140,7 @@ class DefinitionProvider:
                     for scope in self.find_field_scope(value)
                 )
 
-            case A.Binary() if node.op == A.Operator.Plus:
+            case A.Binary() if node.op == A.BinaryOp.Plus:
                 lhs_scopes = list(self.find_field_scope(node.lhs))
                 rhs_scopes = list(self.find_field_scope(node.rhs))
 

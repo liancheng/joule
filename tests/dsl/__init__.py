@@ -19,6 +19,10 @@ def false(at: L.Location):
     return A.Bool(at, False)
 
 
+def num(at: L.Location, value: int | float):
+    return A.Num(at, float(value))
+
+
 def assert_expr(assertion: A.Assert, body: A.Expr) -> A.AssertExpr:
     return A.AssertExpr(A.merge_locations(assertion, body), assertion, body)
 
@@ -32,7 +36,7 @@ def param(var: A.Id.Var, default: A.Expr | None = None) -> A.Param:
     return A.Param(location, var, default)
 
 
-def binary(op: A.Operator, lhs: A.Expr, rhs: A.Expr) -> A.Binary:
+def binary(op: A.BinaryOp, lhs: A.Expr, rhs: A.Expr) -> A.Binary:
     return A.Binary(A.merge_locations(lhs, rhs), op, lhs, rhs)
 
 

@@ -5,6 +5,7 @@ description = "A toy Jsonnet language server"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "parsy>=2.2",
     "pydantic>=2.12.5",
     "pygls>=2.0.0",
     "rich>=14.2.0",
@@ -23,7 +24,6 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "debugpy>=1.8.19",
-    "parsy>=2.2",
     "pytest>=9.0.3",
     "ruff>=0.15.0",
 ]
