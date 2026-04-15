@@ -181,7 +181,7 @@ class Visitor:
         for b in e.binds:
             self.visit_bind(b)
 
-        for a in e.assertions:
+        for a in e.asserts:
             self.visit_assert(a)
 
         for f in e.fields:

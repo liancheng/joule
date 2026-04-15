@@ -3,6 +3,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
 
+from rich.text import Text
+
 from joule import ast as A
 from joule.config import JouleConfig
 from joule.model import DocumentStore
@@ -20,7 +22,11 @@ class ASTTestCase(unittest.TestCase):
             case A.AST() as obtained, str() as expected:
                 lhs = obtained.pretty_tree
                 rhs = expected.strip()
-                self.assertMultiLineEqual(lhs, rhs, side_by_side(lhs, rhs))
+                message = Text("\n") + side_by_side(
+                    f"Expected:\n{lhs}",
+                    f"Obtained:\n{rhs}",
+                )
+                self.assertMultiLineEqual(lhs, rhs, message)
             case A.AST() as obtained, A.AST() as expected:
                 self.assertAstEqual(obtained, expected.pretty_tree)
             case str() as source, A.AST() as expected:

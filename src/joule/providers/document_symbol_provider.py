@@ -84,7 +84,7 @@ class DocumentSymbolProvider(Visitor):
         for b in e.binds:
             self.visit_bind(b)
 
-        for a in e.assertions:
+        for a in e.asserts:
             self.visit_assert(a)
 
     def visit_for_spec(self, s: A.ForSpec, next: Callable[[], None]):

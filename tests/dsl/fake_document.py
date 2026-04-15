@@ -1,3 +1,4 @@
+from functools import cached_property
 from itertools import accumulate, chain
 
 import lsprotocol.types as L
@@ -11,13 +12,10 @@ from joule.parsing import parse_jsonnet
 from .marked_range import parse_marked_locations
 
 
-class FakeDocument:
+class FakeFile:
     def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         self.uri = uri
         self.source, self.locations = parse_marked_locations(source, uri)
-        self.cst = parse_jsonnet(self.source)
-        self.ast = ScopeResolver().resolve(A.Document.from_cst(self.uri, self.cst))
-        self.body = self.ast.body
         self.lines = self.source.splitlines(keepends=True)
 
         # When the source ends with a newline, `str.splitlines` does not preserve the
@@ -31,17 +29,18 @@ class FakeDocument:
             accumulate(chain([0], map(len, self.lines)))
         )
 
-    @property
+    @cached_property
     def location(self) -> L.Location:
-        return self.body.location
+        return L.Location(
+            self.uri,
+            L.Range(
+                L.Position(0, 0),
+                L.Position(len(self.lines) - 1, len(self.lines[-1])),
+            ),
+        )
 
     def at(self, mark: int) -> L.Location:
         return self.locations[mark]
-
-    def node_at(self, target: int | L.Position | L.Range) -> A.AST:
-        if isinstance(target, int):
-            target = self.at(target).range
-        return must(self.body.node_at(target))
 
     def start_of(self, mark: int) -> L.Position:
         return self.at(mark).range.start
@@ -154,3 +153,20 @@ class FakeDocument:
             rendered.extend(ruler_lines)
 
         return Text("\n").join(rendered)
+
+
+class FakeDocument(FakeFile):
+    def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+        super().__init__(source, uri)
+        self.cst = parse_jsonnet(self.source)
+        self.ast = ScopeResolver().resolve(A.Document.from_cst(self.uri, self.cst))
+        self.body = self.ast.body
+
+    @cached_property
+    def location(self) -> L.Location:
+        return self.body.location
+
+    def node_at(self, target: int | L.Position | L.Range) -> A.AST:
+        if isinstance(target, int):
+            target = self.at(target).range
+        return must(self.body.node_at(target))

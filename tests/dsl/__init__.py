@@ -61,3 +61,11 @@ def field(
         visibility,
         inherited,
     )
+
+
+def arg(value: A.Expr, id: A.Id.ParamRef | None = None) -> A.Arg:
+    return (
+        A.Arg(value.location, value)
+        if id is None
+        else A.Arg(A.merge_locations(id, value), value, id)
+    )

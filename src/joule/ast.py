@@ -1,9 +1,7 @@
 import codecs
 import dataclasses as D
-import re
 from copy import copy
 from enum import Enum, StrEnum, auto
-from functools import partial
 from itertools import dropwhile
 from textwrap import dedent
 from typing import (
@@ -19,7 +17,6 @@ from typing import (
 )
 
 import lsprotocol.types as L
-import parsy as P
 import tree_sitter as T
 
 from joule.maybe import head_or_none, maybe, must
@@ -47,35 +44,6 @@ def location(uri, start, end) -> L.Location:
             L.Position(end_line, end_char),
         ),
     )
-
-
-def locate(uri: URI, parser: P.Parser) -> P.Parser:
-    def build(
-        start: tuple[int, int],
-        builder: Callable[[L.Location], Any],
-        end: tuple[int, int],
-    ) -> AST:
-        return builder(location(uri, start, end))
-
-    return P.seq(P.line_info, parser, P.line_info).combine(build)
-
-
-def enclosed_list(
-    element: P.Parser,
-    left: P.Parser,
-    sep: P.Parser,
-    right: P.Parser,
-):
-    @P.generate
-    def gen():
-        yield left << maybe_blank
-        elements = yield (element << maybe_blank << sep << maybe_blank).many()
-        last = yield (element << maybe_blank).map(lambda e: [e]).optional([])
-        yield right
-        elements.extend(last)
-        return elements
-
-    return gen
 
 
 @D.dataclass(frozen=True)
@@ -173,59 +141,6 @@ class AST:
                 return None
             case node:
                 return node
-
-    @staticmethod
-    def whitespace():
-        return (
-            P.whitespace.at_least(1)
-            # Single-line comment
-            | P.regex(r"(//|#)[^\n]*")
-            # C-style multi-line comment
-            | P.regex(r"/\*.*\*/", re.DOTALL)
-        )
-
-
-keywords = [
-    "assert",
-    "else",
-    "error",
-    "false",
-    "for",
-    "function",
-    "if",
-    "import",
-    "importstr",
-    "importbin",
-    "in",
-    "local",
-    "null",
-    "tailstrict",
-    "then",
-    "self",
-    "super",
-    "true",
-]
-
-blank = AST.whitespace()
-maybe_blank = blank.optional()
-
-comma = P.string(",")
-comma_sep = maybe_blank << comma << maybe_blank
-
-semicolon = P.string(";")
-semicolon_sep = maybe_blank << P.string(";") << maybe_blank
-
-lparen = P.string("(")
-rparen = P.string(")")
-
-lbracket = P.string("[")
-rbracket = P.string("]")
-
-lbrace = P.string("{")
-rbrace = P.string("}")
-
-eq = P.string("=")
-eq_sep = maybe_blank << eq << maybe_blank
 
 
 def skip_parenthesis(uri: URI, node: T.Node) -> "Expr":
@@ -374,25 +289,6 @@ class Expr(AST):
         """
         return [self]
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            alternatives = [
-                Binary.parser(uri),
-                Bool.parser(uri),
-                Dollar.parser(uri),
-                Id.VarRef.parser(uri),
-                Null.parser(uri),
-                Num.parser(uri),
-                Self.parser(uri),
-                Super.parser(uri),
-            ]
-            expr = yield P.alt(*alternatives).desc(Expr.__name__)
-            return expr
-
-        return gen
-
 
 @D.dataclass
 class Null(Expr):
@@ -402,17 +298,6 @@ class Null(Expr):
         return Null(location_of(uri, node))
 
     AST.register(from_cst, "null")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string("null").result(Null)
-            end = yield P.line_info
-            return Null(location(uri, start, end))
-
-        return gen.desc(Null.__name__)
 
 
 @D.dataclass
@@ -424,17 +309,6 @@ class Dollar(Expr):
 
     AST.register(from_cst, "dollar")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string("$")
-            end = yield P.line_info
-            return Dollar(location(uri, start, end))
-
-        return gen.desc(Dollar.__name__)
-
 
 @D.dataclass
 class Self(Expr):
@@ -445,17 +319,6 @@ class Self(Expr):
 
     AST.register(from_cst, "self")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string("self")
-            end = yield P.line_info
-            return Self(location(uri, start, end))
-
-        return gen.desc(Self.__name__)
-
 
 @D.dataclass
 class Super(Expr):
@@ -465,17 +328,6 @@ class Super(Expr):
         return Super(location_of(uri, node))
 
     AST.register(from_cst, "super")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string("super")
-            end = yield P.line_info
-            return Super(location(uri, start, end))
-
-        return gen.desc(Super.__name__)
 
 
 class AnalysisPhase(Enum):
@@ -511,31 +363,10 @@ class Document(Expr):
 
     AST.register(from_cst, "document")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            body = yield Expr.parser(uri)
-            return Document(body.location, body)
-
-        return gen.desc(Document.__name__)
-
 
 class Id:
     class IdBuilder(Protocol):
         def __call__(self, location: L.Location, name: str) -> AST: ...
-
-    @staticmethod
-    def parser(uri: URI, fn: IdBuilder):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            not_keywords = f"(?!{'|'.join(keywords)})"
-            name = yield P.regex(rf"{not_keywords}[_a-zA-Z][_a-zA-Z0-9]*")
-            end = yield P.line_info
-            return fn(location(uri, start, end), name)
-
-        return gen
 
     @D.dataclass
     class Var(Expr):
@@ -551,10 +382,6 @@ class Id:
             assert node.type == "id"
             assert node.text is not None
             return Id.Var(location_of(uri, node), node.text.decode())
-
-        @staticmethod
-        def parser(uri: URI):
-            return Id.parser(uri, Id.Var).desc(Id.Var.__name__)
 
     @D.dataclass
     class VarRef(Expr):
@@ -572,10 +399,6 @@ class Id:
 
         AST.register(from_cst, "id")
 
-        @staticmethod
-        def parser(uri: URI):
-            return Id.parser(uri, Id.VarRef).desc(Id.VarRef.__name__)
-
     @D.dataclass
     class Field(Expr):
         name: str
@@ -585,14 +408,14 @@ class Id:
             self.binding: FieldBinding | None = None
 
         @staticmethod
+        def from_string(string: Str) -> "Id.Field":
+            return Id.Field(string.location, string.value)
+
+        @staticmethod
         def from_cst(uri: URI, node: T.Node) -> "Id.Field":
             assert node.type == "id"
             assert node.text is not None
             return Id.Field(location_of(uri, node), node.text.decode())
-
-        @staticmethod
-        def parser(uri: URI):
-            return Id.parser(uri, Id.Field).desc(Id.Field.__name__)
 
     @D.dataclass
     class FieldRef(Expr):
@@ -604,10 +427,6 @@ class Id:
             assert node.text is not None
             return Id.FieldRef(location_of(uri, node), node.text.decode())
 
-        @staticmethod
-        def parser(uri: URI):
-            return Id.parser(uri, Id.FieldRef).desc(Id.FieldRef.__name__)
-
     @D.dataclass
     class ParamRef(Expr):
         name: str
@@ -617,10 +436,6 @@ class Id:
             assert node.type == "id"
             assert node.text is not None
             return Id.ParamRef(location_of(uri, node), node.text.decode())
-
-        @staticmethod
-        def parser(uri: URI):
-            return Id.parser(uri, Id.ParamRef).desc(Id.ParamRef.__name__)
 
 
 @D.dataclass
@@ -634,17 +449,6 @@ class Num(Expr):
         return Num(location_of(uri, node), float(node.text.decode()))
 
     AST.register(from_cst, "number")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            dec_literal = yield (P.string("-").optional("") + P.digit).map(float)
-            end = yield P.line_info
-            return Num(location(uri, start, end), dec_literal)
-
-        return gen.desc(Num.__name__)
 
 
 @D.dataclass
@@ -692,20 +496,6 @@ class Bool(Expr):
 
     AST.register(from_cst, "false", "true")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            value = yield (
-                P.string("true").result(partial(Bool, value=True))
-                | P.string("false").result(partial(Bool, value=False))
-            )
-            end = yield P.line_info
-            return Bool(location(uri, start, end), value)
-
-        return gen.desc(Bool.__name__)
-
 
 @D.dataclass
 class Array(Expr):
@@ -727,22 +517,6 @@ class Array(Expr):
         )
 
     AST.register(from_cst, "array")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            values = yield enclosed_list(
-                Expr.parser(uri),
-                left=lbracket,
-                sep=comma,
-                right=rbracket,
-            )
-            end = yield P.line_info
-            return Array(location(uri, start, end), values)
-
-        return gen.desc(__name__)
 
 
 class BinaryOp(StrEnum):
@@ -771,20 +545,12 @@ class BinaryOp(StrEnum):
     And = "&&"
     Or = "||"
 
-    @staticmethod
-    def parser():
-        return P.alt(*(P.string(op.value).result(op) for op in BinaryOp))
-
 
 class UnaryOp(StrEnum):
     Plus = "+"
-    Minus = "-"
+    Negate = "-"
     Not = "!"
     BitNot = "~"
-
-    @staticmethod
-    def parser():
-        return P.alt(*(P.string(op.value).result(op) for op in UnaryOp))
 
 
 @D.dataclass
@@ -808,18 +574,6 @@ class Unary(Expr):
         )
 
     AST.register(from_cst, "unary")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            op = yield UnaryOp.parser() << maybe_blank
-            operand = yield Expr.parser(uri)
-            end = yield P.line_info
-            return Unary(location(uri, start, end), op, operand)
-
-        return gen.desc(Unary.__name__)
 
 
 @D.dataclass
@@ -853,20 +607,6 @@ class Binary(Expr):
         )
 
     AST.register(from_cst, "binary", "implicit_plus")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            # TODO: Handle implicit object extension
-            start = yield P.line_info
-            lhs = yield Expr.parser(uri) << maybe_blank
-            op = yield BinaryOp.parser() << maybe_blank
-            rhs = yield Expr.parser(uri)
-            end = yield P.line_info
-            return Binary(location(uri, start, end), op=op, lhs=lhs, rhs=rhs)
-
-        return gen.desc(Binary.__name__)
 
 
 @D.dataclass
@@ -913,27 +653,6 @@ class Bind(AST):
 
     AST.register(from_cst, "bind")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def function():
-            start = yield P.line_info
-            params = yield Fn.params_parser(uri)
-            yield eq_sep
-            body = yield Expr.parser(uri)
-            end = yield P.line_info
-            return Fn(location(uri, start, end), params, body)
-
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            id = yield Id.Var.parser(uri)
-            value = yield (eq_sep >> Expr.parser(uri)) | function
-            end = yield P.line_info
-            return Bind(location(uri, start, end), id, value)
-
-        return gen.desc(Bind.__name__)
-
 
 @D.dataclass
 class Local(Expr):
@@ -968,20 +687,6 @@ class Local(Expr):
 
     AST.register(from_cst, "local_bind")
 
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string("local") << blank
-            binds = yield Bind.parser(uri).sep_by(comma_sep)
-            yield semicolon_sep
-            body = yield Expr.parser(uri)
-            end = yield P.line_info
-            return Local(location(uri, start, end), binds, body)
-
-        return gen.desc(Local.__name__)
-
 
 @D.dataclass
 class Param(AST):
@@ -1008,18 +713,6 @@ class Param(AST):
         )
 
     AST.register(from_cst, "param")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            id = yield Id.Var.parser(uri)
-            default = yield (eq_sep >> Expr.parser(uri)).optional()
-            end = yield P.line_info
-            return Param(location(uri, start, end), id, default)
-
-        return gen.desc(Param.__name__)
 
 
 @D.dataclass
@@ -1057,15 +750,6 @@ class Fn(Expr):
 
     AST.register(from_cst, "anonymous_function")
 
-    @staticmethod
-    def params_parser(uri: URI):
-        return enclosed_list(
-            Param.parser(uri),
-            left=lparen,
-            sep=comma,
-            right=rparen,
-        )
-
 
 @D.dataclass
 class Arg(AST):
@@ -1094,18 +778,6 @@ class Arg(AST):
             )
 
     AST.register(from_cst, "named_argument")
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            id = yield (Id.ParamRef.parser(uri) << eq_sep).optional()
-            value = yield Expr.parser(uri)
-            end = yield P.line_info
-            return Arg(location(uri, start, end), value, id)
-
-        return gen.desc(Arg.__name__)
 
 
 @D.dataclass
@@ -1154,18 +826,6 @@ class Call(Expr):
             if (param_ord := fn.params.index(param)) >= 0
             if (param_ord < len(self.args))
         )
-
-    @staticmethod
-    def parser(uri: URI):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            callee = yield Expr.parser(uri) << maybe_blank
-            args = yield enclosed_list(Arg.parser(uri), lparen, comma, rparen)
-            end = yield P.line_info
-            return Call(location(uri, start, end), callee, args)
-
-        return gen.desc(Call.__name__)
 
 
 @D.dataclass
@@ -1256,6 +916,10 @@ class ImportType(StrEnum):
 @D.dataclass
 class Importee(Str):
     pass
+
+    @staticmethod
+    def from_string(string: Str) -> "Importee":
+        return Importee(string.location, string.value)
 
 
 @D.dataclass(frozen=True)
@@ -1525,7 +1189,7 @@ class Field(AST):
 @D.dataclass
 class Object(Expr):
     binds: list[Bind] = D.field(default_factory=list)
-    assertions: list[Assert] = D.field(default_factory=list)
+    asserts: list[Assert] = D.field(default_factory=list)
     fields: list[Field] = D.field(default_factory=list)
 
     def __post_init__(self):
@@ -1535,7 +1199,7 @@ class Object(Expr):
     @property
     def children(self) -> Iterable[AST]:
         yield from self.binds
-        yield from self.assertions
+        yield from self.asserts
         yield from self.fields
 
     @classmethod
@@ -1722,7 +1386,7 @@ class Slice(Expr):
 class If(Expr):
     condition: Expr
     consequence: Expr
-    alternative: Expr | None
+    alternative: Expr | None = None
 
     @property
     def tails(self) -> Iterable[Expr]:
