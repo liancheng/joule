@@ -25,6 +25,7 @@ build-backend = "uv_build"
 dev = [
     "debugpy>=1.8.19",
     "pytest>=9.0.3",
+    "pytest-cov>=6.0.0",
     "ruff>=0.15.0",
 ]
 
@@ -41,9 +42,16 @@ members = [
 [tool.uv.sources]
 tree-sitter-jsonnet = { workspace = true }
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = [
     "ignore:int argument support is deprecated",
     "ignore:'asyncio.iscoroutinefunction' is deprecated",
 ]
+addopts = "--cov=joule --cov-report=html"
+
+[tool.coverage.run]
+source = ["src/joule"]
+
+[tool.coverage.report]
+show_missing = true

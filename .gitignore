@@ -1,2 +1,3 @@
+.coverage
 *.log
 __pycache__/
