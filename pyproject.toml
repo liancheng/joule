@@ -52,6 +52,7 @@ addopts = "--cov=joule --cov-report=html"
 
 [tool.coverage.run]
 source = ["src/joule"]
+branch = true
 
 [tool.coverage.report]
 show_missing = true
