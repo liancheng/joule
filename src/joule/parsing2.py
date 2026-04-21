@@ -286,7 +286,7 @@ class Parser:
     def document(self):
         @P.generate
         def gen():
-            body: A.Expr = yield self.expr
+            body: A.Expr = yield maybe_blank >> self.expr << maybe_blank
             return A.Document(body.location, body)
 
         return gen

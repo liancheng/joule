@@ -11,7 +11,7 @@ from rich.console import Console
 from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
 from joule.config import JouleConfig
 from joule.model import DocumentStore, ScopeResolver
-from joule.parsing import parse_jsonnet
+from joule.parsing2 import Parser
 from joule.server import server
 
 app = typer.Typer(
@@ -34,7 +34,6 @@ def serve():
 
 class TreeType(StrEnum):
     Jsonnet = "j"
-    TreeSitter = "t"
     VarScope = "v"
 
 
@@ -75,15 +74,12 @@ def tree(
         uri = path.absolute().as_uri()
         source = path.read_text()
 
-    cst = parse_jsonnet(source)
-    ast = Document.from_cst(uri, cst)
+    ast = Parser(uri).document.parse(source)
     ScopeResolver().resolve(ast)
 
     match tree_type:
         case TreeType.Jsonnet:
             tree = PrettyAST(ast)
-        case TreeType.TreeSitter:
-            tree = PrettyCST(cst)
         case TreeType.VarScope:
             tree = PrettyScope(ast.top_level_scope)
 
