@@ -1,5 +1,5 @@
 import re
-from functools import partial, reduce
+from functools import cached_property, partial, reduce
 from typing import Callable
 
 import lsprotocol.types as L
@@ -74,6 +74,29 @@ for_ = P.string("for")
 local = P.string("local")
 
 newline = P.string("\n").desc("newline")
+
+single_char_esc = P.alt(
+    *(
+        P.string(f"\\{esc}").result(value)
+        for esc, value in zip("\"'\\/bnfrt", "\"'\\/\b\n\f\r\t")
+    )
+)
+
+
+@P.generate
+def codepoint_esc():
+    u = P.string("\\u")
+    hex4 = P.regex("[0-9a-fA-F]{4}").map(partial(int, base=16))
+    high: int = yield u >> hex4
+
+    if 0xD800 <= high <= 0xDFFF:
+        # High 16 bit as surrogate: non-BMP code point
+        low: int = yield u >> hex4
+        return chr(0x10000 + (high - 0xD800) * 0x400 + (low - 0xDC00))
+    else:
+        # BMP code point
+        return chr(high)
+
 
 keywords = [
     "assert",
@@ -176,11 +199,11 @@ class Parser:
     def _op_from(self, *ops: A.BinaryOp | A.UnaryOp):
         return P.alt(*map(self.operator, ops))
 
-    @property
+    @cached_property
     def and_expr(self):
         return self.left_binary(self.bitor_expr, B.And).desc("and_expr")
 
-    @property
+    @cached_property
     def arg(self):
         @P.generate
         def gen():
@@ -192,7 +215,7 @@ class Parser:
 
         return gen.desc(A.Arg.__name__)
 
-    @property
+    @cached_property
     def array(self):
         @P.generate
         def gen():
@@ -203,7 +226,7 @@ class Parser:
 
         return gen.desc(A.Array.__name__)
 
-    @property
+    @cached_property
     def assert_(self):
         @P.generate
         def gen():
@@ -216,7 +239,7 @@ class Parser:
 
         return gen.desc(A.Assert.__name__)
 
-    @property
+    @cached_property
     def assert_expr(self):
         @P.generate
         def gen():
@@ -228,19 +251,19 @@ class Parser:
 
         return gen.desc(A.AssertExpr.__name__)
 
-    @property
+    @cached_property
     def bitand_expr(self):
         return self.left_binary(self.eq_expr, B.BitAnd)
 
-    @property
+    @cached_property
     def bitor_expr(self):
         return self.left_binary(self.bitxor_expr, B.BitOr)
 
-    @property
+    @cached_property
     def bitxor_expr(self):
         return self.left_binary(self.bitand_expr, B.BitXor)
 
-    @property
+    @cached_property
     def bind(self):
         @P.generate
         def function():
@@ -261,17 +284,17 @@ class Parser:
 
         return gen.desc(A.Bind.__name__)
 
-    @property
+    @cached_property
     def boolean(self):
         true = self._atom("true", partial(A.Bool, value=True)).desc("true")
         false = self._atom("false", partial(A.Bool, value=False)).desc("false")
         return (true | false).desc(A.Bool.__name__)
 
-    @property
+    @cached_property
     def cmp_expr(self):
         return self.in_expr | self.left_binary(self.shift_expr, B.LE, B.GE, B.LT, B.GT)
 
-    @property
+    @cached_property
     def comp_spec(self):
         @P.generate
         def gen():
@@ -282,7 +305,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def document(self):
         @P.generate
         def gen():
@@ -291,23 +314,23 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def dollar(self):
         return self._atom("$", A.Dollar).desc(A.Dollar.__name__)
 
-    @property
+    @cached_property
     def eq_expr(self):
         return self.left_binary(self.cmp_expr, B.Eq, B.NotEq)
 
-    @property
+    @cached_property
     def expr(self):
         return self.left_binary(self.and_expr, B.Or)
 
-    @property
+    @cached_property
     def field_id(self):
         return self._id(A.Id.Field).desc(A.Id.Field.__name__)
 
-    @property
+    @cached_property
     def field_key(self):
         @P.generate
         def computed_key():
@@ -325,7 +348,7 @@ class Parser:
 
         return fixed_key | computed_key
 
-    @property
+    @cached_property
     def field(self):
         @P.generate
         def field_sep():
@@ -360,11 +383,11 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def field_ref_id(self):
         return self._id(A.Id.FieldRef).desc(A.Id.FieldRef.__name__)
 
-    @property
+    @cached_property
     def for_spec(self):
         @P.generate
         def gen():
@@ -376,7 +399,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def function(self):
         @P.generate
         def gen():
@@ -389,7 +412,7 @@ class Parser:
 
         return gen.desc(A.Fn.__name__)
 
-    @property
+    @cached_property
     def if_(self):
         @P.generate
         def gen():
@@ -402,7 +425,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def if_spec(self):
         @P.generate
         def gen():
@@ -428,7 +451,7 @@ class Parser:
 
         return gen.desc(A.Import.__name__)
 
-    @property
+    @cached_property
     def in_expr(self):
         @P.generate
         def gen():
@@ -440,7 +463,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def list_comp(self):
         @P.generate
         def gen():
@@ -453,7 +476,7 @@ class Parser:
 
         return gen.desc(A.ListComp.__name__)
 
-    @property
+    @cached_property
     def local(self):
         @P.generate
         def gen():
@@ -467,15 +490,15 @@ class Parser:
 
         return gen.desc(A.Local.__name__)
 
-    @property
+    @cached_property
     def mul_expr(self):
         return self.left_binary(self.unary, B.Multiply, B.Divide, B.Modulus)
 
-    @property
+    @cached_property
     def null(self):
         return self._atom("null", A.Null).desc(A.Null.__name__)
 
-    @property
+    @cached_property
     def num(self):
         bin = P.regex("0[bB]") >> P.regex("[01]+").map(partial(int, base=2))
         oct = P.regex("0[oO]") >> P.regex("[0-7]+").map(partial(int, base=8))
@@ -508,7 +531,7 @@ class Parser:
 
         return gen.desc(A.Num.__name__)
 
-    @property
+    @cached_property
     def obj_comp(self):
         @P.generate
         def gen():
@@ -554,7 +577,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def obj_member(self):
         @P.generate
         def obj_local():
@@ -568,7 +591,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def object(self):
         @P.generate
         def gen():
@@ -617,7 +640,7 @@ class Parser:
             case _:
                 return parser
 
-    @property
+    @cached_property
     def param(self):
         @P.generate
         def gen():
@@ -629,11 +652,11 @@ class Parser:
 
         return gen.desc(A.Param.__name__)
 
-    @property
+    @cached_property
     def param_ref_id(self):
         return self._id(A.Id.ParamRef).desc(A.Id.ParamRef.__name__)
 
-    @property
+    @cached_property
     def params(self):
         @P.generate
         def gen():
@@ -642,7 +665,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def paren(self):
         @P.generate
         def gen():
@@ -653,11 +676,11 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def plus_expr(self):
         return self.left_binary(self.mul_expr, B.Plus, B.Minus)
 
-    @property
+    @cached_property
     def postfix(self):
         @P.generate
         def call():
@@ -705,7 +728,7 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def primary(self):
         return (
             P.alt(
@@ -732,43 +755,22 @@ class Parser:
             | self.var_ref_id
         )
 
-    @property
+    @cached_property
     def self_(self):
         return self._atom("self", A.Self).desc(A.Self.__name__)
 
-    @property
+    @cached_property
     def shift_expr(self):
         return self.left_binary(self.plus_expr, B.ShiftLeft, B.ShiftRight)
 
-    @property
+    @cached_property
     def string(self):
         @P.generate
         def gen():
             start = yield P.line_info
             verbatim: bool = yield P.string("@").result(True).optional(False)
 
-            single_char_esc = P.alt(
-                *(
-                    P.string(f"\\{esc}").result(value)
-                    for esc, value in zip("\"'\\/bnfrt", "\"'\\/\b\n\f\r\t")
-                )
-            )
-
-            @P.generate
-            def codepoint_esc():
-                u = P.string("\\u")
-                hex4 = P.regex("[0-9a-fA-F]{4}").map(partial(int, base=16))
-                high: int = yield u >> hex4
-
-                if 0xD800 <= high <= 0xDFFF:
-                    # High 16 bit as surrogate: non-BMP code point
-                    low: int = yield u >> hex4
-                    return chr(0x10000 + (high - 0xD800) * 0x400 + (low - 0xDC00))
-                else:
-                    # BMP code point
-                    return chr(high)
-
-            def escape(quote: str):
+            def escape(verbatim, quote: str):
                 return (
                     P.string(quote * 2).result(quote).desc("escaped quote")
                     if verbatim and quote in ["'", '"']
@@ -780,7 +782,7 @@ class Parser:
                 quote: str = yield P.char_from("\"'")
                 end_quote = P.string(quote)
 
-                esc = escape(quote)
+                esc = escape(verbatim, quote)
                 not_esc = esc.should_fail("not escaped character")
                 not_quote = end_quote.should_fail("not quote")
                 any = P.regex(f"[^{quote}]", re.DOTALL)
@@ -839,11 +841,11 @@ class Parser:
     def string_not_from(self, *strs: str):
         return P.seq(*(P.string(s).should_fail(f"not {s}") for s in strs))
 
-    @property
+    @cached_property
     def super_(self):
         return self._atom("super", A.Super).desc(A.Super.__name__)
 
-    @property
+    @cached_property
     def unary(self):
         @P.generate
         def gen():
@@ -860,10 +862,10 @@ class Parser:
 
         return gen
 
-    @property
+    @cached_property
     def var_id(self):
         return self._id(A.Id.Var).desc(A.Id.Var.__name__)
 
-    @property
+    @cached_property
     def var_ref_id(self):
         return self._id(A.Id.VarRef).desc(A.Id.VarRef.__name__)
