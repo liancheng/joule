@@ -75,28 +75,30 @@ local = P.string("local")
 
 newline = P.string("\n").desc("newline")
 
+
+def decode_codepoint(esc: str) -> str:
+    high = int(esc[2:6], 16)
+    low = int(esc[8:12], 16) if len(esc) == 12 else None
+
+    if 0xD800 <= high <= 0xDFFF:
+        # High 16 bit as surrogate: non-BMP code point
+        assert low is not None, "Invalid escaped non-BMP code point"
+        return chr(0x10000 + (high - 0xD800) * 0x400 + (low - 0xDC00))
+    elif low is None:
+        # BMP code point
+        return chr(high)
+    else:
+        return chr(high) + chr(low)
+
+
+codepoint_esc = P.regex(r"\\u[0-9a-fA-F]{4}(\\u[0-9a-fA-F]{4})?").map(decode_codepoint)
+
 single_char_esc = P.alt(
     *(
         P.string(f"\\{esc}").result(value)
         for esc, value in zip("\"'\\/bnfrt", "\"'\\/\b\n\f\r\t")
     )
 )
-
-
-@P.generate
-def codepoint_esc():
-    u = P.string("\\u")
-    hex4 = P.regex("[0-9a-fA-F]{4}").map(partial(int, base=16))
-    high: int = yield u >> hex4
-
-    if 0xD800 <= high <= 0xDFFF:
-        # High 16 bit as surrogate: non-BMP code point
-        low: int = yield u >> hex4
-        return chr(0x10000 + (high - 0xD800) * 0x400 + (low - 0xDC00))
-    else:
-        # BMP code point
-        return chr(high)
-
 
 keywords = [
     "assert",
