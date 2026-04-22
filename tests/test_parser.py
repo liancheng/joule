@@ -981,3 +981,30 @@ class TestParser(ASTTestCase):
                 comp_spec=[if_spec],
             ),
         )
+
+    def test_doc(self):
+        self.parser.document.parse(
+            dedent(
+                """\
+                local refactor = import './refactor.libsonnet';
+                local utils = import './utils.libsonnet';
+
+                {
+                  titleMapping: {
+                    alertgroups: 'alertGroups',
+                    alertlist: 'alertList',
+                    annotationslist: 'annotationsList',
+                    barchart: 'barChart',
+                    bargauge: 'barGauge',
+                    dashboardlist: 'dashboardList',
+                    nodegraph: 'nodeGraph',
+                    piechart: 'pieChart',
+                    statetimeline: 'stateTimeline',
+                    statushistory: 'statusHistory',
+                    timeseries: 'timeSeries',
+                    xychart: 'xyChart',
+                  },
+                }
+                """
+            )
+        )
