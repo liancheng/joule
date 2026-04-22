@@ -532,52 +532,6 @@ class Parser:
         return gen.desc(A.Num.__name__)
 
     @cached_property
-    def obj_comp(self):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            _, members, comp_spec = yield enclosed(
-                self.obj_member,
-                open=lbrace,
-                sep=comma,
-                close=self.comp_spec << maybe_blank << rbrace,
-            )
-            end = yield P.line_info
-
-            binds: list[A.Bind] = []
-            asserts: list[A.Assert] = []
-            fields: list[A.Field] = []
-
-            for member in members:
-                match member:
-                    case A.Bind() as m:
-                        binds.append(m)
-                    case A.Assert() as m:
-                        asserts.append(m)
-                    case A.Field() as m:
-                        fields.append(m)
-
-            match fields, comp_spec:
-                # An object comprehension can have:
-                #  - Exactly 1 field
-                #  - At least 1 for-spec
-                #  - 0 or more if-spec
-                case [field], [A.ForSpec() as first_spec, *other_specs]:
-                    location = self._location(start, end)
-                    return A.ObjComp(
-                        location,
-                        field=field,
-                        binds=binds,
-                        asserts=asserts,
-                        for_spec=first_spec,
-                        comp_spec=other_specs,
-                    )
-                case _:
-                    raise RuntimeError("Malformed object comprehension")
-
-        return gen
-
-    @cached_property
     def obj_member(self):
         @P.generate
         def obj_local():
@@ -596,7 +550,12 @@ class Parser:
         @P.generate
         def gen():
             start = yield P.line_info
-            _, members, _ = yield enclosed(self.obj_member, lbrace, comma, rbrace)
+            _, members, maybe_comp_spec = yield enclosed(
+                self.obj_member,
+                open=lbrace,
+                sep=comma,
+                close=(self.comp_spec << maybe_blank).optional() << rbrace,
+            )
             end = yield P.line_info
 
             binds: list[A.Bind] = []
@@ -612,12 +571,30 @@ class Parser:
                     case A.Field() as m:
                         fields.append(m)
 
-            return A.Object(
-                self._location(start, end),
-                binds=binds,
-                asserts=asserts,
-                fields=fields,
-            )
+            match fields, maybe_comp_spec:
+                # An object comprehension can have:
+                #  - Exactly 1 field
+                #  - At least 1 for-spec
+                #  - 0 or more if-spec
+                case [field], [A.ForSpec() as first_spec, *other_specs]:
+                    location = self._location(start, end)
+                    return A.ObjComp(
+                        location,
+                        field=field,
+                        binds=binds,
+                        asserts=asserts,
+                        for_spec=first_spec,
+                        comp_spec=other_specs,
+                    )
+                case _, None:
+                    return A.Object(
+                        self._location(start, end),
+                        binds=binds,
+                        asserts=asserts,
+                        fields=fields,
+                    )
+                case _:
+                    raise RuntimeError("Malformed object comprehension")
 
         return gen
 
@@ -711,7 +688,7 @@ class Parser:
 
         @P.generate
         def extend():
-            obj = yield maybe_blank >> (self.object | self.obj_comp)
+            obj = yield maybe_blank >> self.object
             return lambda location, lhs: A.Binary(location, op=B.Plus, lhs=lhs, rhs=obj)
 
         @P.generate
@@ -744,7 +721,6 @@ class Parser:
             self.local,
             self.null,
             self.num,
-            self.obj_comp,
             self.object,
             self.paren,
             self.self_,

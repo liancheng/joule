@@ -969,7 +969,7 @@ class TestParser(ASTTestCase):
 
         self.assertParsed(
             t,
-            self.parser.obj_comp,
+            self.parser.object,
             A.ObjComp(
                 location=t.location,
                 field=field(key, value, A.Visibility.Hidden),
