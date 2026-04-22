@@ -151,25 +151,23 @@ class Parser:
         self.uri = uri
 
     def _atom(self, pattern: str, fn: AtomBuilder):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            yield P.string(pattern)
-            end = yield P.line_info
-            return fn(self._location(start, end))
-
-        return gen
+        return P.seq(
+            P.line_info,
+            P.string(pattern),
+            P.line_info,
+        ).combine(lambda start, _, end: fn(self._location(start, end)))
 
     def _id(self, fn: IdBuilder):
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            not_keywords = f"(?!{'|'.join(keywords)})"
-            name = yield P.regex(rf"{not_keywords}[_a-zA-Z][_a-zA-Z0-9]*")
-            end = yield P.line_info
+        not_keywords = f"(?!{'|'.join(keywords)})"
+
+        def make_id(start, name, end):
             return fn(self._location(start, end), name)
 
-        return gen
+        return P.seq(
+            P.line_info,
+            P.regex(rf"{not_keywords}[_a-zA-Z][_a-zA-Z0-9]*"),
+            P.line_info,
+        ).combine(make_id)
 
     def left_binary(self, operand: P.Parser, *operators: A.BinaryOp | A.UnaryOp):
         operator = P.alt(*map(self.operator, operators))
@@ -345,7 +343,7 @@ class Parser:
 
         @P.generate
         def fixed_key():
-            id = yield self.string.map(A.Id.Field.from_string) | self.field_id
+            id = yield self.field_id | self.string.map(A.Id.Field.from_string)
             return A.FixedKey(id.location, id)
 
         return fixed_key | computed_key
@@ -732,29 +730,27 @@ class Parser:
 
     @cached_property
     def primary(self):
-        return (
-            P.alt(
-                self.array,
-                self.assert_expr,
-                self.boolean,
-                self.dollar,
-                self.function,
-                self.if_,
-                self.import_(A.ImportType.Bin),
-                self.import_(A.ImportType.Default),
-                self.import_(A.ImportType.Str),
-                self.list_comp,
-                self.local,
-                self.null,
-                self.num,
-                self.obj_comp,
-                self.object,
-                self.paren,
-                self.self_,
-                self.string,
-                self.super_,
-            )
-            | self.var_ref_id
+        return P.alt(
+            self.array,
+            self.assert_expr,
+            self.boolean,
+            self.dollar,
+            self.function,
+            self.if_,
+            self.import_(A.ImportType.Bin),
+            self.import_(A.ImportType.Default),
+            self.import_(A.ImportType.Str),
+            self.list_comp,
+            self.local,
+            self.null,
+            self.num,
+            self.obj_comp,
+            self.object,
+            self.paren,
+            self.self_,
+            self.string,
+            self.super_,
+            self.var_ref_id,
         )
 
     @cached_property
