@@ -737,80 +737,82 @@ class Parser:
     def shift_expr(self):
         return self.left_binary(self.plus_expr, B.ShiftLeft, B.ShiftRight)
 
-    @cached_property
-    def string(self):
+    def _inline_string(self, quote: str, verbatim: bool):
+        open_quote = P.string(f"@{quote}") if verbatim else P.string(quote)
+        closing_quote = P.string(quote)
+        verbatim_esc = P.string(quote * 2).result(quote)
+        esc = verbatim_esc if verbatim else (single_char_esc | codepoint_esc)
+        any = P.regex(f"[^{quote}]", re.DOTALL)
+        char = esc | any
+        return open_quote >> char.many().concat() << closing_quote
+
+    def _indented_text(self, verbatim: bool):
         @P.generate
         def gen():
-            start = yield P.line_info
-            verbatim: bool = yield P.string("@").result(True).optional(False)
+            indent: str = yield inline_whitespace.at_least(1).concat()
 
-            def escape(verbatim, quote: str):
-                return (
-                    P.string(quote * 2).result(quote).desc("escaped quote")
-                    if verbatim and quote in ["'", '"']
-                    else single_char_esc | codepoint_esc
-                )
+            esc = single_char_esc | codepoint_esc
+            char = P.regex(".") if verbatim else esc | P.regex(".")
 
-            @P.generate
-            def inline_string():
-                quote: str = yield P.char_from("\"'")
-                end_quote = P.string(quote)
+            first_line: str = yield char.many().concat() << newline
+            line = P.string(indent) >> char.many().concat() << newline
+            lines: list[str] = yield line.many()
+            lines.insert(0, first_line)
 
-                esc = escape(verbatim, quote)
-                not_esc = esc.should_fail("not escaped character")
-                not_quote = end_quote.should_fail("not quote")
-                any = P.regex(f"[^{quote}]", re.DOTALL)
+            return lines, indent
 
-                char = esc | (not_esc >> not_quote >> any)
-                content: str = yield char.many().concat() << end_quote
-                return content
+        return gen
 
-            @P.generate
-            def indented_content():
-                indent: str = yield inline_whitespace.at_least(1).concat()
+    def _text_block(self, verbatim: bool):
+        @P.generate
+        def gen():
+            # Text block starting quote with optional verbatim mark.
+            yield P.string("@|||" if verbatim else "|||")
 
-                esc = single_char_esc | codepoint_esc
-                not_esc = esc.should_fail("not escaped character")
-                char = P.regex(".") if verbatim else esc | not_esc >> P.regex(".")
+            # Starting quote variants:
+            # - "|||": Preserves the last newline of the text block
+            # - "|||-": Removes the last newline of the text block
+            last_newline = yield P.string("-").result("").optional("\n") << newline
 
-                first_line: str = yield char.many().concat() << newline
-                line = P.string(indent) >> char.many().concat() << newline
-                lines: list[str] = yield line.many()
-                lines.insert(0, first_line)
+            # Optional indented text block lines. `lines` is a list of text block
+            # lines without either the leading indentation or the trailing newline.
+            lines, indent = yield self._indented_text(verbatim).optional(("", None))
 
-                return lines, indent
+            # When the indented text block is non-empty, the ending quote must not
+            # start with the same indentation as the text block.
+            no_indent = (
+                P.peek(P.string(indent)).should_fail("different indentation")
+                if indent
+                else P.success(())
+            )
 
-            @P.generate
-            def text_block():
-                # Text block starting quote with optional verbatim mark.
-                yield P.string("|||")
+            yield no_indent >> inline_whitespace.many() >> P.string("|||")
 
-                # Starting quote variants:
-                # - "|||": Preserves the last newline of the text block
-                # - "|||-": Removes the last newline of the text block
-                last_newline = yield P.string("-").result("").optional("\n") << newline
+            return "\n".join(lines) + last_newline
 
-                # Optional indented text block lines. `lines` is a list of text block
-                # lines without either the leading indentation or the trailing newline.
-                lines, indent = yield indented_content.optional(("", None))
+        return gen
 
-                # When the indented text block is non-empty, the ending quote must not
-                # start with the same indentation as the text block.
-                no_indent = (
-                    P.peek(P.string(indent)).should_fail("different indentation")
-                    if indent
-                    else P.success(())
-                )
-
-                yield no_indent >> inline_whitespace.many() >> P.string("|||")
-
-                return "\n".join(lines) + last_newline
-
-            value = yield inline_string | text_block
-            end = yield P.line_info
+    @cached_property
+    def string(self):
+        def make_str(start: LineInfo, end: LineInfo, value: str):
             return A.Str(self._location(start, end), value)
 
-        return gen.desc(A.Str.__name__)
+        return (
+            P.seq(
+                start=P.line_info,
+                value=(
+                    self._inline_string("'", verbatim=False)
+                    | self._inline_string('"', verbatim=False)
+                    | self._text_block(verbatim=False)
+                    | self._inline_string("'", verbatim=True)
+                    | self._inline_string('"', verbatim=True)
+                    | self._text_block(verbatim=True)
+                ),
+                end=P.line_info,
+            )
+            .combine_dict(make_str)
+            .desc(A.Str.__name__)
+        )
 
     def string_not_from(self, *strs: str):
         return P.seq(*(P.string(s).should_fail(f"not {s}") for s in strs))
