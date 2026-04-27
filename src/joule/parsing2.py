@@ -1,5 +1,6 @@
 import re
 from functools import cached_property, partial, reduce
+from textwrap import dedent
 from typing import Callable
 
 import lsprotocol.types as L
@@ -98,6 +99,21 @@ single_char_esc = P.alt(
         P.string(f"\\{esc}").result(value)
         for esc, value in zip("\"'\\/bnfrt", "\"'\\/\b\n\f\r\t")
     )
+)
+
+text_block_re = re.compile(
+    dedent(
+        r"""
+        @?|||-?\n
+        (
+            (?P<indent>[ \t]+).*\n
+            ((?P=indent).*\n)*
+        )?
+        (?!(?P=indent))[ \t]*
+        |||
+        """,
+    ),
+    re.VERBOSE,
 )
 
 keywords = [

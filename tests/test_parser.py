@@ -1008,3 +1008,46 @@ class TestParser(ASTTestCase):
                 """
             )
         )
+
+    def test_block_text_re(self):
+        import re
+
+        pat = re.compile(
+            dedent(
+                r"""
+                @?\|\|\|-?\n
+                (
+                    (?P<indent>[ \t]+).*\n
+                    ((?P=indent).*\n)*
+                )?
+                (?!(?P=indent))[ \t]*
+                \|\|\|
+                """,
+            ),
+            re.VERBOSE,
+        )
+
+        self.assertIsNotNone(
+            pat.fullmatch(
+                dedent(
+                    """\
+                    |||
+                    |||"""
+                )
+            )
+        )
+
+        self.assertIsNotNone(
+            pat.fullmatch("|||-\n  \n|||"),
+        )
+
+        self.assertIsNotNone(
+            pat.fullmatch(
+                dedent(
+                    """\
+                    |||
+                        test
+                    |||"""
+                )
+            )
+        )
