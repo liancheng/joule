@@ -185,25 +185,29 @@ class Parser:
             P.line_info,
         ).combine(make_id)
 
-    def left_binary(self, operand: P.Parser, *operators: A.BinaryOp | A.UnaryOp):
+    def _left_binary(self, operand: P.Parser, *operators: A.BinaryOp):
+        def build_rhs(op: A.BinaryOp, rhs: A.Expr, end: LineInfo):
+            return lambda start, lhs: A.Binary(self._location(start, end), op, lhs, rhs)
+
+        def build_binary(start: LineInfo, head: A.Expr, tail: list[Callable]):
+            result = head
+            for build in tail:
+                result = build(start, result)
+            return result
+
         operator = P.alt(*map(self.operator, operators))
 
-        @P.generate
-        def gen():
-            start = yield P.line_info
-            lhs = yield operand
-            maybe_operator = (maybe_blank >> operator).optional()
-
-            op = yield maybe_operator
-            while op is not None:
-                rhs = yield maybe_blank >> operand
-                end = yield P.line_info
-                lhs = A.Binary(self._location(start, end), op, lhs, rhs)
-                op = yield maybe_operator
-
-            return lhs
-
-        return gen
+        return P.seq(
+            start=P.line_info,
+            head=operand,
+            tail=P.seq(
+                op=maybe_blank >> operator,
+                rhs=maybe_blank >> operand,
+                end=P.line_info,
+            )
+            .combine_dict(build_rhs)
+            .many(),
+        ).combine_dict(build_binary)
 
     def _position(self, pos: LineInfo) -> L.Position:
         line, char = pos
@@ -217,7 +221,7 @@ class Parser:
 
     @cached_property
     def and_expr(self):
-        return self.left_binary(self.bitor_expr, B.And).desc("and_expr")
+        return self._left_binary(self.bitor_expr, B.And).desc("and_expr")
 
     @cached_property
     def arg(self):
@@ -269,15 +273,15 @@ class Parser:
 
     @cached_property
     def bitand_expr(self):
-        return self.left_binary(self.eq_expr, B.BitAnd)
+        return self._left_binary(self.eq_expr, B.BitAnd)
 
     @cached_property
     def bitor_expr(self):
-        return self.left_binary(self.bitxor_expr, B.BitOr)
+        return self._left_binary(self.bitxor_expr, B.BitOr)
 
     @cached_property
     def bitxor_expr(self):
-        return self.left_binary(self.bitand_expr, B.BitXor)
+        return self._left_binary(self.bitand_expr, B.BitXor)
 
     @cached_property
     def bind(self):
@@ -308,7 +312,7 @@ class Parser:
 
     @cached_property
     def cmp_expr(self):
-        return self.in_expr | self.left_binary(self.shift_expr, B.LE, B.GE, B.LT, B.GT)
+        return self.in_expr | self._left_binary(self.shift_expr, B.LE, B.GE, B.LT, B.GT)
 
     @cached_property
     def comp_spec(self):
@@ -336,11 +340,11 @@ class Parser:
 
     @cached_property
     def eq_expr(self):
-        return self.left_binary(self.cmp_expr, B.Eq, B.NotEq)
+        return self._left_binary(self.cmp_expr, B.Eq, B.NotEq)
 
     @cached_property
     def expr(self):
-        return self.left_binary(self.and_expr, B.Or)
+        return self._left_binary(self.and_expr, B.Or)
 
     @cached_property
     def field_id(self):
@@ -508,7 +512,7 @@ class Parser:
 
     @cached_property
     def mul_expr(self):
-        return self.left_binary(self.unary, B.Multiply, B.Divide, B.Modulus)
+        return self._left_binary(self.unary, B.Multiply, B.Divide, B.Modulus)
 
     @cached_property
     def null(self):
@@ -671,7 +675,7 @@ class Parser:
 
     @cached_property
     def plus_expr(self):
-        return self.left_binary(self.mul_expr, B.Plus, B.Minus)
+        return self._left_binary(self.mul_expr, B.Plus, B.Minus)
 
     @cached_property
     def postfix(self):
@@ -751,7 +755,7 @@ class Parser:
 
     @cached_property
     def shift_expr(self):
-        return self.left_binary(self.plus_expr, B.ShiftLeft, B.ShiftRight)
+        return self._left_binary(self.plus_expr, B.ShiftLeft, B.ShiftRight)
 
     def _inline_string(self, quote: str, verbatim: bool):
         open_quote = P.string(f"@{quote}") if verbatim else P.string(quote)
