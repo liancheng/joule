@@ -77,9 +77,10 @@ local = P.string("local")
 newline = P.string("\n").desc("newline")
 
 
-def decode_codepoint(esc: str) -> str:
-    high = int(esc[2:6], 16)
-    low = int(esc[8:12], 16) if len(esc) == 12 else None
+def decode_codepoint(esc: tuple[str, str | None]) -> str:
+    high_raw, low_raw = esc
+    high = int(high_raw, 16)
+    low = None if low_raw is None else int(low_raw, 16)
 
     if 0xD800 <= high <= 0xDFFF:
         # High 16 bit as surrogate: non-BMP code point
@@ -92,7 +93,16 @@ def decode_codepoint(esc: str) -> str:
         return chr(high) + chr(low)
 
 
-codepoint_esc = P.regex(r"\\u[0-9a-fA-F]{4}(\\u[0-9a-fA-F]{4})?").map(decode_codepoint)
+codepoint_esc = P.regex(
+    dedent(
+        r"""
+        \\u(?P<high>[0-9a-fA-F]{4})
+        (\\u(?P<low>[0-9a-fA-F]{4}))?
+        """
+    ),
+    flags=re.VERBOSE,
+    group=("high", "low"),
+).map(decode_codepoint)
 
 single_char_esc = P.alt(
     *(
@@ -101,19 +111,29 @@ single_char_esc = P.alt(
     )
 )
 
-text_block_re = re.compile(
-    dedent(
-        r"""
-        @?|||-?\n
-        (
-            (?P<indent>[ \t]+).*\n
-            ((?P=indent).*\n)*
-        )?
-        (?!(?P=indent))[ \t]*
-        |||
-        """,
-    ),
-    re.VERBOSE,
+text_block_re = dedent(
+    r"""
+    @?\|\|\|-?\n
+    (
+        (?P<indent>[ \t]+).*\n
+        ((?P=indent).*\n)*
+    )?
+    (?!(?P=indent))[ \t]*
+    \|\|\|
+    """
+)
+
+inline_string_re = dedent(
+    r"""
+    # Verbatim quoted inline string
+    @(?P<verb_quote>["'])
+        ((?P=verb_quote){2}|(?!(?P=verb_quote)).)*
+    (?P=verb_quote)
+    # Non-verbatim quoted inline string
+    | (?P<quote>["'])
+        (\\.|(?!(?P=quote)).)*
+    (?P=quote)
+    """
 )
 
 keywords = [
@@ -817,17 +837,28 @@ class Parser:
         def make_str(start: LineInfo, end: LineInfo, value: str):
             return A.Str(self._location(start, end), value)
 
+        def parse_inline_string(raw: str):
+            return P.alt(
+                *(
+                    self._inline_string(quote, verbatim)
+                    for quote in "\"'"
+                    for verbatim in [False, True]
+                )
+            ).parse(raw)
+
+        def parse_text_block(raw: str):
+            return P.alt(
+                self._text_block(verbatim=True),
+                self._text_block(verbatim=False),
+            ).parse(raw)
+
+        inline_string = P.regex(inline_string_re, re.VERBOSE).map(parse_inline_string)
+        text_block = P.regex(text_block_re, re.VERBOSE).map(parse_text_block)
+
         return (
             P.seq(
                 start=P.line_info,
-                value=(
-                    self._inline_string("'", verbatim=False)
-                    | self._inline_string('"', verbatim=False)
-                    | self._text_block(verbatim=False)
-                    | self._inline_string("'", verbatim=True)
-                    | self._inline_string('"', verbatim=True)
-                    | self._text_block(verbatim=True)
-                ),
+                value=inline_string | text_block,
                 end=P.line_info,
             )
             .combine_dict(make_str)
