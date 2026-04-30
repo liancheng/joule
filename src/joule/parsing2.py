@@ -257,10 +257,12 @@ class Parser:
 
     @cached_property
     def array(self):
+        body = enclosed(self.expr, lbracket, comma, rbracket)
+
         @P.generate
         def gen():
             start = yield P.line_info
-            _, values, _ = yield enclosed(self.expr, lbracket, comma, rbracket)
+            _, values, _ = yield body
             end = yield P.line_info
             return A.Array(self._location(start, end), values)
 
@@ -544,23 +546,18 @@ class Parser:
         oct = P.regex("0[oO]") >> P.regex("[0-7]+").map(partial(int, base=8))
         hex = P.regex("0[xX]") >> P.regex("[0-9a-fA-F]+").map(partial(int, base=16))
 
-        @P.generate
-        def dec():
-            sign = P.char_from("-+")
-            zero = P.string("0")
-            digit1 = P.regex("[1-9]")
-            digits = P.regex("[0-9]").at_least(1).concat()
-            maybe_digits = digits.optional("")
-
-            signed_integer = sign.optional("") + digits
-            exp = P.char_from("eE") + signed_integer
-            maybe_exp = exp.optional("")
-            integral = sign.optional("") + (zero | (digit1 + maybe_digits))
-            frac = dot + maybe_digits
-            maybe_frac = frac.optional("")
-
-            value = yield integral + maybe_frac + maybe_exp
-            return float(value)
+        sign = P.char_from("-+")
+        zero = P.string("0")
+        digit1 = P.regex("[1-9]")
+        digits = P.regex("[0-9]").at_least(1).concat()
+        maybe_digits = digits.optional("")
+        signed_integer = sign.optional("") + digits
+        exp = P.char_from("eE") + signed_integer
+        maybe_exp = exp.optional("")
+        integral = sign.optional("") + (zero | (digit1 + maybe_digits))
+        frac = dot + maybe_digits
+        maybe_frac = frac.optional("")
+        dec = (integral + maybe_frac + maybe_exp).map(float)
 
         @P.generate
         def gen():
@@ -587,15 +584,17 @@ class Parser:
 
     @cached_property
     def object(self):
+        body = enclosed(
+            self.obj_member,
+            open=lbrace,
+            sep=comma,
+            close=(self.comp_spec << maybe_blank).optional() << rbrace,
+        )
+
         @P.generate
         def gen():
             start = yield P.line_info
-            _, members, maybe_comp_spec = yield enclosed(
-                self.obj_member,
-                open=lbrace,
-                sep=comma,
-                close=(self.comp_spec << maybe_blank).optional() << rbrace,
-            )
+            _, members, maybe_comp_spec = yield body
             end = yield P.line_info
 
             binds: list[A.Bind] = []
@@ -675,9 +674,11 @@ class Parser:
 
     @cached_property
     def params(self):
+        body = enclosed(self.param, lparen, comma, rparen)
+
         @P.generate
         def gen():
-            _, params, _ = yield enclosed(self.param, lparen, comma, rparen)
+            _, params, _ = yield body
             return params
 
         return gen
@@ -699,9 +700,11 @@ class Parser:
 
     @cached_property
     def postfix(self):
+        call_args = enclosed(self.arg, lparen, comma, rparen)
+
         @P.generate
         def call():
-            _, args, _ = yield enclosed(self.arg, lparen, comma, rparen)
+            _, args, _ = yield call_args
             return partial(A.Call, args=args)
 
         @P.generate
@@ -874,10 +877,12 @@ class Parser:
 
     @cached_property
     def unary(self):
+        unary_op = self._op_from(*A.UnaryOp).optional()
+
         @P.generate
         def gen():
             start = yield P.line_info
-            op = yield self._op_from(*A.UnaryOp).optional()
+            op = yield unary_op
 
             if op is None:
                 operand = yield maybe_blank >> self.postfix

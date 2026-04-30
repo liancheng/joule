@@ -1,3 +1,4 @@
+import re
 from textwrap import dedent
 from typing import Sequence
 
@@ -6,7 +7,7 @@ import parsy as P
 from joule import ast as A
 from joule.ast import BinaryOp as B
 from joule.ast import UnaryOp as U
-from joule.parsing2 import Parser, blank, comma, enclosed, lparen, rparen
+from joule.parsing2 import Parser, blank, comma, enclosed, lparen, rparen, text_block_re
 from tests.dsl.fake_document import FakeFile
 
 from . import ASTTestCase
@@ -1010,22 +1011,7 @@ class TestParser(ASTTestCase):
         )
 
     def test_block_text_re(self):
-        import re
-
-        pat = re.compile(
-            dedent(
-                r"""
-                @?\|\|\|-?\n
-                (
-                    (?P<indent>[ \t]+).*\n
-                    ((?P=indent).*\n)*
-                )?
-                (?!(?P=indent))[ \t]*
-                \|\|\|
-                """,
-            ),
-            re.VERBOSE,
-        )
+        pat = re.compile(text_block_re, re.VERBOSE)
 
         self.assertIsNotNone(
             pat.fullmatch(

@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from joule.ast import Document, PrettyAST, PrettyCST, PrettyScope
+from joule.ast import PrettyAST, PrettyScope
 from joule.config import JouleConfig
 from joule.model import DocumentStore, ScopeResolver
 from joule.parsing2 import Parser
@@ -73,6 +73,10 @@ def tree(
     else:
         uri = path.absolute().as_uri()
         source = path.read_text()
+
+    # Parsy combinators recurse deeply through the precedence chain (~100 frames
+    # per nesting level), so the default 1000 limit fails on real-world Jsonnet.
+    sys.setrecursionlimit(100000)
 
     ast = Parser(uri).document.parse(source)
     ScopeResolver().resolve(ast)
