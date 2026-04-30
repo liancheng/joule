@@ -1345,14 +1345,14 @@ class FieldAccess(Expr):
 @D.dataclass
 class Slice(Expr):
     array: Expr
-    begin: Expr
+    begin: Expr | None = None
     end: Expr | None = None
     step: Expr | None = None
 
     @property
     def children(self) -> Iterable[AST]:
         yield self.array
-        yield self.begin
+        yield from maybe(self.begin)
         yield from maybe(self.end)
         yield from maybe(self.step)
 

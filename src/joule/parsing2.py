@@ -691,17 +691,17 @@ class Parser:
 
         @P.generate
         def slice():
-            begin = yield lbracket >> maybe_blank >> self.expr
+            begin = yield lbracket >> maybe_blank >> self.expr.optional()
             end = None
             step = None
 
             maybe_colon = yield colon_sep.optional()
             if maybe_colon is not None:
-                end = yield self.expr
+                end = yield self.expr.optional()
 
                 maybe_colon = yield colon_sep.optional()
                 if maybe_colon is not None:
-                    step = yield self.expr
+                    step = yield self.expr.optional()
 
             yield rbracket
             return partial(A.Slice, begin=begin, end=end, step=step)
