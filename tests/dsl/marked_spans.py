@@ -1,9 +1,8 @@
 import dataclasses as D
 
-import lsprotocol.types as L
 import parsy as P
 
-from joule.ast import URI
+from joule.ast import URI, Anchor, Point, Span
 
 
 @D.dataclass
@@ -17,7 +16,7 @@ class Mark:
 
 
 @D.dataclass
-class MarkedRange:
+class MarkedSpan:
     start: int
     length: int
     marks: list[Mark]
@@ -45,48 +44,48 @@ closed_mark = P.seq(
 
 mark = open_mark | close_mark | closed_mark
 
-marked_range = P.seq(
+marked_span = P.seq(
     start=P.whitespace.optional() >> P.index,
     length=P.string("^").at_least(1).map(len),
     marks=mark.sep_by(P.string(","), min=1),
-).combine_dict(MarkedRange)
+).combine_dict(MarkedSpan)
 
-marked_ranges = marked_range.at_least(1)
+marked_spans = marked_span.at_least(1)
 
 
-def parse_marked_ranges(source: str) -> tuple[str, dict[int, L.Range]]:
+def parse_marked_spans(source: str) -> tuple[str, dict[int, Span]]:
     line_no = -1
     source_lines: list[str] = []
-    open_marks: dict[int, L.Position] = {}
-    ranges: dict[int, L.Range] = {}
+    open_marks: dict[int, Point] = {}
+    spans: dict[int, Span] = {}
 
     for line in source.splitlines():
         if not line.strip().startswith("^"):
             line_no += 1
             source_lines.append(line)
         else:
-            for span in marked_ranges.parse(line):
+            for span in marked_spans.parse(line):
                 for mark in span.marks:
                     match mark:
                         # Opening mark like "1:".
-                        case Mark(id, True, False):
+                        case Mark(id, open=True, close=False):
                             assert id not in open_marks, f"Duplicate mark: {id}"
-                            start_pos = L.Position(line_no, span.start)
-                            open_marks[id] = start_pos
+                            start = Point(line_no, span.start)
+                            open_marks[id] = start
 
                         # Closing mark like ":1".
-                        case Mark(id, False, True):
+                        case Mark(id, open=False, close=True):
                             assert id in open_marks, f"Open mark not found: {id}"
-                            start_pos = open_marks[id]
-                            end_pos = L.Position(line_no, span.start + span.length)
-                            ranges[id] = L.Range(start_pos, end_pos)
+                            start = open_marks[id]
+                            end = Point(line_no, span.start + span.length)
+                            spans[id] = Span(start, end)
                             open_marks.pop(id)
 
                         # Closed mark like "1"
-                        case Mark(id, False, False):
-                            start_pos = L.Position(line_no, span.start)
-                            end_pos = L.Position(line_no, span.start + span.length)
-                            ranges[id] = L.Range(start_pos, end_pos)
+                        case Mark(id, open=False, close=False):
+                            start = Point(line_no, span.start)
+                            end = Point(line_no, span.start + span.length)
+                            spans[id] = Span(start, end)
 
                         case _:
                             raise RuntimeError(f"Invalid mark: mark={mark}")
@@ -94,9 +93,9 @@ def parse_marked_ranges(source: str) -> tuple[str, dict[int, L.Range]]:
     pending_marks = ", ".join([str(k) for k in open_marks.keys()])
     assert len(open_marks) == 0, f"Closing mark(s) missing: {pending_marks}"
 
-    return "\n".join(source_lines), ranges
+    return "\n".join(source_lines), spans
 
 
-def parse_marked_locations(source: str, uri: URI) -> tuple[str, dict[int, L.Location]]:
-    source, ranges = parse_marked_ranges(source)
-    return source, {id: L.Location(uri, span) for id, span in ranges.items()}
+def parse_marked_anchors(source: str, uri: URI) -> tuple[str, dict[int, Anchor]]:
+    source, spans = parse_marked_spans(source)
+    return source, {id: Anchor(uri, span) for id, span in spans.items()}

@@ -5,12 +5,11 @@ description = "A toy Jsonnet language server"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "parsimonious>=0.11.0",
     "parsy>=2.2",
     "pydantic>=2.12.5",
     "pygls>=2.0.0",
     "rich>=14.2.0",
-    "tree-sitter>=0.25.2",
-    "tree-sitter-jsonnet",
     "typer>=0.20.1",
 ]
 
@@ -28,19 +27,6 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.15.0",
 ]
-
-[tool.ruff]
-exclude = [
-    "vendor"
-]
-
-[tool.uv.workspace]
-members = [
-    "vendor/tree-sitter-jsonnet",
-]
-
-[tool.uv.sources]
-tree-sitter-jsonnet = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

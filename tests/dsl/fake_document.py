@@ -1,56 +1,36 @@
 from functools import cached_property
-from itertools import accumulate, chain
 
-import lsprotocol.types as L
 from rich.text import Text
 
-from joule import ast as A
-from joule.maybe import must
-from joule.model import ScopeResolver
-from joule.parsing import parse_jsonnet
+from joule.ast import Anchor, Point, Span
+from joule.parser import LineMap
 
-from .marked_range import parse_marked_locations
+from .marked_spans import parse_marked_anchors
 
 
-class FakeFile:
-    def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+class FakeFile(LineMap):
+    def __init__(self, text: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+        text, self.anchors = parse_marked_anchors(text, uri)
+        super().__init__(text)
         self.uri = uri
-        self.source, self.locations = parse_marked_locations(source, uri)
-        self.lines = self.source.splitlines(keepends=True)
-
-        # When the source ends with a newline, `str.splitlines` does not preserve the
-        # last empty line.
-        if source.endswith("\n"):
-            self.lines.append("")
-
-        # Computes the character offset of the first character in each line, used for
-        # converting 2D positions to 1D offsets.
-        self.line_offsets: list[int] = list(
-            accumulate(chain([0], map(len, self.lines)))
-        )
 
     @cached_property
-    def location(self) -> L.Location:
-        return L.Location(
+    def anchor(self) -> Anchor:
+        return Anchor(
             self.uri,
-            L.Range(
-                L.Position(0, 0),
-                L.Position(len(self.lines) - 1, len(self.lines[-1])),
-            ),
+            Span(self.point_of(0), self.point_of(len(self.text))),
         )
 
-    def at(self, mark: int) -> L.Location:
-        return self.locations[mark]
+    def at(self, mark: int) -> Anchor:
+        return self.anchors[mark]
 
-    def start_of(self, mark: int) -> L.Position:
-        return self.at(mark).range.start
+    def start_of(self, mark: int) -> Point:
+        return self.at(mark).span.start
 
-    def end_of(self, mark: int) -> L.Position:
-        return self.at(mark).range.end
+    def end_of(self, mark: int) -> Point:
+        return self.at(mark).span.end
 
-    def highlight(
-        self, ranges: tuple[L.Range, str] | list[tuple[L.Range, str]]
-    ) -> Text:
+    def highlight(self, ranges: tuple[Span, str] | list[tuple[Span, str]]) -> Text:
         """Renders the Jsonnet document with given text ranges highlighted.
 
         The document is rendered with its URI, a top ruler, an optional bottom ruler
@@ -70,9 +50,6 @@ class FakeFile:
         NOTE: To be consistent with LSP, both line and column numbers are 0 based.
         """
 
-        def offset_of(pos: L.Position) -> int:
-            return self.line_offsets[pos.line] + pos.character
-
         if isinstance(ranges, tuple):
             ranges = [ranges]
 
@@ -83,15 +60,15 @@ class FakeFile:
         rendered.append(uri_line)
 
         # Renders the ranges.
-        rendered_source = styled(self.source, "default")
+        rendered_source = styled(self.text, "default")
         for span, style in ranges:
             rendered_source.stylize(
                 style,
-                start=offset_of(span.start),
-                end=offset_of(span.end),
+                start=self.offset_of(span.start),
+                end=self.offset_of(span.end),
             )
 
-        raw_lines = self.source.splitlines()
+        raw_lines = self.text.splitlines()
         width = max(map(len, raw_lines))
         height = len(raw_lines)
 
@@ -153,20 +130,3 @@ class FakeFile:
             rendered.extend(ruler_lines)
 
         return Text("\n").join(rendered)
-
-
-class FakeDocument(FakeFile):
-    def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
-        super().__init__(source, uri)
-        self.cst = parse_jsonnet(self.source)
-        self.ast = ScopeResolver().resolve(A.Document.from_cst(self.uri, self.cst))
-        self.body = self.ast.body
-
-    @cached_property
-    def location(self) -> L.Location:
-        return self.body.location
-
-    def node_at(self, target: int | L.Position | L.Range) -> A.AST:
-        if isinstance(target, int):
-            target = self.at(target).range
-        return must(self.body.node_at(target))

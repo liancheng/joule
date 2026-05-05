@@ -1,0 +1,143 @@
+inline_whitespace = ~r"[ \t]"
+inline_comment = ~r"(//|#)[^\r\n]*"
+block_comment = ~r"/\*.*\*/"s
+meaninglessness = inline_whitespace / inline_comment / block_comment
+_ = meaninglessness*
+
+colon = ":"
+comma = ","
+dot = "."
+eq = "="
+lbrace = "{"
+lbracket = "["
+lparen = "("
+rbrace = "}"
+rbracket = "]"
+rparen = ")"
+semicolon = ";"
+
+plus = "+"
+minus = "-"
+
+multiply = "*"
+divide = "/"
+modulus = "%"
+
+shift_left = "<<"
+shift_right = ">>"
+
+gt = ">"
+gt_eq = ">="
+lt = "<"
+lt_eq = "<="
+in = "in"
+equals = "=="
+not_eq = "!="
+
+bit_and = "&"
+bit_not = "~"
+bit_or = "|"
+bit_xor = "^"
+
+and = "&&"
+or = "||"
+not = "!"
+
+keyword
+  = "assert"
+  / "else"
+  / "error"
+  / "false"
+  / "for"
+  / "function"
+  / "if"
+  / "import"
+  / "importstr"
+  / "importbin"
+  / "in"
+  / "local"
+  / "null"
+  / "tailstrict"
+  / "then"
+  / "self"
+  / "super"
+  / "true"
+
+boolean = "true" / "false"
+dollar = "$"
+null = "null"
+self = "self"
+super = "super"
+
+text_block = ~r"@?\|{3}-?\n (((?P<W>[ \t]+).*\n((?P=W).*\n)*(?!(?P=W))[ \t]*)?|[ \t]*)\|{3}"x
+inline_string = ~r"@(?P<VQ>[\"'])(((?P=VQ){2})|(?!(?P=VQ)).)*(?P=VQ)|(?P<Q>[\"'])(\\.|(?!(?P=Q)).)*(?P=Q)"x
+string = inline_string / text_block
+
+id = ~"[_a-zA-Z][_a-zA-Z0-9]*"
+field_id = !keyword id
+field_ref_id = !keyword id
+param_ref_id = !keyword id
+var_id = !keyword id
+var_ref_id = !keyword id
+
+binary_literal = ~"0b[01]+"i
+octal_literal = ~"0o[0-7]+"i
+hexical_literal = ~"0x[0-9a-f]+"i
+sign = ~"[-+]"
+digits = ~"[0-9]+"
+signed_integer = sign? digits
+exponent = ~"e"i signed_integer
+integer = sign? ("0" / ~"[1-9]" digits?)
+fraction = dot digits?
+decimal_literal = integer fraction? exponent?
+number = hexical_literal / octal_literal / binary_literal / decimal_literal 
+
+field_access = _ dot _ field_ref_id
+
+step = _ colon _ expr?
+stop_step = _ colon _ expr? step?
+start_stop_step = expr stop_step?
+slice = _ lbracket _ start_stop_step _ rbracket
+
+postfix_op = field_access / slice
+postfix_ops = postfix_op*
+postfix = primary postfix_ops
+
+unary_op = minus / plus / not / bit_not
+unary_with_op = unary_op _ unary
+unary = postfix / unary_with_op
+
+mul_op = multiply / divide / modulus
+mul_expr = unary (_ mul_op _ unary)*
+
+plus_op = minus / plus
+plus_expr = mul_expr (_ plus_op _ mul_expr)*
+
+shift_op = shift_left / shift_right
+shift_expr = plus_expr (_ shift_op _ plus_expr)*
+
+in_expr = shift_expr _ in _ shift_expr
+
+cmp_op = lt / gt / lt_eq / gt_eq
+cmp_expr
+  = in_expr
+  / shift_expr (_ cmp_op _ shift_expr)*
+
+eq_op = equals / not_eq
+eq_expr = cmp_expr (_ eq_op _ cmp_expr)*
+
+bit_and_expr = eq_expr (_ bit_and _ eq_expr)*
+bit_xor_expr = bit_and_expr (_ bit_xor _ bit_and_expr)*
+bit_or_expr = bit_xor_expr (_ bit_or _ bit_xor_expr)*
+and_expr = bit_or_expr (_ and _ bit_or_expr)*
+expr = and_expr (_ or _ and_expr)*
+
+primary
+  = boolean
+  / dollar
+  / null
+  / number
+  / self
+  / string
+  / super
+  / var_ref_id

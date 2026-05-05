@@ -1,9 +1,6 @@
-from typing import Iterable, TypeVar
+from typing import Iterable
 
-U = TypeVar("U")
-
-
-Maybe = tuple[U] | tuple[()]
+type Maybe[U] = tuple[U] | tuple[()]
 
 
 def maybe[U](v: U | None) -> Maybe[U]:
