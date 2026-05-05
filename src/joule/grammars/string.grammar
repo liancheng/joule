@@ -1,0 +1,46 @@
+simple_esc = "\\" ~r"[\\/bnfrt'\"]"
+unicode_esc = "\\u" ~r"[0-9a-f]{4}"i
+low_surrogate = unicode_esc?
+codepoint_esc = unicode_esc low_surrogate
+esc = simple_esc / codepoint_esc
+any = ~r"."
+
+single_quoted_any = !"'" any
+single_quoted_char = esc / single_quoted_any
+single_quoted_content = single_quoted_char*
+single_quoted_string = "'" single_quoted_content "'"
+
+double_quoted_any = !"\"" any
+double_quoted_char = esc / double_quoted_any
+double_quoted_content = double_quoted_char*
+double_quoted_string = "\"" double_quoted_content "\""
+
+verbatim_single_quoted_esc = "''"
+verbatim_single_quoted_any = !"'" any
+verbatim_single_quoted_char = verbatim_single_quoted_esc / verbatim_single_quoted_any
+verbatim_single_quoted_content = verbatim_single_quoted_char*
+verbatim_single_quoted_string = "@'" verbatim_single_quoted_content "'"
+
+verbatim_double_quoted_esc = "\"\""
+verbatim_double_quoted_any = !"\"" any
+verbatim_double_quoted_char = verbatim_double_quoted_esc / verbatim_double_quoted_any
+verbatim_double_quoted_content = verbatim_double_quoted_char*
+verbatim_double_quoted_string = "@\"" verbatim_double_quoted_content "\""
+
+inline_string
+  = double_quoted_string
+  / single_quoted_string
+  / verbatim_double_quoted_string
+  / verbatim_single_quoted_string
+
+char = esc / any
+content = char*
+text_block_line = content "\n"
+verbatim_text_block_line = ~".*" "\n"
+
+# NOTE: This is not the full syntax of the Jsonnet fenced text block, which is
+# indentation aware and does not fit in a PEG grammar. Instead, the following
+# two rules handle the non-verbatim and verbatim dedented text block without the
+# opening and closing "|||" fences.
+text_block = text_block_line*
+verbatim_text_block = verbatim_text_block_line*

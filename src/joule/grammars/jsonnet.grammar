@@ -1,0 +1,298 @@
+document = _ expr _
+
+expr = and_expr or_rhs_list
+or_rhs_list = or_rhs*
+or_rhs = _ or _ and_expr
+
+and_expr = bit_or_expr and_rhs_list
+and_rhs_list = and_rhs*
+and_rhs = _ and _ bit_or_expr
+
+bit_or_expr = bit_xor_expr bit_or_rhs_list
+bit_or_rhs_list = bit_or_rhs*
+bit_or_rhs = _ bit_or _ bit_xor_expr
+
+bit_xor_expr = bit_and_expr bit_xor_rhs_list
+bit_xor_rhs_list = bit_xor_rhs*
+bit_xor_rhs = _ bit_xor _ bit_and_expr
+
+bit_and_expr = eq_expr bit_and_rhs_list
+bit_and_rhs_list = bit_and_rhs*
+bit_and_rhs = _ bit_and _ eq_expr
+
+eq_expr = cmp_expr eq_rhs_list
+eq_rhs_list = eq_rhs*
+eq_rhs = _ eq_op _ cmp_expr
+eq_op = equals / not_eq
+
+cmp_expr = shift_expr cmp_rhs_list
+cmp_rhs_list = cmp_rhs*
+cmp_rhs = _ cmp_op _ shift_expr
+cmp_op = lt / gt / lt_eq / gt_eq / is_in
+
+shift_expr = plus_expr shift_rhs_list
+shift_rhs_list = shift_rhs*
+shift_rhs = _ shift_op _ plus_expr
+shift_op = shift_left / shift_right
+
+plus_expr = mul_expr plus_rhs_list
+plus_rhs_list = plus_rhs*
+plus_rhs = _ plus_op _ mul_expr
+plus_op = minus / plus
+
+mul_expr = unary mul_rhs_list
+mul_rhs_list = mul_rhs*
+mul_rhs = _ mul_op _ unary
+mul_op = multiply / divide / modulus
+
+unary = postfix / unary_with_op
+unary_with_op = unary_op _ unary
+unary_op = unary_minus / unary_plus / not / bit_not
+
+postfix = primary postfix_ops
+postfix_ops = postfix_op*
+postfix_op = field_access / slice / call / extend
+
+primary
+  = anonymous_function
+  / array
+  / assert_expr
+  / boolean
+  / conditional
+  / dollar
+  / import_bin
+  / import_file
+  / import_str
+  / list_comp
+  / local_expr
+  / null
+  / number
+  / object
+  / parenthesized
+  / self
+  / string
+  / super
+  / var_ref_id
+
+field_access = _ dot _ field_ref_id
+
+slice = _ lbracket _ start_stop_step _ rbracket
+start_stop_step = maybe_expr maybe_stop_step
+maybe_stop_step = stop_step?
+stop_step = _ colon _ maybe_expr maybe_step
+maybe_step = step?
+step = _ colon _ maybe_expr
+maybe_expr = expr?
+
+call = _ arg_list
+arg_list = lparen _ maybe_args _ rparen
+maybe_args = args?
+args = arg tail_args maybe_trailing_comma
+tail_args = delimited_arg*
+delimited_arg = _ comma _ arg
+arg = maybe_arg_name expr
+maybe_arg_name = arg_name?
+arg_name = param_ref_id _ eq _
+
+extend = _ object
+
+anonymous_function = function _ param_list _ expr
+
+param = var_id maybe_default
+maybe_default = default?
+default = _ eq _ expr
+
+param_list = lparen _ maybe_params _ rparen
+maybe_params = params?
+params = param tail_params maybe_trailing_comma
+tail_params = delimited_param*
+delimited_param = _ comma _ param
+
+array = lbracket _ maybe_array_elements _ rbracket
+maybe_array_elements = array_elements?
+array_elements = expr tail_array_elements maybe_trailing_comma
+tail_array_elements = delimited_array_element*
+delimited_array_element = _ comma _ expr
+
+maybe_trailing_comma = trailing_comma?
+trailing_comma = _ comma
+
+assert_expr = assertion _ semicolon _ expr
+
+boolean = true / false
+
+conditional = if condition consequence maybe_alternative
+condition = _ expr
+consequence = _ then _ expr
+maybe_alternative = alternative?
+alternative = _ else _ expr
+
+dollar = "$"
+
+import_bin = importbin _ string
+import_file = import _ string
+import_str = importstr _ string
+
+list_comp = lbracket _ expr _ for_spec extra_specs _ rbracket
+extra_specs = delimited_spec*
+delimited_spec = _ comp_spec
+comp_spec = for_spec / if_spec
+for_spec = for _ var_id _ in _ expr
+if_spec = if _ expr
+
+local_expr = local _ binds _ semicolon _ expr
+binds = bind tail_bind
+tail_bind = delimited_bind*
+delimited_bind = _ comma _ bind
+
+null = ~r"null\b"
+
+number = hexical_literal / octal_literal / binary_literal / decimal_literal 
+hexical_literal = ~"0x[0-9a-f]+"i
+octal_literal = ~"0o[0-7]+"i
+binary_literal = ~"0b[01]+"i
+decimal_literal = integer fraction? exponent?
+integer = sign? ("0" / ~"[1-9]" digits?)
+fraction = dot digits?
+exponent = ~"e"i signed_integer
+signed_integer = sign? digits
+sign = ~"[-+]"
+digits = ~"[0-9]+"
+
+parenthesized = lparen _ expr _ rparen
+
+self = ~r"self\b"
+
+string = inline_string / text_block
+inline_string = ~r"@(?P<VQ>[\"'])(((?P=VQ){2})|(?!(?P=VQ)).)*(?P=VQ)|(?P<Q>[\"'])(\\.|(?!(?P=Q)).)*(?P=Q)"x
+text_block = ~r"@?\|{3}-?\n (((?P<W>[ \t]+).*\n((?P=W).*\n)*(?!(?P=W))[ \t]*)?|[ \t]*)\|{3}"x
+
+super = ~r"super\b"
+
+var_ref_id = !keyword id
+var_id = !keyword id
+field_ref_id = !keyword id
+field_id = !keyword id
+param_ref_id = !keyword id
+id = ~"[_a-zA-Z][_a-zA-Z0-9]*"
+
+keyword
+  = assert
+  / else
+  / error
+  / false
+  / for
+  / function
+  / if
+  / import
+  / importstr
+  / importbin
+  / in
+  / local
+  / null
+  / tailstrict
+  / then
+  / self
+  / super
+  / true
+
+object = lbrace _ maybe_object_members maybe_object_comp_spec _ rbrace
+maybe_object_members = object_members?
+object_members = object_member tail_object_members maybe_trailing_comma
+tail_object_members = delimited_object_member*
+delimited_object_member = _ comma _ object_member
+object_member = object_local / assertion / field
+
+object_local = local _ bind
+bind = var_id _ bind_rhs
+bind_rhs = bind_var / bind_fn
+bind_var = eq _ expr
+bind_fn = param_list _ eq _ expr
+
+assertion = assert _ expr maybe_assert_message
+maybe_assert_message = assert_message?
+assert_message = _ colon _ expr
+
+field = field_key _ field_value
+
+field_key = fixed_key / computed_key
+fixed_key = field_id / string
+computed_key = lbracket _ expr _ rbracket
+
+field_value = expr_field_value / fn_field_value
+expr_field_value = field_sep _ expr
+fn_field_value = param_list _ field_sep _ expr
+
+field_sep = inherited _ visibility
+inherited = "+"?
+visibility = triple_colon / double_colon / colon
+
+maybe_object_comp_spec = object_comp_spec?
+object_comp_spec = _ for_spec extra_specs
+
+_ = meaninglessness*
+meaninglessness = inline_whitespace / inline_comment / block_comment
+inline_whitespace = ~r"[ \t\n\r]"
+inline_comment = ~r"(//|#)[^\r\n]*"
+block_comment = ~r"/\*.*\*/"s
+
+triple_colon = ":::"
+double_colon = "::"
+colon = ":"
+
+comma = ","
+dot = "."
+eq = !equals "="
+lbrace = "{"
+lbracket = "["
+lparen = "("
+rbrace = "}"
+rbracket = "]"
+rparen = ")"
+semicolon = ";"
+
+plus = "+"
+minus = "-"
+
+unary_plus = "+"
+unary_minus = "-"
+
+multiply = "*"
+divide = "/"
+modulus = "%"
+
+shift_left = "<<"
+shift_right = ">>"
+
+bit_and = !and "&"
+bit_not = "~"
+bit_or = !or "|"
+bit_xor = "^"
+
+and = "&&"
+or = "||"
+not = !not_eq "!"
+
+gt = !gt_eq ">"
+gt_eq = ">="
+lt = !lt_eq "<"
+lt_eq = "<="
+is_in = ~r"in\b"
+equals = "=="
+not_eq = "!="
+
+assert = ~r"assert\b"
+else = ~r"else\b"
+error = ~r"error\b"
+false = ~r"false\b"
+for = ~r"for\b"
+function = ~r"function\b"
+if = ~r"if\b"
+importbin = ~r"importbin\b"
+import = ~r"import\b"
+importstr = ~r"importstr\b"
+in = ~r"in\b"
+local = ~r"local\b"
+tailstrict = ~r"tailstrict\b"
+then = ~r"then\b"
+true = ~r"true\b"
