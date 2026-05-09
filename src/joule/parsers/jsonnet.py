@@ -6,7 +6,7 @@ from parsimonious import expressions as E
 from parsimonious.nodes import Node
 from parsy import Callable
 
-from joule import ast as A
+from joule import trees as T
 from joule.grammars import load_grammar
 
 from .line_map import LineMap
@@ -15,27 +15,27 @@ from .string import StringParser
 JSONNET_GRAMMAR = load_grammar("jsonnet.grammar")
 
 
-def parse_jsonnet(uri: A.URI, source: str, rule: str = "document") -> A.AST:
+def parse_jsonnet(uri: T.URI, source: str, rule: str = "document") -> T.Tree:
     root = JSONNET_GRAMMAR.default(rule).parse(source)
     return JsonnetParser(uri, root).visit(root)
 
 
 class JsonnetParser(NodeVisitor, LineMap):
-    def __init__(self, uri: A.URI, node: Node):
+    def __init__(self, uri: T.URI, node: Node):
         LineMap.__init__(self, node.full_text)
         self.uri = uri
 
-    def start_of(self, node: Node) -> A.Point:
+    def start_of(self, node: Node) -> T.Point:
         return self.point_of(node.start)
 
-    def end_of(self, node: Node) -> A.Point:
+    def end_of(self, node: Node) -> T.Point:
         return self.point_of(node.end)
 
-    def span_of(self, node: Node) -> A.Span:
-        return A.Span(self.start_of(node), self.end_of(node))
+    def span_of(self, node: Node) -> T.Span:
+        return T.Span(self.start_of(node), self.end_of(node))
 
-    def anchor_of(self, node: Node) -> A.Anchor:
-        return A.Anchor(self.uri, self.span_of(node))
+    def anchor_of(self, node: Node) -> T.Anchor:
+        return T.Anchor(self.uri, self.span_of(node))
 
     def generic_visit(self, node: Node, visited_children: Sequence[Any]):
         match node.expr:
@@ -50,22 +50,22 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_document(self, node: Node, children: Sequence[Any]):
         _, body, _ = children
-        return A.Document(self.anchor_of(node), body)
+        return T.Document(self.anchor_of(node), body)
 
     @staticmethod
-    def make_atom(fn: Callable[[A.Anchor], A.Expr]):
+    def make_atom(fn: Callable[[T.Anchor], T.Expr]):
         def apply(self, node: Node, _: Sequence[Node]):
             return fn(self.anchor_of(node))
 
         return apply
 
-    visit_dollar = make_atom(A.Dollar)
-    visit_null = make_atom(A.Null)
-    visit_super = make_atom(A.Super)
-    visit_self = make_atom(A.Self)
+    visit_dollar = make_atom(T.Dollar)
+    visit_null = make_atom(T.Null)
+    visit_super = make_atom(T.Super)
+    visit_self = make_atom(T.Self)
 
     @staticmethod
-    def make_id(fn: Callable[[A.Anchor, str], A.Expr]):
+    def make_id(fn: Callable[[T.Anchor, str], T.Expr]):
         def apply(self, node: Node, children: Sequence[Node]):
             del node
             _, id = children
@@ -73,14 +73,14 @@ class JsonnetParser(NodeVisitor, LineMap):
 
         return apply
 
-    visit_field_id = make_id(A.Id.Field)
-    visit_field_ref_id = make_id(A.Id.FieldRef)
-    visit_param_ref_id = make_id(A.Id.ParamRef)
-    visit_var_id = make_id(A.Id.Var)
-    visit_var_ref_id = make_id(A.Id.VarRef)
+    visit_field_id = make_id(T.Id.Field)
+    visit_field_ref_id = make_id(T.Id.FieldRef)
+    visit_param_ref_id = make_id(T.Id.ParamRef)
+    visit_var_id = make_id(T.Id.Var)
+    visit_var_ref_id = make_id(T.Id.VarRef)
 
     def make_binary_op(self, node: Node, _: Sequence[Any]):
-        return A.BinaryOp(node.text)
+        return T.BinaryOp(node.text)
 
     visit_multiply = make_binary_op
     visit_divide = make_binary_op
@@ -109,10 +109,10 @@ class JsonnetParser(NodeVisitor, LineMap):
     visit_or = make_binary_op
 
     def make_unary(self, node: Node, _: Sequence[Node]):
-        def apply(operand: A.Expr) -> A.Unary:
+        def apply(operand: T.Expr) -> T.Unary:
             anchor = operand.anchor.merge(self.span_of(node))
-            op = A.UnaryOp(node.text)
-            return A.Unary(anchor, op, operand)
+            op = T.UnaryOp(node.text)
+            return T.Unary(anchor, op, operand)
 
         return apply
 
@@ -126,9 +126,9 @@ class JsonnetParser(NodeVisitor, LineMap):
         return op_fn(operand)
 
     def make_binary(self, _: Node, children: Sequence[Any]):
-        def join(lhs: A.Expr, op_rhs: tuple[A.BinaryOp, A.Expr]):
+        def join(lhs: T.Expr, op_rhs: tuple[T.BinaryOp, T.Expr]):
             op, rhs = op_rhs
-            return A.Binary.make(op, lhs, rhs)
+            return T.Binary.make(op, lhs, rhs)
 
         lhs, rhs_list = children
         return reduce(join, rhs_list, lhs)
@@ -174,37 +174,37 @@ class JsonnetParser(NodeVisitor, LineMap):
     visit_expr = make_binary
 
     def visit_boolean(self, node: Node, _: Sequence[Any]):
-        return A.Bool(self.anchor_of(node), node.text == "true")
+        return T.Bool(self.anchor_of(node), node.text == "true")
 
     def visit_decimal_literal(self, node: Node, _: Sequence[Any]):
-        return A.Num(self.anchor_of(node), float(node.text))
+        return T.Num(self.anchor_of(node), float(node.text))
 
     def visit_binary_literal(self, node: Node, _: Sequence[Any]):
-        return A.Num(self.anchor_of(node), float(int(node.text[2:], base=2)))
+        return T.Num(self.anchor_of(node), float(int(node.text[2:], base=2)))
 
     def visit_octal_literal(self, node: Node, _: Sequence[Any]):
-        return A.Num(self.anchor_of(node), float(int(node.text[2:], base=8)))
+        return T.Num(self.anchor_of(node), float(int(node.text[2:], base=8)))
 
     def visit_hexical_literal(self, node: Node, _: Sequence[Any]):
-        return A.Num(self.anchor_of(node), float(int(node.text[2:], base=16)))
+        return T.Num(self.anchor_of(node), float(int(node.text[2:], base=16)))
 
     def visit_inline_string(self, node: Node, _: Sequence[Any]):
-        return A.Str(self.anchor_of(node), StringParser.parse_inline_string(node.text))
+        return T.Str(self.anchor_of(node), StringParser.parse_inline_string(node.text))
 
     def visit_text_block(self, node: Node, _: Sequence[Any]):
-        return A.Str(self.anchor_of(node), StringParser.parse_text_block(node.text))
+        return T.Str(self.anchor_of(node), StringParser.parse_text_block(node.text))
 
     def visit_field_access(self, node: Node, children: Sequence[Any]):
         _, _, _, field_ref = children
 
-        def apply(obj: A.Expr):
+        def apply(obj: T.Expr):
             anchor = obj.anchor.merge(self.span_of(node))
-            return A.FieldAccess(anchor=anchor, obj=obj, field=field_ref)
+            return T.FieldAccess(anchor=anchor, obj=obj, field=field_ref)
 
         return apply
 
     def visit_postfix(self, _: Node, children: Sequence[Any]):
-        def join(primary: A.Expr, postfix_fn: Callable[[A.Expr], A.Expr]):
+        def join(primary: T.Expr, postfix_fn: Callable[[T.Expr], T.Expr]):
             return postfix_fn(primary)
 
         primary, postfix_fns = children
@@ -215,7 +215,7 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_parenthesized(self, node: Node, children: Sequence[Any]):
         _, _, expr, _, _ = children
-        return A.Paren(self.anchor_of(node), expr)
+        return T.Paren(self.anchor_of(node), expr)
 
     def visit_step(self, node: Node, children: Sequence[Any]):
         del node
@@ -241,9 +241,9 @@ class JsonnetParser(NodeVisitor, LineMap):
         del node
         _, _, _, (start, stop, step), _, rbracket = children
 
-        def apply(obj: A.Expr) -> A.Slice:
+        def apply(obj: T.Expr) -> T.Slice:
             anchor = obj.anchor.merge(self.span_of(rbracket))
-            return A.Slice(anchor, obj, start, stop, step)
+            return T.Slice(anchor, obj, start, stop, step)
 
         return apply
 
@@ -273,7 +273,7 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_arg(self, node: Node, children: Sequence[Any]):
         maybe_id, value = children
-        return A.Arg(self.anchor_of(node), value, maybe_id)
+        return T.Arg(self.anchor_of(node), value, maybe_id)
 
     visit_delimited_arg = make_delimited_element
     visit_args = make_delimited_elements
@@ -282,9 +282,9 @@ class JsonnetParser(NodeVisitor, LineMap):
     def visit_call(self, node: Node, children: Sequence[Any]):
         _, arg_list = children
 
-        def apply(callee: A.Expr) -> A.Call:
+        def apply(callee: T.Expr) -> T.Call:
             anchor = callee.anchor.merge(self.span_of(node))
-            return A.Call(anchor, callee=callee, args=arg_list)
+            return T.Call(anchor, callee=callee, args=arg_list)
 
         return apply
 
@@ -292,8 +292,8 @@ class JsonnetParser(NodeVisitor, LineMap):
         del node
         _, rhs = children
 
-        def apply(lhs: A.Expr) -> A.Binary:
-            return A.BinaryOp.Plus(lhs, rhs)
+        def apply(lhs: T.Expr) -> T.Binary:
+            return T.BinaryOp.Plus(lhs, rhs)
 
         return apply
 
@@ -314,7 +314,7 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_conditional(self, node: Node, children: Sequence[Any]):
         _, condition, consequence, maybe_alternative = children
-        return A.If(self.anchor_of(node), condition, consequence, maybe_alternative)
+        return T.If(self.anchor_of(node), condition, consequence, maybe_alternative)
 
     def visit_assert_message(self, node: Node, children: Sequence[Any]):
         del node
@@ -323,50 +323,51 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_assertion(self, node: Node, children: Sequence[Any]):
         _, _, condition, maybe_message = children
-        return A.Assert(self.anchor_of(node), condition, maybe_message)
+        return T.Assert(self.anchor_of(node), condition, maybe_message)
 
     def visit_assert_expr(self, node: Node, children: Sequence[Any]):
         assert_, _, _, _, body = children
-        return A.AssertExpr(self.anchor_of(node), assert_, body)
+        return T.AssertExpr(self.anchor_of(node), assert_, body)
 
     @staticmethod
-    def make_import(import_type: A.ImportType):
+    def make_import(import_type: T.ImportType):
         def apply(self, node: Node, children: Sequence[Any]):
             _, _, path = children
             anchor = self.anchor_of(node)
-            return A.Import(anchor, import_type, A.Importee.from_string(path))
+            return T.Import(anchor, import_type, T.Importee.from_string(path))
 
         return apply
 
-    visit_import_file = make_import(A.ImportType.Default)
-    visit_import_str = make_import(A.ImportType.Str)
-    visit_import_bin = make_import(A.ImportType.Bin)
+    visit_import_file = make_import(T.ImportType.Default)
+    visit_import_str = make_import(T.ImportType.Str)
+    visit_import_bin = make_import(T.ImportType.Bin)
 
     visit_delimited_array_element = make_delimited_element
     visit_array_elements = make_delimited_elements
 
     def visit_array(self, node: Node, children: Sequence[Any]):
         elements = self.make_collection(node, children)
-        return A.Array(self.anchor_of(node), elements)
+        return T.Array(self.anchor_of(node), elements)
 
     def visit_bind(self, node: Node, children: Sequence[Any]):
         var, _, value = children
-        return A.Bind(self.anchor_of(node), var, value)
+        return T.Bind(self.anchor_of(node), var, value)
 
     def visit_bind_var(self, node: Node, children: Sequence[Any]):
+        del node
         _, _, value = children
         return value
 
     def visit_bind_fn(self, node: Node, children: Sequence[Any]):
         params, _, _, _, body = children
-        return A.Fn(self.anchor_of(node), params, body)
+        return T.Fn(self.anchor_of(node), params, body)
 
     visit_delimited_bind = make_delimited_element
     visit_binds = make_delimited_elements
 
     def visit_local_expr(self, node: Node, children: Sequence[Any]):
         _, _, binds, _, _, _, body = children
-        return A.Local(self.anchor_of(node), binds, body)
+        return T.Local(self.anchor_of(node), binds, body)
 
     def visit_default(self, node: Node, children: Sequence[Any]):
         del node
@@ -375,7 +376,7 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_param(self, _: Node, children: Sequence[Any]):
         var, default = children
-        return A.Param.make(var, default)
+        return T.Param.make(var, default)
 
     visit_delimited_param = make_delimited_element
     visit_params = make_delimited_elements
@@ -383,15 +384,15 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_anonymous_function(self, node: Node, children: Sequence[Any]):
         _, _, params, _, body = children
-        return A.Fn(self.anchor_of(node), params, body)
+        return T.Fn(self.anchor_of(node), params, body)
 
     def visit_for_spec(self, node: Node, children: Sequence[Any]):
         _, _, var, _, _, _, source = children
-        return A.ForSpec(self.anchor_of(node), var, source)
+        return T.ForSpec(self.anchor_of(node), var, source)
 
     def visit_if_spec(self, node: Node, children: Sequence[Any]):
         _, _, condition = children
-        return A.IfSpec(self.anchor_of(node), condition)
+        return T.IfSpec(self.anchor_of(node), condition)
 
     def visit_delimited_spec(self, node: Node, children: Sequence[Any]):
         del node
@@ -400,18 +401,18 @@ class JsonnetParser(NodeVisitor, LineMap):
 
     def visit_list_comp(self, node: Node, children: Sequence[Any]):
         _, _, expr, _, for_spec, extra_specs, *_ = children
-        return A.ListComp(self.anchor_of(node), expr, for_spec, extra_specs)
+        return T.ListComp(self.anchor_of(node), expr, for_spec, extra_specs)
 
     def visit_computed_key(self, node: Node, children: Sequence[Any]):
         _, _, expr, _, _ = children
-        return A.ComputedKey(self.anchor_of(node), expr)
+        return T.ComputedKey(self.anchor_of(node), expr)
 
     def visit_fixed_key(self, node: Node, children: Sequence[Any]):
         match children:
-            case [A.Str() as key]:
-                return A.FixedKey(key.anchor, A.Id.Field(key.anchor, key.value))
-            case [A.Id.Field() as key]:
-                return A.FixedKey(self.anchor_of(node), key)
+            case [T.Str() as key]:
+                return T.FixedKey(key.anchor, T.Id.Field(key.anchor, key.value))
+            case [T.Id.Field() as key]:
+                return T.FixedKey(self.anchor_of(node), key)
             case _:
                 assert False
 
@@ -419,7 +420,7 @@ class JsonnetParser(NodeVisitor, LineMap):
         return next(iter(children), None) is not None
 
     def visit_visibility(self, node: Node, _: Sequence[Node]):
-        return A.Visibility(node.text)
+        return T.Visibility(node.text)
 
     def visit_field_sep(self, node: Node, children: Sequence[Any]):
         del node
@@ -430,17 +431,17 @@ class JsonnetParser(NodeVisitor, LineMap):
         del node
         (inherited, visibility), _, value = children
 
-        def apply(anchor: A.Anchor, key: A.FieldKey) -> A.Field:
-            return A.Field(anchor, key, value, inherited, visibility)
+        def apply(anchor: T.Anchor, key: T.FieldKey) -> T.Field:
+            return T.Field(anchor, key, value, inherited, visibility)
 
         return apply
 
     def visit_fn_field_value(self, node: Node, children: Sequence[Any]):
         params, _, (inherited, visibility), _, value = children
-        fn = A.Fn(self.anchor_of(node), params, value)
+        fn = T.Fn(self.anchor_of(node), params, value)
 
-        def apply(anchor: A.Anchor, key: A.FieldKey) -> A.Field:
-            return A.Field(anchor, key, fn, inherited, visibility)
+        def apply(anchor: T.Anchor, key: T.FieldKey) -> T.Field:
+            return T.Field(anchor, key, fn, inherited, visibility)
 
         return apply
 
@@ -470,20 +471,20 @@ class JsonnetParser(NodeVisitor, LineMap):
 
         for member in members:
             match member:
-                case A.Bind():
+                case T.Bind():
                     binds.append(member)
-                case A.Assert():
+                case T.Assert():
                     asserts.append(member)
-                case A.Field():
+                case T.Field():
                     fields.append(member)
 
         match maybe_comp_spec:
-            case A.ForSpec() as for_spec, extra_specs:
+            case T.ForSpec() as for_spec, extra_specs:
                 assert len(fields) == 1, (
                     "An object comprehension must have 1 and only 1 field."
                 )
 
-                return A.ObjComp(
+                return T.ObjComp(
                     self.anchor_of(node),
                     field=fields[0],
                     binds=binds,
@@ -493,7 +494,7 @@ class JsonnetParser(NodeVisitor, LineMap):
                 )
 
             case None:
-                return A.Object(
+                return T.Object(
                     self.anchor_of(node),
                     fields=fields,
                     binds=binds,

@@ -1,15 +1,15 @@
 from itertools import product
 
-from joule import ast as A
-from joule.ast import BinaryOp as B
-from joule.ast import UnaryOp as U
-from joule.ast import Visibility as V
+from joule import trees as T
+from joule.trees import BinaryOp as B
+from joule.trees import UnaryOp as U
+from joule.trees import Visibility as V
 
-from . import AstTestCase
+from . import TreeTestCase
 from .dsl import arg, assert_expr, bind, field, get_field
 
 
-class TestParser(AstTestCase):
+class TestParser(TreeTestCase):
     def test_boolean(self):
         t = self.fake_file("true")
         self.parse(t, "boolean").expect(t.anchor.true)
@@ -174,7 +174,7 @@ class TestParser(AstTestCase):
             )
 
             self.parse(t, "unary").expect(
-                A.Unary(t.anchor, U.Not, t.at(1).true),
+                T.Unary(t.anchor, U.Not, t.at(1).true),
             )
 
     def test_binary_op(self):
@@ -429,7 +429,7 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "postfix").expect(
-            A.Slice(
+            T.Slice(
                 t.anchor,
                 t.at(1).var_ref("obj"),
                 t.at(2).str("f"),
@@ -446,7 +446,7 @@ class TestParser(AstTestCase):
             )
 
             self.parse(t, "conditional").expect(
-                A.If(
+                T.If(
                     t.anchor,
                     t.at(1).var_ref("x"),
                     t.at(2).var_ref("y"),
@@ -463,7 +463,7 @@ class TestParser(AstTestCase):
             )
 
             self.parse(t, "conditional").expect(
-                A.If(
+                T.If(
                     t.anchor,
                     t.at(1).var_ref("x"),
                     t.at(2).var_ref("y"),
@@ -479,7 +479,7 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "assertion").expect(
-            A.Assert(t.anchor, t.at(1).true),
+            T.Assert(t.anchor, t.at(1).true),
         )
 
         t = self.fake_file(
@@ -490,7 +490,7 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "assertion").expect(
-            A.Assert(t.anchor, t.at(1).true, t.at(2).str("never")),
+            T.Assert(t.anchor, t.at(1).true, t.at(2).str("never")),
         )
 
     def test_assert_expr(self):
@@ -504,7 +504,7 @@ class TestParser(AstTestCase):
 
         self.parse(t, "expr").expect(
             assert_expr(
-                A.Assert(
+                T.Assert(
                     t.at(1),
                     condition=t.at(2).true,
                     message=t.at(3).str("never"),
@@ -515,7 +515,7 @@ class TestParser(AstTestCase):
 
     def test_import(self):
         rules = ["import_file", "import_str", "import_bin"]
-        for import_type, rule in zip(A.ImportType, rules):
+        for import_type, rule in zip(T.ImportType, rules):
             with self.subTest(f"import_type={import_type}"):
                 t = self.fake_file(
                     f"""\
@@ -526,7 +526,7 @@ class TestParser(AstTestCase):
                 )
 
                 self.parse(t, rule).expect(
-                    A.Import(
+                    T.Import(
                         t.anchor,
                         import_type,
                         t.at(1).importee("file"),
@@ -590,7 +590,7 @@ class TestParser(AstTestCase):
         self.parse(t, "bind").expect(
             bind(
                 t.at(1).var("f"),
-                A.Fn(
+                T.Fn(
                     t.at(5),
                     params=[t.at(2).param("p")],
                     body=t.at(3).var_ref("p"),
@@ -606,7 +606,7 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "local_expr").expect(
-            A.Local(
+            T.Local(
                 t.anchor,
                 binds=[
                     bind(t.at(1).var("x"), t.at(2).num(1)),
@@ -625,7 +625,7 @@ class TestParser(AstTestCase):
                 """
             )
 
-            self.parse(t, "anonymous_function").expect(A.Fn(t.anchor, [], t.at(1).true))
+            self.parse(t, "anonymous_function").expect(T.Fn(t.anchor, [], t.at(1).true))
 
         with self.subTest("parameters with a default value"):
             t = self.fake_file(
@@ -641,7 +641,7 @@ class TestParser(AstTestCase):
             y_ref = t.at(5).var_ref("y")
 
             self.parse(t, "anonymous_function").expect(
-                A.Fn(t.anchor, [x, y], B.Plus(x_ref, y_ref))
+                T.Fn(t.anchor, [x, y], B.Plus(x_ref, y_ref))
             )
 
     def test_list_comp(self):
@@ -657,10 +657,10 @@ class TestParser(AstTestCase):
         i_ref = t.at(3).var_ref("i")
         x = t.at(5).var_ref("x")
 
-        for_ = A.ForSpec(t.at(1), id=i, source=x)
-        if_ = A.IfSpec(t.at(2), t.at(6).true)
+        for_ = T.ForSpec(t.at(1), id=i, source=x)
+        if_ = T.IfSpec(t.at(2), t.at(6).true)
 
-        self.parse(t, "list_comp").expect(A.ListComp(t.anchor, i_ref, for_, [if_]))
+        self.parse(t, "list_comp").expect(T.ListComp(t.anchor, i_ref, for_, [if_]))
 
     def test_paren(self):
         t = self.fake_file(
@@ -675,7 +675,7 @@ class TestParser(AstTestCase):
         y = t.at(2).var_ref("y")
         z = t.at(3).var_ref("z")
 
-        self.parse(t, "expr").expect(B.Multiply(x, A.Paren(t.at(4), B.Plus(y, z))))
+        self.parse(t, "expr").expect(B.Multiply(x, T.Paren(t.at(4), B.Plus(y, z))))
 
     def test_fixed_key(self):
         t = self.fake_file("f")
@@ -692,15 +692,15 @@ class TestParser(AstTestCase):
             """
         )
 
-        self.parse(t, "computed_key").expect(A.ComputedKey(t.anchor, t.at(1).true))
+        self.parse(t, "computed_key").expect(T.ComputedKey(t.anchor, t.at(1).true))
 
     def test_visibility(self):
-        for vis in A.Visibility:
+        for vis in T.Visibility:
             t = self.fake_file(vis.value)
             self.parse(t, "visibility").expect(vis)
 
     def test_field(self):
-        for maybe_plus, visibility in product(["", "+"], A.Visibility):
+        for maybe_plus, visibility in product(["", "+"], T.Visibility):
             field_sep = f"{maybe_plus}{visibility}"
             inherited = maybe_plus == "+"
 
@@ -724,7 +724,7 @@ class TestParser(AstTestCase):
                 )
 
     def test_fn_field(self):
-        for maybe_plus, visibility in product(["", "+"], A.Visibility):
+        for maybe_plus, visibility in product(["", "+"], T.Visibility):
             field_sep = f"{maybe_plus}{visibility}"
             inherited = maybe_plus == "+"
 
@@ -742,7 +742,7 @@ class TestParser(AstTestCase):
                 self.parse(t, "field").expect(
                     field(
                         key=t.at(1).fixed_key("func"),
-                        value=A.Fn(
+                        value=T.Fn(
                             t.at(3),
                             params=[(t.at(2).param("a"))],
                             body=t.at(4).var_ref("a"),
@@ -755,7 +755,7 @@ class TestParser(AstTestCase):
     def test_object(self):
         with self.subTest("empty"):
             t = self.fake_file("{}")
-            self.parse(t, "object").expect(A.Object(t.anchor))
+            self.parse(t, "object").expect(T.Object(t.anchor))
 
         with self.subTest("assert"):
             t = self.fake_file(
@@ -765,9 +765,9 @@ class TestParser(AstTestCase):
                 """
             )
 
-            assert_ = A.Assert(t.at(1), t.at(2).true)
+            assert_ = T.Assert(t.at(1), t.at(2).true)
             self.parse(t, "object").expect(
-                A.Object(t.anchor, asserts=[assert_]),
+                T.Object(t.anchor, asserts=[assert_]),
             )
 
         with self.subTest("object local"):
@@ -782,7 +782,7 @@ class TestParser(AstTestCase):
             bind_v = bind(v, t.at(3).num(1))
 
             self.parse(t, "object").expect(
-                A.Object(t.anchor, binds=[bind_v]),
+                T.Object(t.anchor, binds=[bind_v]),
             )
 
         with self.subTest("object local before field"):
@@ -801,7 +801,7 @@ class TestParser(AstTestCase):
             field_f = field(f, v_ref)
 
             self.parse(t, "object").expect(
-                A.Object(
+                T.Object(
                     t.anchor,
                     binds=[bind_v],
                     fields=[field_f],
@@ -824,7 +824,7 @@ class TestParser(AstTestCase):
             field_f = field(f, v_ref)
 
             self.parse(t, "object").expect(
-                A.Object(t.anchor, binds=[bind_v], fields=[field_f]),
+                T.Object(t.anchor, binds=[bind_v], fields=[field_f]),
             )
 
         with self.subTest("function field"):
@@ -840,11 +840,11 @@ class TestParser(AstTestCase):
 
             func = field(
                 t.at(1).fixed_key("func"),
-                A.Fn(t.at(2), params=[], body=t.at(3).true),
+                T.Fn(t.at(2), params=[], body=t.at(3).true),
             )
 
             self.parse(t, "object").expect(
-                A.Object(t.anchor, fields=[func]),
+                T.Object(t.anchor, fields=[func]),
             )
 
     def test_obj_comp(self):
@@ -869,7 +869,7 @@ class TestParser(AstTestCase):
         )
 
         computed_field = field(
-            key=A.ComputedKey(
+            key=T.ComputedKey(
                 t.at(7),
                 B.Plus(
                     t.at(3).str("f"),
@@ -883,7 +883,7 @@ class TestParser(AstTestCase):
             visibility=V.Hidden,
         )
 
-        for_spec = A.ForSpec(
+        for_spec = T.ForSpec(
             t.at(13),
             id=t.at(10).var("x"),
             source=t.at(14).array(
@@ -892,7 +892,7 @@ class TestParser(AstTestCase):
             ),
         )
 
-        if_spec = A.IfSpec(
+        if_spec = T.IfSpec(
             t.at(18),
             condition=B.LT(
                 B.Plus(
@@ -904,11 +904,11 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "object").expect(
-            A.ObjComp(
+            T.ObjComp(
                 t.anchor,
                 field=computed_field,
                 binds=[bind(t.at(1).var("x"), t.at(2).num(1))],
-                asserts=[A.Assert(t.at(8), t.at(9).true)],
+                asserts=[T.Assert(t.at(8), t.at(9).true)],
                 for_spec=for_spec,
                 extra_specs=[if_spec],
             )
@@ -924,7 +924,7 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "postfix").expect(
-            A.Call(
+            T.Call(
                 t.anchor,
                 callee=t.at(1).var_ref("func"),
                 args=[
@@ -945,7 +945,7 @@ class TestParser(AstTestCase):
         self.parse(t, "expr").expect(
             B.Plus(
                 t.at(1).var_ref("x"),
-                A.Object(t.at(2)),
+                T.Object(t.at(2)),
             ),
         )
 
@@ -959,15 +959,15 @@ class TestParser(AstTestCase):
         )
 
         self.parse(t, "expr").expect(
-            A.Local(
+            T.Local(
                 t.anchor,
-                binds=[bind(t.at(1).var("p"), A.Object(t.at(2)))],
-                body=A.Fn(
+                binds=[bind(t.at(1).var("p"), T.Object(t.at(2)))],
+                body=T.Fn(
                     t.at(3),
                     params=[],
                     body=B.Plus(
                         t.at(4).var_ref("p"),
-                        A.Object(t.at(5)),
+                        T.Object(t.at(5)),
                     ),
                 ),
             ),

@@ -3,8 +3,8 @@ from textwrap import dedent
 
 from rich.text import Text
 
-from joule.ast import Point, Span
 from joule.parsers import LineMap
+from joule.trees import Point, Span
 
 from . import AnchorDSL
 from .marked_spans import parse_marked_anchors

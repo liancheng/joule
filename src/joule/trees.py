@@ -18,9 +18,6 @@ from joule.pretty import PrettyTree
 URI = Annotated[str, "URI"]
 
 
-AstType = TypeVar("AstType", bound="AST")
-
-
 @D.dataclass(frozen=True, order=True)
 class Point:
     line: int
@@ -93,8 +90,11 @@ class Anchor:
         return Anchor(self.uri, self.span.merge(other))
 
 
+TreeType = TypeVar("TreeType", bound="Tree")
+
+
 @D.dataclass
-class AST:
+class Tree:
     anchor: Anchor
 
     @property
@@ -102,12 +102,12 @@ class AST:
         return self.anchor.span
 
     def __post_init__(self):
-        self.parent: AST | None = None
+        self.parent: Tree | None = None
 
         for child in self.children:
             child.parent = self
 
-    def to(self, expect_type: Type[AstType]) -> AstType:
+    def to(self, expect_type: Type[TreeType]) -> TreeType:
         if not isinstance(self, expect_type):
             raise TypeError(
                 f"Expected {expect_type.__qualname__}, but got {type(self).__qualname__}"
@@ -116,14 +116,14 @@ class AST:
         return self
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return []
 
     @property
     def pretty(self) -> str:
         return str(PrettyAST(self))
 
-    def node_at(self, target: Point | Span) -> AST | None:
+    def node_at(self, target: Point | Span) -> Tree | None:
         """Returns the narrowest AST node covering the target location."""
         if isinstance(target, Point):
             target = Span(target, target)
@@ -145,11 +145,11 @@ class AST:
 
     def find_ancestor(
         self,
-        expected_type: type[AstType],
+        expected_type: type[TreeType],
         *,
         level: int | None = None,
-    ) -> AstType | None:
-        def find(node: AST | None, level: int | None = None) -> AstType | None:
+    ) -> TreeType | None:
+        def find(node: Tree | None, level: int | None = None) -> TreeType | None:
             match node, level:
                 case None, _:
                     return None
@@ -166,7 +166,7 @@ class AST:
 
 
 @D.dataclass
-class Expr(AST):
+class Expr(Tree):
     def __post_init__(self):
         super().__post_init__()
 
@@ -258,7 +258,7 @@ class Document(Expr):
         self.calls: list[Call] = []
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.body]
 
     @property
@@ -325,7 +325,7 @@ class Array(Expr):
     values: list[Expr]
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return iter(value for value in self.values)
 
 
@@ -372,7 +372,7 @@ class Unary(Expr):
     operand: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.operand]
 
 
@@ -383,7 +383,7 @@ class Binary(Expr):
     rhs: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.lhs, self.rhs]
 
     @staticmethod
@@ -392,12 +392,12 @@ class Binary(Expr):
 
 
 @D.dataclass
-class Bind(AST):
+class Bind(Tree):
     id: Id.Var
     value: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.id, self.value]
 
 
@@ -411,13 +411,13 @@ class Local(Expr):
         return self.body.tails
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield from self.binds
         yield self.body
 
 
 @D.dataclass
-class Param(AST):
+class Param(Tree):
     id: Id.Var
     default: Expr | None = None
 
@@ -427,7 +427,7 @@ class Param(AST):
         return Param(anchor, id, default)
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.id
         yield from maybe(self.default)
 
@@ -438,18 +438,18 @@ class Fn(Expr):
     body: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield from self.params
         yield self.body
 
 
 @D.dataclass
-class Arg(AST):
+class Arg(Tree):
     value: Expr
     id: Id.ParamRef | None = None
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.value
         yield from maybe(self.id)
 
@@ -460,7 +460,7 @@ class Call(Expr):
     args: list[Arg]
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.callee
         yield from self.args
 
@@ -482,21 +482,21 @@ class Call(Expr):
 
 
 @D.dataclass
-class ForSpec(AST):
+class ForSpec(Tree):
     id: Id.Var
     source: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.id, self.source]
 
 
 @D.dataclass
-class IfSpec(AST):
+class IfSpec(Tree):
     condition: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.condition]
 
 
@@ -510,7 +510,7 @@ class ListComp(Expr):
     extra_specs: list[CompSpec]
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.expr
         yield self.for_spec
         yield from self.extra_specs
@@ -547,17 +547,17 @@ class Import(Expr):
     importee: Importee
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.importee]
 
 
 @D.dataclass
-class Assert(AST):
+class Assert(Tree):
     condition: Expr
     message: Expr | None = None
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.condition
         yield from maybe(self.message)
 
@@ -572,7 +572,7 @@ class AssertExpr(Expr):
         return self.body.tails
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.assertion, self.body]
 
 
@@ -583,7 +583,7 @@ class Visibility(StrEnum):
 
 
 @D.dataclass
-class FieldKey(AST):
+class FieldKey(Tree):
     pass
 
 
@@ -592,7 +592,7 @@ class FixedKey(FieldKey):
     id: Id.Field
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.id]
 
 
@@ -601,19 +601,19 @@ class ComputedKey(FieldKey):
     expr: Expr
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.expr]
 
 
 @D.dataclass
-class Field(AST):
+class Field(Tree):
     key: FieldKey
     value: Expr
     inherited: bool = False
     visibility: Visibility = Visibility.Default
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.key, self.value]
 
 
@@ -628,7 +628,7 @@ class Object(Expr):
         self.field_scope: FieldScope | None = None
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield from self.binds
         yield from self.asserts
         yield from self.fields
@@ -651,7 +651,7 @@ class ObjComp(Expr):
         assert isinstance(self.field.key, ComputedKey)
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.field
         yield from self.binds
         yield from self.asserts
@@ -665,7 +665,7 @@ class FieldAccess(Expr):
     field: Id.FieldRef
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         return [self.obj, self.field]
 
 
@@ -677,7 +677,7 @@ class Slice(Expr):
     step: Expr | None = None
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.obj
         yield from maybe(self.start)
         yield from maybe(self.stop)
@@ -700,7 +700,7 @@ class If(Expr):
         )
 
     @property
-    def children(self) -> Iterable[AST]:
+    def children(self) -> Iterable[Tree]:
         yield self.condition
         yield self.consequence
         yield from maybe(self.alternative)
@@ -718,17 +718,17 @@ class If(Expr):
 class VarBinding:
     scope: VarScope
     id: Id.Var | Id.Field
-    target: AST
+    target: Tree
 
 
 @D.dataclass
 class VarScope:
-    owner: AST
+    owner: Tree
     bindings: list[VarBinding] = D.field(default_factory=list)
     parent: VarScope | None = None
     children: list[VarScope] = D.field(default_factory=list)
 
-    def bind(self, var: Id.Var, to: AST):
+    def bind(self, var: Id.Var, to: Tree):
         var.binding = VarBinding(self, var, to)
         self.bindings.insert(0, var.binding)
 
@@ -738,13 +738,13 @@ class VarScope:
             None if self.parent is None else self.parent.get(name),
         )
 
-    def nest(self, owner: AST) -> VarScope:
+    def nest(self, owner: Tree) -> VarScope:
         child = VarScope(owner, [], parent=self)
         self.children.append(child)
         return child
 
     @staticmethod
-    def empty(owner: AST) -> VarScope:
+    def empty(owner: Tree) -> VarScope:
         return VarScope(owner)
 
 
@@ -804,7 +804,7 @@ class PrettyAST(PrettyTree):
             case Document() as doc:
                 # For the top-level `Document` node, prints the full location with URI.
                 repr = f"{doc.__class__.__qualname__} [{doc.anchor}]"
-            case AST() as ast:
+            case Tree() as ast:
                 # For all other nodes, only prints the range.
                 repr = f"{ast.__class__.__qualname__} [{ast.span}]"
             case _, *_:
@@ -823,7 +823,7 @@ class PrettyAST(PrettyTree):
 
     def children(self) -> list[PrettyTree]:
         match self.node:
-            case AST() as ast:
+            case Tree() as ast:
                 return [
                     PrettyAST(v, f.name)
                     for f, v in self.non_empty_fields(ast)

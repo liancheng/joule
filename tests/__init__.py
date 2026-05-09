@@ -4,7 +4,7 @@ from typing import Any
 
 from rich.text import Text
 
-from joule import ast as A
+from joule import trees as T
 from joule.parsers.jsonnet import parse_jsonnet
 
 from .dsl.fake_document import FakeFile
@@ -14,7 +14,7 @@ unittest.TestCase.maxDiff = None
 unittest.TestCase.longMessage = False
 
 
-class AstTestCase(unittest.TestCase):
+class TreeTestCase(unittest.TestCase):
     fake_uri = "file:///tmp/test.jsonnet"
 
     def fake_file(self, source: str, marks: bool = True):
@@ -23,13 +23,13 @@ class AstTestCase(unittest.TestCase):
     def assertParsed(self, doc: FakeFile, rule: str, expected: Any):
         self.assertEqual(parse_jsonnet(doc.uri, doc.text, rule), expected)
 
-    def assertAstParsed(self, doc: FakeFile, rule: str, expected: A.AST):
+    def assertAstParsed(self, doc: FakeFile, rule: str, expected: T.Tree):
         self.assertAstEqual(
             obtained=parse_jsonnet(doc.uri, doc.text, rule),
             expected=expected,
         )
 
-    def assertAstEqual(self, obtained: A.AST, expected: A.AST):
+    def assertAstEqual(self, obtained: T.Tree, expected: T.Tree):
         obtained_tree = obtained.pretty
         expected_tree = expected.pretty
         message = Text("\n") + side_by_side(
@@ -42,14 +42,14 @@ class AstTestCase(unittest.TestCase):
     class Expectation:
         doc: FakeFile
         rule: str
-        test_case: AstTestCase
+        test_case: TreeTestCase
 
-        def expect(self, expected: A.AST | Any):
+        def expect(self, expected: T.Tree | Any):
             match expected:
-                case A.AST():
+                case T.Tree():
                     self.test_case.assertAstParsed(self.doc, self.rule, expected)
                 case _:
                     self.test_case.assertParsed(self.doc, self.rule, expected)
 
     def parse(self, doc: FakeFile, rule: str):
-        return AstTestCase.Expectation(doc, rule, self)
+        return TreeTestCase.Expectation(doc, rule, self)

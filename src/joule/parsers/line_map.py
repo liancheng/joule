@@ -1,7 +1,7 @@
 import bisect
 from itertools import accumulate, chain
 
-from joule import ast as A
+from joule import trees as T
 
 
 class LineMap:
@@ -17,10 +17,10 @@ class LineMap:
         lines = (text + "\0").splitlines(keepends=True)
         self.line_offsets: list[int] = list(accumulate(chain([0], map(len, lines))))
 
-    def point_of(self, offset: int) -> A.Point:
+    def point_of(self, offset: int) -> T.Point:
         line = bisect.bisect_right(self.line_offsets, offset) - 1
         column = offset - self.line_offsets[line]
-        return A.Point(line=line, character=column)
+        return T.Point(line=line, character=column)
 
-    def offset_of(self, point: A.Point) -> int:
+    def offset_of(self, point: T.Point) -> int:
         return self.line_offsets[point.line] + point.character

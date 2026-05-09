@@ -2,7 +2,7 @@ import dataclasses as D
 
 import parsy as P
 
-from joule.ast import URI, Anchor, Point, Span
+from joule.trees import URI, Anchor, Point, Span
 
 
 @D.dataclass
@@ -22,7 +22,7 @@ class MarkedSpan:
     marks: list[Mark]
 
 
-uint = P.string("0").map(int) | (P.regex("[1-9]") + P.regex("[0-9]*")).map(int)
+uint = P.regex("0|[1-9][0-9]*").map(int)
 
 open_mark = P.seq(
     id=uint,

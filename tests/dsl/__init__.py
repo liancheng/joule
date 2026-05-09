@@ -1,7 +1,7 @@
 import dataclasses as D
 from typing import Callable
 
-from joule import ast as A
+from joule import trees as T
 
 from .util import side_by_side
 
@@ -11,83 +11,83 @@ __all__ = [
 
 
 @D.dataclass(frozen=True)
-class AnchorDSL(A.Anchor):
+class AnchorDSL(T.Anchor):
     def __repr__(self) -> str:
         return super().__repr__()
 
     @staticmethod
-    def make_atom(fn: Callable[[A.Anchor], A.AstType]):
+    def make_atom(fn: Callable[[T.Anchor], T.TreeType]):
         @property
-        def apply(self) -> A.AstType:
+        def apply(self) -> T.TreeType:
             return fn(self)
 
         return apply
 
-    dollar = make_atom(A.Dollar)
-    null = make_atom(A.Null)
-    self = make_atom(A.Self)
-    super = make_atom(A.Super)
+    dollar = make_atom(T.Dollar)
+    null = make_atom(T.Null)
+    self = make_atom(T.Self)
+    super = make_atom(T.Super)
 
     @staticmethod
-    def make_id(fn: Callable[[A.Anchor, str], A.AstType]):
-        def apply(self, name: str) -> A.AstType:
+    def make_id(fn: Callable[[T.Anchor, str], T.TreeType]):
+        def apply(self, name: str) -> T.TreeType:
             return fn(self, name)
 
         return apply
 
-    field = make_id(A.Id.Field)
-    field_ref = make_id(A.Id.FieldRef)
-    param_ref = make_id(A.Id.ParamRef)
-    var = make_id(A.Id.Var)
-    var_ref = make_id(A.Id.VarRef)
+    field = make_id(T.Id.Field)
+    field_ref = make_id(T.Id.FieldRef)
+    param_ref = make_id(T.Id.ParamRef)
+    var = make_id(T.Id.Var)
+    var_ref = make_id(T.Id.VarRef)
 
     @property
-    def true(self) -> A.Bool:
-        return A.Bool(self, True)
+    def true(self) -> T.Bool:
+        return T.Bool(self, True)
 
     @property
-    def false(self) -> A.Bool:
-        return A.Bool(self, False)
+    def false(self) -> T.Bool:
+        return T.Bool(self, False)
 
-    def num(self, value: int | float) -> A.Num:
-        return A.Num(self, float(value))
+    def num(self, value: int | float) -> T.Num:
+        return T.Num(self, float(value))
 
-    def str(self, value: str) -> A.Str:
-        return A.Str(self, value)
+    def str(self, value: str) -> T.Str:
+        return T.Str(self, value)
 
-    def importee(self, path: str) -> A.Importee:
-        return A.Importee(self, path)
+    def importee(self, path: str) -> T.Importee:
+        return T.Importee(self, path)
 
-    def fixed_key(self, name: str) -> A.FixedKey:
-        return A.FixedKey(self, self.field(name))
+    def fixed_key(self, name: str) -> T.FixedKey:
+        return T.FixedKey(self, self.field(name))
 
-    def param(self, name: str, default: A.Expr | None = None) -> A.Param:
+    def param(self, name: str, default: T.Expr | None = None) -> T.Param:
         anchor = self if default is None else self.merge(default.span)
-        return A.Param(anchor, self.var(name), default)
+        return T.Param(anchor, self.var(name), default)
 
-    def array(self, *values: A.Expr) -> A.Array:
-        return A.Array(self, list(values))
-
-
-def assert_expr(assertion: A.Assert, body: A.Expr) -> A.AssertExpr:
-    return A.AssertExpr(assertion.anchor.merge(body.span), assertion, body)
+    def array(self, *values: T.Expr) -> T.Array:
+        return T.Array(self, list(values))
 
 
-def bind(var: A.Id.Var, value: A.Expr) -> A.Bind:
-    return A.Bind(var.anchor.merge(value.span), var, value)
+def assert_expr(assertion: T.Assert, body: T.Expr) -> T.AssertExpr:
+    return T.AssertExpr(assertion.anchor.merge(body.span), assertion, body)
 
 
-def get_field(obj: A.Expr, field_ref: A.Id.FieldRef) -> A.FieldAccess:
-    return A.FieldAccess(obj.anchor.merge(field_ref.span), obj, field_ref)
+def bind(var: T.Id.Var, value: T.Expr) -> T.Bind:
+    return T.Bind(var.anchor.merge(value.span), var, value)
+
+
+def get_field(obj: T.Expr, field_ref: T.Id.FieldRef) -> T.FieldAccess:
+    return T.FieldAccess(obj.anchor.merge(field_ref.span), obj, field_ref)
 
 
 def field(
-    key: A.FieldKey,
-    value: A.Expr,
+    key: T.FieldKey,
+    value: T.Expr,
     inherited: bool = False,
-    visibility: A.Visibility = A.Visibility.Default,
-) -> A.Field:
-    return A.Field(
+    visibility: T.Visibility = T.Visibility.Default,
+) -> T.Field:
+    return T.Field(
         key.anchor.merge(value.span),
         key,
         value,
@@ -96,6 +96,6 @@ def field(
     )
 
 
-def arg(value: A.Expr, id: A.Id.ParamRef | None = None) -> A.Arg:
+def arg(value: T.Expr, id: T.Id.ParamRef | None = None) -> T.Arg:
     anchor = value.anchor if id is None else id.anchor.merge(value.span)
-    return A.Arg(anchor, value, id)
+    return T.Arg(anchor, value, id)
