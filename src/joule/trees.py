@@ -1,7 +1,6 @@
 import dataclasses as D
 from copy import copy
 from enum import Enum, StrEnum, auto
-from textwrap import shorten
 from typing import (
     Annotated,
     Any,
@@ -13,7 +12,7 @@ from typing import (
 import lsprotocol.types as L
 
 from joule.maybe import head_or_none, maybe
-from joule.pretty import PrettyTree
+from joule.pretty import Pretty
 
 URI = Annotated[str, "URI"]
 
@@ -48,6 +47,13 @@ class Span:
     def lsp(self) -> L.Range:
         return L.Range(self.start.lsp, self.end.lsp)
 
+    def __eq__(self, other) -> bool:
+        return (
+            isinstance(other, Span)
+            and self.start == other.start
+            and self.end == other.end
+        )
+
     def __repr__(self) -> str:
         return f"{self.start!r}-{self.end!r}"
 
@@ -63,43 +69,12 @@ class Span:
         )
 
 
-@D.dataclass(frozen=True)
-class Anchor:
-    uri: URI
-    span: Span
-
-    @staticmethod
-    def from_lsp(location: L.Location):
-        return Anchor(location.uri, Span.from_lsp(location.range))
-
-    @property
-    def lsp(self) -> L.Location:
-        return L.Location(self.uri, self.span.lsp)
-
-    def __eq__(self, other) -> bool:
-        return (
-            isinstance(other, Anchor)
-            and self.uri == other.uri
-            and self.span == other.span
-        )
-
-    def __repr__(self) -> str:
-        return f"{self.uri}:{self.span!r}"
-
-    def merge(self, other: Span) -> Anchor:
-        return Anchor(self.uri, self.span.merge(other))
-
-
 TreeType = TypeVar("TreeType", bound="Tree")
 
 
 @D.dataclass
 class Tree:
-    anchor: Anchor
-
-    @property
-    def span(self) -> Span:
-        return self.anchor.span
+    span: Span
 
     def __post_init__(self):
         self.parent: Tree | None = None
@@ -121,7 +96,7 @@ class Tree:
 
     @property
     def pretty(self) -> str:
-        return str(PrettyAST(self))
+        return str(PrettyTree(self))
 
     def node_at(self, target: Point | Span) -> Tree | None:
         """Returns the narrowest AST node covering the target location."""
@@ -247,6 +222,7 @@ class AnalysisPhase(Enum):
 
 @D.dataclass
 class Document(Expr):
+    uri: URI
     body: Expr
 
     def __post_init__(self):
@@ -294,7 +270,7 @@ class Id:
 
         @staticmethod
         def from_string(string: Str) -> Id.Field:
-            return Id.Field(string.anchor, string.value)
+            return Id.Field(string.span, string.value)
 
     @D.dataclass
     class FieldRef(Expr):
@@ -388,7 +364,7 @@ class Binary(Expr):
 
     @staticmethod
     def make(op: BinaryOp, lhs: Expr, rhs: Expr) -> Binary:
-        return Binary(lhs.anchor.merge(rhs.span), op, lhs, rhs)
+        return Binary(lhs.span.merge(rhs.span), op, lhs, rhs)
 
 
 @D.dataclass
@@ -423,8 +399,8 @@ class Param(Tree):
 
     @staticmethod
     def make(id: Id.Var, default: Expr | None):
-        anchor = id.anchor if default is None else id.anchor.merge(default.span)
-        return Param(anchor, id, default)
+        span = id.span if default is None else id.span.merge(default.span)
+        return Param(span, id, default)
 
     @property
     def children(self) -> Iterable[Tree]:
@@ -528,17 +504,7 @@ class Importee(Str):
 
     @staticmethod
     def from_string(string: Str) -> Importee:
-        return Importee(string.anchor, string.value)
-
-
-@D.dataclass(frozen=True)
-class ImporteeKey:
-    uri: URI
-    path: str
-
-    @classmethod
-    def of(cls, origin: Importee) -> ImporteeKey:
-        return cls(origin.anchor.uri, origin.value)
+        return Importee(string.span, string.value)
 
 
 @D.dataclass
@@ -793,7 +759,7 @@ class FieldScope:
 
 
 @D.dataclass
-class PrettyAST(PrettyTree):
+class PrettyTree(Pretty):
     """A class for pretty-printing a Jsonnet AST."""
 
     node: Any
@@ -801,19 +767,19 @@ class PrettyAST(PrettyTree):
 
     def node_text(self) -> str:
         match self.node:
-            case Document() as doc:
-                # For the top-level `Document` node, prints the full location with URI.
-                repr = f"{doc.__class__.__qualname__} [{doc.anchor}]"
-            case Tree() as ast:
+            case Tree() as tree:
                 # For all other nodes, only prints the range.
-                repr = f"{ast.__class__.__qualname__} [{ast.span}]"
-            case _, *_:
+                repr = f"{tree.__class__.__qualname__} [{tree.span}]"
+            case Enum():
+                repr = self.node.name
+            case list():
                 # For lists, print a placeholder as all the elements are printed
                 # separately as child nodes.
                 repr = "list"
+            case str() if len(self.node) > 256:
+                repr = f"{self.node[: 256 - 5] + '[...]'!r}"
             case str():
-                # Escapes strings and truncates long ones.
-                repr = shorten(f"{self.node!r}", width=32)
+                repr = f"{self.node!r}"
             case _:
                 # Falls back to `__str__` for everything else.
                 repr = str(self.node)
@@ -821,16 +787,16 @@ class PrettyAST(PrettyTree):
         # Prepends the label, if any.
         return repr if self.label is None else f"{self.label}={repr}"
 
-    def children(self) -> list[PrettyTree]:
+    def children(self) -> list[Pretty]:
         match self.node:
-            case Tree() as ast:
+            case Tree():
                 return [
-                    PrettyAST(v, f.name)
-                    for f, v in self.non_empty_fields(ast)
-                    if f.name != "anchor"
+                    PrettyTree(node=field_value, label=field.name)
+                    for field, field_value in self.non_empty_fields(self.node)
+                    if field.name != "span"
                 ]
             case list() as array if (size := len(array)) > 0:
-                return [PrettyAST(array[i], f"[{i}]") for i in range(size)]
+                return [PrettyTree(node=array[i], label=f"[{i}]") for i in range(size)]
             case _:
                 return []
 

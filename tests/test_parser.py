@@ -12,35 +12,35 @@ from .dsl import arg, assert_expr, bind, field, get_field
 class TestParser(TreeTestCase):
     def test_boolean(self):
         t = self.fake_file("true")
-        self.parse(t, "boolean").expect(t.anchor.true)
+        self.parse(t, "boolean").expect(t.span.true)
 
         t = self.fake_file("false")
-        self.parse(t, "boolean").expect(t.anchor.false)
+        self.parse(t, "boolean").expect(t.span.false)
 
     def test_id(self):
         t = self.fake_file("int")
-        self.parse(t, "field_id").expect(t.anchor.field("int"))
-        self.parse(t, "field_ref_id").expect(t.anchor.field_ref("int"))
-        self.parse(t, "param_ref_id").expect(t.anchor.param_ref("int"))
-        self.parse(t, "var_id").expect(t.anchor.var("int"))
-        self.parse(t, "var_ref_id").expect(t.anchor.var_ref("int"))
+        self.parse(t, "field_id").expect(t.span.field("int"))
+        self.parse(t, "field_ref_id").expect(t.span.field_ref("int"))
+        self.parse(t, "param_ref_id").expect(t.span.param_ref("int"))
+        self.parse(t, "var_id").expect(t.span.var("int"))
+        self.parse(t, "var_ref_id").expect(t.span.var_ref("int"))
 
     def test_misc(self):
         t = self.fake_file("$")
-        self.parse(t, "dollar").expect(t.anchor.dollar)
+        self.parse(t, "dollar").expect(t.span.dollar)
 
         t = self.fake_file("null")
-        self.parse(t, "null").expect(t.anchor.null)
+        self.parse(t, "null").expect(t.span.null)
 
         t = self.fake_file("self")
-        self.parse(t, "self").expect(t.anchor.self)
+        self.parse(t, "self").expect(t.span.self)
 
         t = self.fake_file("super")
-        self.parse(t, "super").expect(t.anchor.super)
+        self.parse(t, "super").expect(t.span.super)
 
     def assertNumParsed(self, raw: str, value: float | int):
         t = self.fake_file(raw)
-        self.parse(t, "number").expect(t.anchor.num(value))
+        self.parse(t, "number").expect(t.span.num(value))
 
     def test_number(self):
         with self.subTest("decimal"):
@@ -83,7 +83,7 @@ class TestParser(TreeTestCase):
 
     def assertStringParsed(self, source: str, expected: str):
         t = self.fake_file(source)
-        self.parse(t, "string").expect(t.anchor.str(expected))
+        self.parse(t, "string").expect(t.span.str(expected))
 
     def test_string(self):
         with self.subTest("inline"):
@@ -163,7 +163,7 @@ class TestParser(TreeTestCase):
     def test_unary(self):
         with self.subTest("0 operators"):
             t = self.fake_file("true")
-            self.parse(t, "unary").expect(t.anchor.true)
+            self.parse(t, "unary").expect(t.span.true)
 
         with self.subTest("1 operator"):
             t = self.fake_file(
@@ -174,7 +174,7 @@ class TestParser(TreeTestCase):
             )
 
             self.parse(t, "unary").expect(
-                T.Unary(t.anchor, U.Not, t.at(1).true),
+                T.Unary(t.span, U.Not, t.at(1).true),
             )
 
     def test_binary_op(self):
@@ -327,7 +327,7 @@ class TestParser(TreeTestCase):
 
             self.parse(t, "start_stop_step").expect(
                 (
-                    t.anchor.num(0),
+                    t.span.num(0),
                     None,
                     None,
                 ),
@@ -430,7 +430,7 @@ class TestParser(TreeTestCase):
 
         self.parse(t, "postfix").expect(
             T.Slice(
-                t.anchor,
+                t.span,
                 t.at(1).var_ref("obj"),
                 t.at(2).str("f"),
             ),
@@ -447,7 +447,7 @@ class TestParser(TreeTestCase):
 
             self.parse(t, "conditional").expect(
                 T.If(
-                    t.anchor,
+                    t.span,
                     t.at(1).var_ref("x"),
                     t.at(2).var_ref("y"),
                     t.at(3).var_ref("z"),
@@ -464,7 +464,7 @@ class TestParser(TreeTestCase):
 
             self.parse(t, "conditional").expect(
                 T.If(
-                    t.anchor,
+                    t.span,
                     t.at(1).var_ref("x"),
                     t.at(2).var_ref("y"),
                 ),
@@ -479,7 +479,7 @@ class TestParser(TreeTestCase):
         )
 
         self.parse(t, "assertion").expect(
-            T.Assert(t.anchor, t.at(1).true),
+            T.Assert(t.span, t.at(1).true),
         )
 
         t = self.fake_file(
@@ -490,7 +490,7 @@ class TestParser(TreeTestCase):
         )
 
         self.parse(t, "assertion").expect(
-            T.Assert(t.anchor, t.at(1).true, t.at(2).str("never")),
+            T.Assert(t.span, t.at(1).true, t.at(2).str("never")),
         )
 
     def test_assert_expr(self):
@@ -527,7 +527,7 @@ class TestParser(TreeTestCase):
 
                 self.parse(t, rule).expect(
                     T.Import(
-                        t.anchor,
+                        t.span,
                         import_type,
                         t.at(1).importee("file"),
                     ),
@@ -537,7 +537,7 @@ class TestParser(TreeTestCase):
         t = self.fake_file("[]")
 
         self.parse(t, "array").expect(
-            t.anchor.array(),
+            t.span.array(),
         )
 
         for comma in [",", ""]:
@@ -549,7 +549,7 @@ class TestParser(TreeTestCase):
             )
 
             self.parse(t, "array").expect(
-                t.anchor.array(t.at(1).num(1)),
+                t.span.array(t.at(1).num(1)),
             )
 
             t = self.fake_file(
@@ -560,7 +560,7 @@ class TestParser(TreeTestCase):
             )
 
             self.parse(t, "array").expect(
-                t.anchor.array(t.at(1).num(1), t.at(2).num(2)),
+                t.span.array(t.at(1).num(1), t.at(2).num(2)),
             )
 
     def test_bind_var(self):
@@ -607,7 +607,7 @@ class TestParser(TreeTestCase):
 
         self.parse(t, "local_expr").expect(
             T.Local(
-                t.anchor,
+                t.span,
                 binds=[
                     bind(t.at(1).var("x"), t.at(2).num(1)),
                     bind(t.at(3).var("y"), t.at(4).num(2)),
@@ -625,7 +625,7 @@ class TestParser(TreeTestCase):
                 """
             )
 
-            self.parse(t, "anonymous_function").expect(T.Fn(t.anchor, [], t.at(1).true))
+            self.parse(t, "anonymous_function").expect(T.Fn(t.span, [], t.at(1).true))
 
         with self.subTest("parameters with a default value"):
             t = self.fake_file(
@@ -641,7 +641,7 @@ class TestParser(TreeTestCase):
             y_ref = t.at(5).var_ref("y")
 
             self.parse(t, "anonymous_function").expect(
-                T.Fn(t.anchor, [x, y], B.Plus(x_ref, y_ref))
+                T.Fn(t.span, [x, y], B.Plus(x_ref, y_ref))
             )
 
     def test_list_comp(self):
@@ -660,7 +660,7 @@ class TestParser(TreeTestCase):
         for_ = T.ForSpec(t.at(1), id=i, source=x)
         if_ = T.IfSpec(t.at(2), t.at(6).true)
 
-        self.parse(t, "list_comp").expect(T.ListComp(t.anchor, i_ref, for_, [if_]))
+        self.parse(t, "list_comp").expect(T.ListComp(t.span, i_ref, for_, [if_]))
 
     def test_paren(self):
         t = self.fake_file(
@@ -679,10 +679,10 @@ class TestParser(TreeTestCase):
 
     def test_fixed_key(self):
         t = self.fake_file("f")
-        self.parse(t, "fixed_key").expect(t.anchor.fixed_key("f"))
+        self.parse(t, "fixed_key").expect(t.span.fixed_key("f"))
 
         t = self.fake_file("'f'")
-        self.parse(t, "fixed_key").expect(t.anchor.fixed_key("f"))
+        self.parse(t, "fixed_key").expect(t.span.fixed_key("f"))
 
     def test_computed_key(self):
         t = self.fake_file(
@@ -692,7 +692,7 @@ class TestParser(TreeTestCase):
             """
         )
 
-        self.parse(t, "computed_key").expect(T.ComputedKey(t.anchor, t.at(1).true))
+        self.parse(t, "computed_key").expect(T.ComputedKey(t.span, t.at(1).true))
 
     def test_visibility(self):
         for vis in T.Visibility:
@@ -755,7 +755,7 @@ class TestParser(TreeTestCase):
     def test_object(self):
         with self.subTest("empty"):
             t = self.fake_file("{}")
-            self.parse(t, "object").expect(T.Object(t.anchor))
+            self.parse(t, "object").expect(T.Object(t.span))
 
         with self.subTest("assert"):
             t = self.fake_file(
@@ -767,7 +767,7 @@ class TestParser(TreeTestCase):
 
             assert_ = T.Assert(t.at(1), t.at(2).true)
             self.parse(t, "object").expect(
-                T.Object(t.anchor, asserts=[assert_]),
+                T.Object(t.span, asserts=[assert_]),
             )
 
         with self.subTest("object local"):
@@ -782,7 +782,7 @@ class TestParser(TreeTestCase):
             bind_v = bind(v, t.at(3).num(1))
 
             self.parse(t, "object").expect(
-                T.Object(t.anchor, binds=[bind_v]),
+                T.Object(t.span, binds=[bind_v]),
             )
 
         with self.subTest("object local before field"):
@@ -802,7 +802,7 @@ class TestParser(TreeTestCase):
 
             self.parse(t, "object").expect(
                 T.Object(
-                    t.anchor,
+                    t.span,
                     binds=[bind_v],
                     fields=[field_f],
                 )
@@ -824,7 +824,7 @@ class TestParser(TreeTestCase):
             field_f = field(f, v_ref)
 
             self.parse(t, "object").expect(
-                T.Object(t.anchor, binds=[bind_v], fields=[field_f]),
+                T.Object(t.span, binds=[bind_v], fields=[field_f]),
             )
 
         with self.subTest("function field"):
@@ -844,7 +844,7 @@ class TestParser(TreeTestCase):
             )
 
             self.parse(t, "object").expect(
-                T.Object(t.anchor, fields=[func]),
+                T.Object(t.span, fields=[func]),
             )
 
     def test_obj_comp(self):
@@ -905,7 +905,7 @@ class TestParser(TreeTestCase):
 
         self.parse(t, "object").expect(
             T.ObjComp(
-                t.anchor,
+                t.span,
                 field=computed_field,
                 binds=[bind(t.at(1).var("x"), t.at(2).num(1))],
                 asserts=[T.Assert(t.at(8), t.at(9).true)],
@@ -925,7 +925,7 @@ class TestParser(TreeTestCase):
 
         self.parse(t, "postfix").expect(
             T.Call(
-                t.anchor,
+                t.span,
                 callee=t.at(1).var_ref("func"),
                 args=[
                     arg(t.at(2).num(1)),
@@ -960,7 +960,7 @@ class TestParser(TreeTestCase):
 
         self.parse(t, "expr").expect(
             T.Local(
-                t.anchor,
+                t.span,
                 binds=[bind(t.at(1).var("p"), T.Object(t.at(2)))],
                 body=T.Fn(
                     t.at(3),

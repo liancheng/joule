@@ -6,8 +6,8 @@ from rich.text import Text
 from joule.parsers import LineMap
 from joule.trees import Point, Span
 
-from . import AnchorDSL
-from .marked_spans import parse_marked_anchors
+from . import SpanDSL
+from .marked_spans import parse_marked_spans
 
 
 class FakeFile(LineMap):
@@ -18,26 +18,26 @@ class FakeFile(LineMap):
         marks: bool = True,
     ) -> None:
         text = dedent(text)
-        text, self.anchors = parse_marked_anchors(text, uri) if marks else (text, {})
+        text, self.spans = parse_marked_spans(text) if marks else (text, {})
         super().__init__(text)
         self.uri = uri
 
     @cached_property
-    def anchor(self) -> AnchorDSL:
-        return AnchorDSL(
-            self.uri,
-            Span(self.point_of(0), self.point_of(len(self.text))),
+    def span(self) -> SpanDSL:
+        return SpanDSL(
+            self.point_of(0),
+            self.point_of(len(self.text)),
         )
 
-    def at(self, mark: int) -> AnchorDSL:
-        anchor = self.anchors[mark]
-        return AnchorDSL(anchor.uri, anchor.span)
+    def at(self, mark: int) -> SpanDSL:
+        span = self.spans[mark]
+        return SpanDSL(span.start, span.end)
 
     def start_of(self, mark: int) -> Point:
-        return self.at(mark).span.start
+        return self.at(mark).start
 
     def end_of(self, mark: int) -> Point:
-        return self.at(mark).span.end
+        return self.at(mark).end
 
     def highlight(self, ranges: tuple[Span, str] | list[tuple[Span, str]]) -> Text:
         """Renders the Jsonnet document with given text ranges highlighted.

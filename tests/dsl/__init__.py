@@ -11,12 +11,12 @@ __all__ = [
 
 
 @D.dataclass(frozen=True)
-class AnchorDSL(T.Anchor):
+class SpanDSL(T.Span):
     def __repr__(self) -> str:
         return super().__repr__()
 
     @staticmethod
-    def make_atom(fn: Callable[[T.Anchor], T.TreeType]):
+    def make_atom(fn: Callable[[T.Span], T.TreeType]):
         @property
         def apply(self) -> T.TreeType:
             return fn(self)
@@ -29,7 +29,7 @@ class AnchorDSL(T.Anchor):
     super = make_atom(T.Super)
 
     @staticmethod
-    def make_id(fn: Callable[[T.Anchor, str], T.TreeType]):
+    def make_id(fn: Callable[[T.Span, str], T.TreeType]):
         def apply(self, name: str) -> T.TreeType:
             return fn(self, name)
 
@@ -62,23 +62,23 @@ class AnchorDSL(T.Anchor):
         return T.FixedKey(self, self.field(name))
 
     def param(self, name: str, default: T.Expr | None = None) -> T.Param:
-        anchor = self if default is None else self.merge(default.span)
-        return T.Param(anchor, self.var(name), default)
+        span = self if default is None else self.merge(default.span)
+        return T.Param(span, self.var(name), default)
 
     def array(self, *values: T.Expr) -> T.Array:
         return T.Array(self, list(values))
 
 
 def assert_expr(assertion: T.Assert, body: T.Expr) -> T.AssertExpr:
-    return T.AssertExpr(assertion.anchor.merge(body.span), assertion, body)
+    return T.AssertExpr(assertion.span.merge(body.span), assertion, body)
 
 
 def bind(var: T.Id.Var, value: T.Expr) -> T.Bind:
-    return T.Bind(var.anchor.merge(value.span), var, value)
+    return T.Bind(var.span.merge(value.span), var, value)
 
 
 def get_field(obj: T.Expr, field_ref: T.Id.FieldRef) -> T.FieldAccess:
-    return T.FieldAccess(obj.anchor.merge(field_ref.span), obj, field_ref)
+    return T.FieldAccess(obj.span.merge(field_ref.span), obj, field_ref)
 
 
 def field(
@@ -88,7 +88,7 @@ def field(
     visibility: T.Visibility = T.Visibility.Default,
 ) -> T.Field:
     return T.Field(
-        key.anchor.merge(value.span),
+        key.span.merge(value.span),
         key,
         value,
         inherited,
@@ -97,5 +97,5 @@ def field(
 
 
 def arg(value: T.Expr, id: T.Id.ParamRef | None = None) -> T.Arg:
-    anchor = value.anchor if id is None else id.anchor.merge(value.span)
-    return T.Arg(anchor, value, id)
+    span = value.span if id is None else id.span.merge(value.span)
+    return T.Arg(span, value, id)

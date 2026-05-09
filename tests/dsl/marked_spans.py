@@ -2,7 +2,7 @@ import dataclasses as D
 
 import parsy as P
 
-from joule.trees import URI, Anchor, Point, Span
+from joule.trees import Point, Span
 
 
 @D.dataclass
@@ -95,8 +95,3 @@ def parse_marked_spans(source: str) -> tuple[str, dict[int, Span]]:
     assert len(open_marks) == 0, f"Closing mark(s) missing: {pending_marks}"
 
     return "\n".join(source_lines), spans
-
-
-def parse_marked_anchors(source: str, uri: URI) -> tuple[str, dict[int, Anchor]]:
-    source, spans = parse_marked_spans(source)
-    return source, {id: Anchor(uri, span) for id, span in spans.items()}

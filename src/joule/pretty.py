@@ -2,14 +2,14 @@ import dataclasses as D
 from typing import Any
 
 
-class PrettyTree:
+class Pretty:
     """An abstract class for pretty-printing tree-like structures."""
 
     def node_text(self) -> str:
         """Returns a single-line string representing a tree node."""
         ...
 
-    def children(self) -> list["PrettyTree"]:
+    def children(self) -> list["Pretty"]:
         """Returns a list of child nodes."""
         ...
 
@@ -27,7 +27,7 @@ class PrettyTree:
         ]
 
     def __repr__(self):
-        def grow(lines: list[str], nodes: list[PrettyTree], branches: str = ""):
+        def grow(lines: list[str], nodes: list[Pretty], branches: str = ""):
             for i, node in enumerate(nodes):
                 # Whether node is the last child of its parent.
                 last_child = i == len(nodes) - 1
