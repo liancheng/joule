@@ -3,8 +3,8 @@ from textwrap import dedent
 
 from rich.text import Text
 
+from joule import trees as T
 from joule.parsers import LineMap
-from joule.trees import Point, Span
 
 from . import SpanDSL
 from .marked_spans import parse_marked_spans
@@ -33,14 +33,14 @@ class FakeFile(LineMap):
         span = self.spans[mark]
         return SpanDSL(span.start, span.end)
 
-    def start_of(self, mark: int) -> Point:
+    def start_of(self, mark: int) -> T.Point:
         return self.at(mark).start
 
-    def end_of(self, mark: int) -> Point:
+    def end_of(self, mark: int) -> T.Point:
         return self.at(mark).end
 
-    def highlight(self, ranges: tuple[Span, str] | list[tuple[Span, str]]) -> Text:
-        """Renders the Jsonnet document with given text ranges highlighted.
+    def highlight(self, spans: tuple[T.Span, str] | list[tuple[T.Span, str]]) -> Text:
+        """Renders the faked text file with given text ranges highlighted.
 
         The document is rendered with its URI, a top ruler, an optional bottom ruler
         for long documents, and a line number gutter:
@@ -59,8 +59,8 @@ class FakeFile(LineMap):
         NOTE: To be consistent with LSP, both line and column numbers are 0 based.
         """
 
-        if isinstance(ranges, tuple):
-            ranges = [ranges]
+        if isinstance(spans, tuple):
+            spans = [spans]
 
         styled = Text.styled
         rendered = []
@@ -70,7 +70,7 @@ class FakeFile(LineMap):
 
         # Renders the ranges.
         rendered_source = styled(self.text, "default")
-        for span, style in ranges:
+        for span, style in spans:
             rendered_source.stylize(
                 style,
                 start=self.offset_of(span.start),

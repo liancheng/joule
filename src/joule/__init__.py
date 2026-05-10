@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from joule.parsers import parse_jsonnet
+from joule.parsers.jsonnet import parse_document
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -48,7 +48,7 @@ def tree(
         uri = path.absolute().as_uri()
         source = path.read_text()
 
-    Console(markup=False).print(parse_jsonnet(uri, source).pretty)
+    Console(markup=False).print(parse_document(uri, source).pretty)
 
 
 if __name__ == "__main__":

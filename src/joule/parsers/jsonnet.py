@@ -16,8 +16,13 @@ JSONNET_GRAMMAR = load_grammar("jsonnet.grammar")
 
 
 def parse_jsonnet(uri: T.URI, source: str, rule: str = "document") -> T.Tree:
-    root = JSONNET_GRAMMAR.default(rule).parse(source)
+    grammar = JSONNET_GRAMMAR if rule == "document" else JSONNET_GRAMMAR.default(rule)
+    root = grammar.parse(source)
     return JsonnetParser(uri, root).visit(root)
+
+
+def parse_document(uri: T.URI, source: str) -> T.Document:
+    return parse_jsonnet(uri, source, "document").to(T.Document)
 
 
 class JsonnetParser(NodeVisitor, LineMap):
