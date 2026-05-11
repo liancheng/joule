@@ -832,7 +832,7 @@ class TestParser(TreeTestCase):
                 """\
                 {
                     func(): true
-                |   ^^^^1
+                    ^^^^1
                 |       ^2: ^^^^:2,3
                 }
                 """
@@ -855,15 +855,15 @@ class TestParser(TreeTestCase):
             |         ^1  ^2
                 ['f' + y]:: x + y,
             |    ^^^3  ^4   ^5  ^6
-            |   ^^^^^^^^^7
+                ^^^^^^^^^7
                 assert true,
-            |   ^8:    ^^^^:8,9
+                ^8:    ^^^^:8,9
                 for x in [2, 3]
             |       ^10   ^11^12
-            |   ^13:     ^^^^^^:13,14
+                ^13:     ^^^^^^:13,14
                 if x + y < 4
             |      ^15 ^16 ^17
-            |   ^^^^^^^^^^^^18
+                ^^^^^^^^^^^^18
             }
             """
         )
@@ -952,7 +952,7 @@ class TestParser(TreeTestCase):
         t = self.fake_file(
             """\
             local p = {};
-                  ^1  ^^2
+            |     ^1  ^^2
             function() p {}
             ^3:        ^4^^:3,5
             """

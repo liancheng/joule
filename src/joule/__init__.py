@@ -48,7 +48,7 @@ def tree(
         uri = path.absolute().as_uri()
         source = path.read_text()
 
-    Console(markup=False).print(parse_document(uri, source).pretty)
+    Console(markup=False).print(parse_document(source, uri).pretty)
 
 
 if __name__ == "__main__":

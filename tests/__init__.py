@@ -7,7 +7,7 @@ from rich.text import Text
 from joule import trees as T
 from joule.parsers.jsonnet import parse_jsonnet
 
-from .dsl.fake_document import FakeFile
+from .dsl.fake_document import FakeDocument, FakeFile
 from .dsl.util import side_by_side
 
 unittest.TestCase.maxDiff = None
@@ -20,12 +20,15 @@ class TreeTestCase(unittest.TestCase):
     def fake_file(self, source: str, marks: bool = True):
         return FakeFile(source, uri=self.fake_uri, marks=marks)
 
+    def fake_document(self, source: str):
+        return FakeDocument(source, uri=self.fake_uri)
+
     def assertParsed(self, doc: FakeFile, rule: str, expected: Any):
-        self.assertEqual(parse_jsonnet(doc.uri, doc.text, rule), expected)
+        self.assertEqual(parse_jsonnet(doc.text, doc.uri, rule), expected)
 
     def assertAstParsed(self, doc: FakeFile, rule: str, expected: T.Tree):
         self.assertAstEqual(
-            obtained=parse_jsonnet(doc.uri, doc.text, rule),
+            obtained=parse_jsonnet(doc.text, doc.uri, rule),
             expected=expected,
         )
 

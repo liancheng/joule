@@ -15,14 +15,14 @@ from .string import StringParser
 JSONNET_GRAMMAR = load_grammar("jsonnet.grammar")
 
 
-def parse_jsonnet(uri: T.URI, source: str, rule: str = "document") -> T.Tree:
+def parse_jsonnet(source: str, uri: T.URI, rule: str = "document") -> T.Tree:
     grammar = JSONNET_GRAMMAR if rule == "document" else JSONNET_GRAMMAR.default(rule)
     root = grammar.parse(source)
     return JsonnetParser(uri, root).visit(root)
 
 
-def parse_document(uri: T.URI, source: str) -> T.Document:
-    return parse_jsonnet(uri, source, "document").to(T.Document)
+def parse_document(source: str, uri: T.URI) -> T.Document:
+    return parse_jsonnet(source, uri, "document").to(T.Document)
 
 
 class JsonnetParser(NodeVisitor, LineMap):

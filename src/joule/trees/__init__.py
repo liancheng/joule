@@ -14,8 +14,6 @@ import lsprotocol.types as L
 from joule.maybe import head_or_none, maybe
 from joule.pretty import Pretty
 
-URI = Annotated[str, "URI"]
-
 
 @D.dataclass(frozen=True, order=True)
 class Point:
@@ -98,11 +96,8 @@ class Tree:
     def pretty(self) -> str:
         return str(PrettyTree(self))
 
-    def node_at(self, target: Point | Span) -> Tree | None:
+    def node_at(self, target: Span) -> Tree | None:
         """Returns the narrowest AST node covering the target location."""
-        if isinstance(target, Point):
-            target = Span(target, target)
-
         candidate = head_or_none(
             node
             for child in self.children
@@ -218,6 +213,9 @@ class Super(Expr):
 class AnalysisPhase(Enum):
     Unresolved = auto()
     ScopeResolved = auto()
+
+
+URI = Annotated[str, "URI"]
 
 
 @D.dataclass

@@ -1,10 +1,11 @@
 from functools import cached_property
 from textwrap import dedent
 
-from rich.text import Text
-
 from joule import trees as T
+from joule.maybe import must
 from joule.parsers import LineMap
+from joule.parsers.jsonnet import parse_document
+from joule.services.analyzer import Analyzer
 
 from . import SpanDSL
 from .marked_spans import parse_marked_spans
@@ -39,103 +40,12 @@ class FakeFile(LineMap):
     def end_of(self, mark: int) -> T.Point:
         return self.at(mark).end
 
-    def highlight(self, spans: tuple[T.Span, str] | list[tuple[T.Span, str]]) -> Text:
-        """Renders the faked text file with given text ranges highlighted.
 
-        The document is rendered with its URI, a top ruler, an optional bottom ruler
-        for long documents, and a line number gutter:
+class FakeDocument(FakeFile):
+    def __init__(self, source: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+        super().__init__(source, uri)
+        self.document: T.Document = Analyzer.analyze(parse_document(self.text, uri))
+        self.body = self.document.body
 
-        ```plaintext
-        file:///tmp/test.jsonnet    <-- Document URI
-           0    5   10   15         <-- Top ruler
-          '|''''|''''|''''|'''
-        0 |local x = { f: 1 };
-        1 |local y = x.f;
-        2 |y + 1
-        ^^
-          Line number gutter
-        ```
-
-        NOTE: To be consistent with LSP, both line and column numbers are 0 based.
-        """
-
-        if isinstance(spans, tuple):
-            spans = [spans]
-
-        styled = Text.styled
-        rendered = []
-
-        uri_line = styled(self.uri, "grey50")
-        rendered.append(uri_line)
-
-        # Renders the ranges.
-        rendered_source = styled(self.text, "default")
-        for span, style in spans:
-            rendered_source.stylize(
-                style,
-                start=self.offset_of(span.start),
-                end=self.offset_of(span.end),
-            )
-
-        raw_lines = self.text.splitlines()
-        width = max(map(len, raw_lines))
-        height = len(raw_lines)
-
-        # The width of the line number gutter equals to the max width of the line
-        # numbers plus one (for a padding space).
-        line_no_width = len(str(height))
-        gutter_width = line_no_width + 1
-
-        def render_ruler(width: int, left_padding: int) -> list[Text]:
-            # Assuming that the document has 10 lines with a max line width of 18, to
-            # render a ruler, produces a sequence with step 5 first:
-            #
-            #   [0, 5, 10, 15]
-            #
-            every_5_chars = range(0, (width - 1) // 5 * 5 + 1, 5)
-
-            # Prints each number with a width of 5, right aligned ("." for space):
-            #
-            #   ["....0", "....5", "...10", "...15"]
-            #
-            header_segs = [f"{i:>5}" for i in every_5_chars]
-
-            # Joins the segments and chops off the leading spaces, producing:
-            #
-            #   ".0....5...10...15"
-            #
-            # The leading space is due to column numbers being 0 based.
-            header_line = styled("".join(header_segs)[3:], "grey50")
-
-            # Produces the guide line according to the max line width, e.g.:
-            #
-            #   "'|''''|''''|''''|''"
-            #
-            # Again, the leading "'" is due to column numbers being 0 based.
-            guide_line = styled(("'|'''" * (width // 5 + 1))[: width + 1], "grey50")
-
-            # Adds left padding for the line number gutter. For a document with 10
-            # lines, the gutter width is 3:
-            #
-            #   "....0....5...10...15"
-            #   "...'|''''|''''|''''|'''"
-            #
-            header_line.pad_left(left_padding)
-            guide_line.pad_left(left_padding)
-
-            return [header_line, guide_line]
-
-        # Renders a top horizontal ruler.
-        ruler_lines = render_ruler(width, gutter_width)
-        rendered.extend(ruler_lines)
-
-        # Renders source lines with line numbers.
-        for i, line in enumerate(rendered_source.split()):
-            line_no = styled(f"{i:>{line_no_width}} |", "grey50")
-            rendered.append(line_no + line)
-
-        # Renders a bottom horizontal ruler for long documents.
-        if height > 5:
-            rendered.extend(ruler_lines)
-
-        return Text("\n").join(rendered)
+    def node_at(self, mark: int) -> T.Tree:
+        return must(self.document.node_at(self.at(mark)))
