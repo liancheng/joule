@@ -237,7 +237,7 @@ _ = meaninglessness*
 meaninglessness = inline_whitespace / inline_comment / block_comment
 inline_whitespace = ~r"[ \t\n\r]"
 inline_comment = ~r"(//|#)[^\r\n]*"
-block_comment = ~r"/\*.*\*/"s
+block_comment = ~r"/\*.*?\*/"s
 
 triple_colon = ":::"
 double_colon = "::"

@@ -984,3 +984,15 @@ class TestParser(ParsingTestCase):
         self.parse(t, "expr").expect(
             T.Raise(t.span, t.at(1).str("BOOM")),
         )
+
+    def test_comment(self):
+        t = self.fake_file(
+            """\
+            /* */ true /* */
+            |     ^^^^1
+            """
+        )
+
+        self.parse(t, "document").expect(
+            T.Document(t.span, self.fake_uri, t.at(1).true),
+        )
