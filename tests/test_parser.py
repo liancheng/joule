@@ -5,11 +5,11 @@ from joule.trees import BinaryOp as B
 from joule.trees import UnaryOp as U
 from joule.trees import Visibility as V
 
-from . import TreeTestCase
+from . import ParsingTestCase
 from .dsl import arg, assert_expr, bind, field, get_field
 
 
-class TestParser(TreeTestCase):
+class TestParser(ParsingTestCase):
     def test_boolean(self):
         t = self.fake_file("true")
         self.parse(t, "boolean").expect(t.span.true)

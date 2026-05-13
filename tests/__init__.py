@@ -14,7 +14,7 @@ unittest.TestCase.maxDiff = None
 unittest.TestCase.longMessage = False
 
 
-class TreeTestCase(unittest.TestCase):
+class FakeDocumentTestCase(unittest.TestCase):
     fake_uri = "file:///tmp/test.jsonnet"
 
     def fake_file(self, source: str, marks: bool = True):
@@ -23,15 +23,8 @@ class TreeTestCase(unittest.TestCase):
     def fake_document(self, source: str):
         return FakeDocument(source, uri=self.fake_uri)
 
-    def assertParsed(self, doc: FakeFile, rule: str, expected: Any):
-        self.assertEqual(parse_jsonnet(doc.text, doc.uri, rule), expected)
 
-    def assertAstParsed(self, doc: FakeFile, rule: str, expected: T.Tree):
-        self.assertAstEqual(
-            obtained=parse_jsonnet(doc.text, doc.uri, rule),
-            expected=expected,
-        )
-
+class ParsingTestCase(FakeDocumentTestCase):
     def assertAstEqual(self, obtained: T.Tree, expected: T.Tree):
         obtained_tree = obtained.pretty
         expected_tree = expected.pretty
@@ -41,18 +34,21 @@ class TreeTestCase(unittest.TestCase):
         )
         self.assertMultiLineEqual(obtained_tree, expected_tree, message)
 
+    def assertParsed(self, doc: FakeFile, rule: str, expected: Any):
+        obtained = parse_jsonnet(doc.text, doc.uri, rule)
+        if isinstance(expected, T.Tree):
+            self.assertAstEqual(obtained, expected)
+        else:
+            self.assertEqual(obtained, expected)
+
     @D.dataclass
     class Expectation:
         doc: FakeFile
         rule: str
-        test_case: TreeTestCase
+        test_case: ParsingTestCase
 
-        def expect(self, expected: T.Tree | Any):
-            match expected:
-                case T.Tree():
-                    self.test_case.assertAstParsed(self.doc, self.rule, expected)
-                case _:
-                    self.test_case.assertParsed(self.doc, self.rule, expected)
+        def expect(self, expected: Any):
+            self.test_case.assertParsed(self.doc, self.rule, expected)
 
     def parse(self, doc: FakeFile, rule: str):
-        return TreeTestCase.Expectation(doc, rule, self)
+        return ParsingTestCase.Expectation(doc, rule, self)
