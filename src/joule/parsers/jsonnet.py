@@ -505,3 +505,7 @@ class JsonnetParser(NodeVisitor, LineMap):
 
             case _:
                 assert False
+
+    def visit_raise(self, node: Node, children: Sequence[Any]):
+        _, _, error = children
+        return T.Raise(self.span_of(node), error)

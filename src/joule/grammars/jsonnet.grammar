@@ -69,6 +69,7 @@ primary
   / number
   / object
   / parenthesized
+  / raise
   / self
   / string
   / super
@@ -160,6 +161,8 @@ sign = ~"[-+]"
 digits = ~"[0-9]+"
 
 parenthesized = lparen _ expr _ rparen
+
+raise = error _ expr
 
 self = ~r"self\b"
 

@@ -9,11 +9,13 @@ from textwrap import dedent
 from typing import Annotated, Iterable
 
 from lsprotocol.types import DefinitionResponse
+from parsimonious import ParseError
 from rich.console import Console
 from typer import Argument, Typer
 
 from joule.parsers.jsonnet import parse_document
 from joule.services.workspace_index import WorkspaceIndex
+from joule.trees import URI
 
 app = Typer(
     no_args_is_help=True,
@@ -75,8 +77,14 @@ def index(
     print(len(files))
 
     def batch_parse(files: Iterable[Path]):
+        def parse_or_raise(source: str, uri: URI):
+            try:
+                return parse_document(source, uri)
+            except ParseError as e:
+                raise RuntimeError(f"Failed to parse {uri}") from e
+
         return {
-            path.as_uri(): parse_document(path.read_text(), path.as_uri())
+            path.as_uri(): parse_or_raise(path.read_text(), path.as_uri())
             for path in list(files)
         }
 

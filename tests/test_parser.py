@@ -972,3 +972,15 @@ class TestParser(ParsingTestCase):
                 ),
             ),
         )
+
+    def test_raise(self):
+        t = self.fake_file(
+            """\
+            error "BOOM"
+            |     ^^^^^^1
+            """
+        )
+
+        self.parse(t, "expr").expect(
+            T.Raise(t.span, t.at(1).str("BOOM")),
+        )

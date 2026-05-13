@@ -295,6 +295,11 @@ class Bool(Expr):
 
 
 @D.dataclass
+class Raise(Expr):
+    error: Expr
+
+
+@D.dataclass
 class Array(Expr):
     values: list[Expr]
 
