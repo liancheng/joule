@@ -141,6 +141,17 @@ class TestParser(ParsingTestCase):
                     f"\\uD83D\\uDE00{maybe_newline}",
                 )
 
+                self.assertStringParsed(
+                    """\
+                    |||
+                        a
+
+                        b
+                    |||
+                    """,
+                    "a\n\nb\n",
+                )
+
     def test_field_access(self):
         t = self.fake_file(
             """\

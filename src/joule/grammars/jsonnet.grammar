@@ -168,7 +168,7 @@ self = ~r"self\b"
 
 string = inline_string / text_block
 inline_string = ~r"@(?P<VQ>[\"'])(((?P=VQ){2})|(?!(?P=VQ)).)*(?P=VQ)|(?P<Q>[\"'])(\\.|(?!(?P=Q)).)*(?P=Q)"x
-text_block = ~r"@?\|{3}-?\n (((?P<W>[ \t]+).*\n((?P=W).*\n)*(?!(?P=W))[ \t]*)?|[ \t]*)\|{3}"x
+text_block = ~r"@?\|{3}-?\n (((?P<W>[ \t]+).*\n((?P=W).*\n|[ \t]*\n)*(?!(?P=W))[ \t]*)?|[ \t]*)\|{3}"x
 
 super = ~r"super\b"
 
