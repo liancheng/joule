@@ -33,7 +33,7 @@ class StringParser(NodeVisitor):
     @staticmethod
     def parse_text_block(raw: str) -> str:
         verbatim = raw.startswith("@")
-        drop_last_newline = raw[1 if verbatim else 0 :].startswith("|||-")
+        drop_last_newline = raw.startswith("@|||-" if verbatim else "|||-")
 
         rule = "verbatim_text_block" if verbatim else "text_block"
         block = dedent("".join(raw.splitlines(keepends=True)[1:-1]))

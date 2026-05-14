@@ -1,21 +1,13 @@
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import suppress
-from functools import reduce
-from os.path import isfile
 from pathlib import Path
-from textwrap import dedent
-from typing import Annotated, Iterable, Iterator
+from typing import Annotated
 
-from lsprotocol.types import DefinitionResponse
-from parsimonious import ParseError
 from rich.console import Console
 from typer import Argument, Typer
 
 from joule.parsers.jsonnet import parse_document
 from joule.services.workspace_index import WorkspaceIndex
-from joule.trees import URI
 
 app = Typer(
     no_args_is_help=True,
@@ -44,35 +36,29 @@ def tree(
         ),
     ],
 ):
-    uri, source = (
-        ("dev/stdin", sys.stdin.read())
+    source, uri = (
+        (sys.stdin.read(), "dev/stdin")
         if path == Path("-")
-        else (path.absolute().as_uri(), path.read_text())
+        else (path.read_text(), path.absolute().as_uri())
     )
 
-    Console(markup=False).print(parse_document(source, uri).pretty)
+    parse_document(source, uri)
+    # Console(markup=False).print(parse_document(source, uri).pretty)
 
 
 @app.command()
 def index(
     root: Annotated[
         Path,
-        Argument(
-            help="The root of the workspace to index.",
-            exists=True,
-            file_okay=False,
-        ),
+        Argument(help="The root of the workspace to index.", exists=True),
     ],
 ):
     suffixes = [".jsonnet", ".libsonnet", ".jsonnet.TEMPLATE"]
+    docs = []
 
     def on_file(file: Path):
         if any(file.name.endswith(suffix) for suffix in suffixes):
-            uri = file.as_uri()
-            try:
-                parse_document(file.read_text(), uri)
-            except Exception:
-                print(uri)
+            docs.append(file.read_text())
 
     def on_dir(dir: Path):
         return not dir.name.startswith(".") and not dir.name == "experimental"

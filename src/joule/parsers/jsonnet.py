@@ -191,7 +191,14 @@ class JsonnetParser(NodeVisitor, LineMap):
         return T.Num(self.span_of(node), float(int(node.text[2:], base=16)))
 
     def visit_inline_string(self, node: Node, _: Sequence[Any]):
-        return T.Str(self.span_of(node), StringParser.parse_inline_string(node.text))
+        verbatim = node.text.startswith("@")
+        esc_hint = node.text[-1] * 2 if verbatim else "\\"
+        content = (
+            StringParser.parse_inline_string(node.text)
+            if esc_hint in node.text
+            else node.text[2 if verbatim else 1 : -1]
+        )
+        return T.Str(self.span_of(node), content)
 
     def visit_text_block(self, node: Node, _: Sequence[Any]):
         return T.Str(self.span_of(node), StringParser.parse_text_block(node.text))
