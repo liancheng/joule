@@ -1,12 +1,12 @@
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from functools import reduce
-from itertools import batched
 from os.path import isfile
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, Iterable
+from typing import Annotated, Iterable, Iterator
 
 from lsprotocol.types import DefinitionResponse
 from parsimonious import ParseError
@@ -28,6 +28,8 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s %(levelname)s:%(name)s %(message)s",
 )
+
+sys.setrecursionlimit(1024 * 1024)
 
 
 @app.command()
@@ -62,39 +64,20 @@ def index(
         ),
     ],
 ):
-    files = []
     suffixes = [".jsonnet", ".libsonnet", ".jsonnet.TEMPLATE"]
 
     def on_file(file: Path):
         if any(file.name.endswith(suffix) for suffix in suffixes):
-            files.append(file)
+            uri = file.as_uri()
+            try:
+                parse_document(file.read_text(), uri)
+            except Exception:
+                print(uri)
 
     def on_dir(dir: Path):
         return not dir.name.startswith(".") and not dir.name == "experimental"
 
     WorkspaceIndex(root.absolute().as_uri()).scan(on_file, on_dir)
-
-    print(len(files))
-
-    def batch_parse(files: Iterable[Path]):
-        def parse_or_raise(source: str, uri: URI):
-            try:
-                return parse_document(source, uri)
-            except ParseError as e:
-                raise RuntimeError(f"Failed to parse {uri}") from e
-
-        return {
-            path.as_uri(): parse_or_raise(path.read_text(), path.as_uri())
-            for path in list(files)
-        }
-
-    with ThreadPoolExecutor() as pool:
-        docs = reduce(
-            lambda a, b: a | b,
-            pool.map(batch_parse, batched(files, 1000)),
-        )
-
-        print(len(docs))
 
 
 if __name__ == "__main__":
