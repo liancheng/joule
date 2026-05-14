@@ -54,8 +54,13 @@ postfix_ops = postfix_op*
 postfix_op = field_access / slice / call / extend
 
 primary
-  = anonymous_function
+  # More frequent expressions.
+  = string
+  / var_ref_id
   / array
+  / object
+  # Less frequent expressions.
+  / anonymous_function
   / assert_expr
   / boolean
   / conditional
@@ -67,13 +72,10 @@ primary
   / local_expr
   / null
   / number
-  / object
   / parenthesized
   / raise
   / self
-  / string
   / super
-  / var_ref_id
 
 field_access = _ dot _ field_ref_id
 
@@ -233,11 +235,7 @@ visibility = triple_colon / double_colon / colon
 maybe_object_comp_spec = object_comp_spec?
 object_comp_spec = _ for_spec extra_specs
 
-_ = meaninglessness*
-meaninglessness = inline_whitespace / inline_comment / block_comment
-inline_whitespace = ~r"[ \t\n\r]"
-inline_comment = ~r"(//|#)[^\r\n]*"
-block_comment = ~r"/\*.*?\*/"s
+_ = ~r"([ \t\n\r]+|(//|#)[^\r\n]*|/\*.*?\*/)*"s
 
 triple_colon = ":::"
 double_colon = "::"
