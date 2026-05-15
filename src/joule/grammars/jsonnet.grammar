@@ -1,49 +1,9 @@
 document = _ expr _
 
-expr = and_expr or_rhs_list
-or_rhs_list = or_rhs*
-or_rhs = _ or _ and_expr
-
-and_expr = bit_or_expr and_rhs_list
-and_rhs_list = and_rhs*
-and_rhs = _ and _ bit_or_expr
-
-bit_or_expr = bit_xor_expr bit_or_rhs_list
-bit_or_rhs_list = bit_or_rhs*
-bit_or_rhs = _ bit_or _ bit_xor_expr
-
-bit_xor_expr = bit_and_expr bit_xor_rhs_list
-bit_xor_rhs_list = bit_xor_rhs*
-bit_xor_rhs = _ bit_xor _ bit_and_expr
-
-bit_and_expr = eq_expr bit_and_rhs_list
-bit_and_rhs_list = bit_and_rhs*
-bit_and_rhs = _ bit_and _ eq_expr
-
-eq_expr = cmp_expr eq_rhs_list
-eq_rhs_list = eq_rhs*
-eq_rhs = _ eq_op _ cmp_expr
-eq_op = equals / not_eq
-
-cmp_expr = shift_expr cmp_rhs_list
-cmp_rhs_list = cmp_rhs*
-cmp_rhs = _ cmp_op _ shift_expr
-cmp_op = lt / gt / lt_eq / gt_eq / is_in
-
-shift_expr = plus_expr shift_rhs_list
-shift_rhs_list = shift_rhs*
-shift_rhs = _ shift_op _ plus_expr
-shift_op = shift_left / shift_right
-
-plus_expr = mul_expr plus_rhs_list
-plus_rhs_list = plus_rhs*
-plus_rhs = _ plus_op _ mul_expr
-plus_op = minus / plus
-
-mul_expr = unary mul_rhs_list
-mul_rhs_list = mul_rhs*
-mul_rhs = _ mul_op _ unary
-mul_op = multiply / divide / modulus
+expr = unary expr_rhs_list
+expr_rhs_list = expr_rhs*
+expr_rhs = _ binary_op _ unary
+binary_op = ~r"<<|>>|<=|>=|==|!=|\|\||&&|\bin\b|[+\-*/%<>|&^]"
 
 unary = postfix / unary_with_op
 unary_with_op = unary_op _ unary
@@ -234,33 +194,12 @@ rbracket = "]"
 rparen = ")"
 semicolon = ";"
 
-plus = "+"
-minus = "-"
-
 unary_plus = "+"
 unary_minus = "-"
 
-multiply = "*"
-divide = "/"
-modulus = "%"
-
-shift_left = "<<"
-shift_right = ">>"
-
-bit_and = !and "&"
 bit_not = "~"
-bit_or = !or "|"
-bit_xor = "^"
-
-and = "&&"
-or = "||"
 not = !not_eq "!"
 
-gt = !gt_eq ">"
-gt_eq = ">="
-lt = !lt_eq "<"
-lt_eq = "<="
-is_in = ~r"in\b"
 equals = "=="
 not_eq = "!="
 

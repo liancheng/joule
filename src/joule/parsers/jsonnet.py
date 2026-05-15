@@ -81,35 +81,6 @@ class JsonnetParser(NodeVisitor, LineMap):
     visit_var_id = make_id(T.Id.Var)
     visit_var_ref_id = make_id(T.Id.VarRef)
 
-    def make_binary_op(self, node: Node, _: Sequence[Any]):
-        return T.BinaryOp(node.text)
-
-    visit_multiply = make_binary_op
-    visit_divide = make_binary_op
-    visit_modulus = make_binary_op
-
-    visit_minus = make_binary_op
-    visit_plus = make_binary_op
-
-    visit_shift_left = make_binary_op
-    visit_shift_right = make_binary_op
-
-    visit_gt = make_binary_op
-    visit_gt_eq = make_binary_op
-    visit_lt = make_binary_op
-    visit_lt_eq = make_binary_op
-    visit_is_in = make_binary_op
-
-    visit_equals = make_binary_op
-    visit_not_eq = make_binary_op
-
-    visit_bit_and = make_binary_op
-    visit_bit_or = make_binary_op
-    visit_bit_xor = make_binary_op
-
-    visit_and = make_binary_op
-    visit_or = make_binary_op
-
     def make_unary(self, node: Node, _: Sequence[Node]):
         def apply(operand: T.Expr) -> T.Unary:
             span = operand.span.merge(self.span_of(node))
@@ -127,53 +98,40 @@ class JsonnetParser(NodeVisitor, LineMap):
         op_fn, _, operand = children
         return op_fn(operand)
 
-    def make_binary(self, _: Node, children: Sequence[Any]):
-        def join(lhs: T.Expr, op_rhs: tuple[T.BinaryOp, T.Expr]):
-            op, rhs = op_rhs
-            return T.Binary.make(op, lhs, rhs)
+    def visit_binary_op(self, node: Node, _: Sequence[Any]):
+        return T.BinaryOp(node.text)
 
-        lhs, rhs_list = children
-        return reduce(join, rhs_list, lhs)
-
-    def make_binary_rhs(self, node: Node, children: Sequence[Any]):
-        del node
+    def visit_expr_rhs(self, _: Node, children: Sequence[Any]):
         _, op, _, rhs = children
         return op, rhs
 
-    visit_mul_op = make_binary_op
-    visit_mul_rhs = make_binary_rhs
-    visit_mul_expr = make_binary
+    def visit_expr(self, _: Node, children: Sequence[Any]):
+        lhs, rhs_list = children
 
-    visit_plus_op = make_binary_op
-    visit_plus_rhs = make_binary_rhs
-    visit_plus_expr = make_binary
+        if len(rhs_list) == 0:
+            return lhs
 
-    visit_shift_op = make_binary_op
-    visit_shift_rhs = make_binary_rhs
-    visit_shift_expr = make_binary
+        prec = T.BinaryOp.precedence
+        operands: list[T.Expr] = [lhs]
+        operators: list[T.BinaryOp] = []
 
-    visit_cmp_op = make_binary_op
-    visit_cmp_rhs = make_binary_rhs
-    visit_cmp_expr = make_binary
+        for operator, rhs in rhs_list:
+            while len(operators) > 0 and prec[operators[-1]] >= prec[operator]:
+                top = operators.pop()
+                right = operands.pop()
+                left = operands.pop()
+                operands.append(T.Binary.make(top, left, right))
 
-    visit_eq_op = make_binary_op
-    visit_eq_rhs = make_binary_rhs
-    visit_eq_expr = make_binary
+            operators.append(operator)
+            operands.append(rhs)
 
-    visit_bit_and_rhs = make_binary_rhs
-    visit_bit_and_expr = make_binary
+        while len(operators) > 0:
+            top = operators.pop()
+            right = operands.pop()
+            left = operands.pop()
+            operands.append(T.Binary.make(top, left, right))
 
-    visit_bit_xor_rhs = make_binary_rhs
-    visit_bit_xor_expr = make_binary
-
-    visit_bit_or_rhs = make_binary_rhs
-    visit_bit_or_expr = make_binary
-
-    visit_and_rhs = make_binary_rhs
-    visit_and_expr = make_binary
-
-    visit_or_rhs = make_binary_rhs
-    visit_expr = make_binary
+        return operands[0]
 
     def visit_boolean(self, node: Node, _: Sequence[Any]):
         return T.Bool(self.span_of(node), node.text == "true")

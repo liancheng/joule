@@ -1,6 +1,6 @@
 import dataclasses as D
 from copy import copy
-from enum import Enum, StrEnum, auto
+from enum import Enum, StrEnum, auto, nonmember
 from typing import (
     Annotated,
     Any,
@@ -333,6 +333,30 @@ class BinaryOp(StrEnum):
     BitOr = "|"
     And = "&&"
     Or = "||"
+
+    precedence = nonmember(
+        {
+            Or: 1,
+            And: 2,
+            BitOr: 3,
+            BitXor: 4,
+            BitAnd: 5,
+            Eq: 6,
+            NotEq: 6,
+            LT: 7,
+            LE: 7,
+            GT: 7,
+            GE: 7,
+            In: 7,
+            ShiftLeft: 8,
+            ShiftRight: 8,
+            Plus: 9,
+            Minus: 9,
+            Multiply: 10,
+            Divide: 10,
+            Modulus: 10,
+        }
+    )
 
     def __call__(self, lhs: Expr, rhs: Expr) -> Binary:
         return Binary.make(self, lhs, rhs)

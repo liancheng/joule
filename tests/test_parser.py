@@ -189,13 +189,9 @@ class TestParser(ParsingTestCase):
             )
 
     def test_binary_op(self):
-        for op in [B.Multiply, B.Divide, B.Modulus]:
+        for op in [B.Multiply, B.Divide, B.Modulus, B.Plus, B.Minus, B.Eq, B.NotEq]:
             t = self.fake_file(op.value)
-            self.parse(t, "mul_op").expect(op)
-
-        for op in [B.Eq, B.NotEq]:
-            t = self.fake_file(op.value)
-            self.parse(t, "eq_op").expect(op)
+            self.parse(t, "binary_op").expect(op)
 
     def test_mul_expr(self):
         t = self.fake_file(
@@ -205,7 +201,7 @@ class TestParser(ParsingTestCase):
             """
         )
 
-        self.parse(t, "mul_expr").expect(
+        self.parse(t, "expr").expect(
             B.Multiply(
                 t.at(1).num(1),
                 t.at(2).num(2),
@@ -220,7 +216,7 @@ class TestParser(ParsingTestCase):
             """
         )
 
-        self.parse(t, "plus_expr").expect(
+        self.parse(t, "expr").expect(
             B.Plus(
                 t.at(1).num(1),
                 t.at(2).num(2),
