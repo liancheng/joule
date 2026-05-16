@@ -152,6 +152,16 @@ class TestParser(ParsingTestCase):
                     "a\n\nb\n",
                 )
 
+                self.assertStringParsed(
+                    """\
+                    |||
+
+                        a
+                    |||
+                    """,
+                    "\na\n",
+                )
+
     def test_field_access(self):
         t = self.fake_file(
             """\
