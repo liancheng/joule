@@ -1,4 +1,5 @@
 from functools import reduce
+from pathlib import Path
 from typing import Any, Sequence
 
 from parsimonious import NodeVisitor
@@ -22,7 +23,10 @@ def parse_jsonnet(source: str, uri: T.URI, rule: str = "document") -> T.Tree:
 
 
 def parse_document(source: str, uri: T.URI) -> T.Document:
-    return parse_jsonnet(source, uri, "document").to(T.Document)
+    try:
+        return parse_jsonnet(source, uri, "document").to(T.Document)
+    except Exception as cause:
+        raise RuntimeError(f"Failed to parse {Path.from_uri(uri)}") from cause
 
 
 class JsonnetParser(NodeVisitor, LineMap):
