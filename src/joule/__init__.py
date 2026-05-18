@@ -42,8 +42,7 @@ def tree(
         else (path.read_text(), path.absolute().as_uri())
     )
 
-    parse_document(source, uri)
-    # Console(markup=False).print(parse_document(source, uri).pretty)
+    Console(markup=False).print(parse_document(source, uri).pretty)
 
 
 @app.command()
@@ -53,17 +52,7 @@ def index(
         Argument(help="The root of the workspace to index.", exists=True),
     ],
 ):
-    suffixes = [".jsonnet", ".libsonnet", ".jsonnet.TEMPLATE"]
-    docs = []
-
-    def on_file(file: Path):
-        if any(file.name.endswith(suffix) for suffix in suffixes):
-            docs.append(file.read_text())
-
-    def on_dir(dir: Path):
-        return not dir.name.startswith(".") and not dir.name == "experimental"
-
-    WorkspaceIndex(root.absolute().as_uri()).scan(on_file, on_dir)
+    WorkspaceIndex(root.absolute().as_uri()).load()
 
 
 if __name__ == "__main__":
