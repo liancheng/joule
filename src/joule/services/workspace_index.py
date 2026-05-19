@@ -11,6 +11,7 @@ from concurrent.futures import (
 )
 from itertools import batched
 from pathlib import Path
+from typing import Iterable
 
 import joule.trees as T
 from joule.parsers import parse_document
@@ -18,17 +19,17 @@ from joule.parsers import parse_document
 progress_queue: multiprocessing.Queue[int | None] | None = None
 
 
-def bin_pack_by_size(sizes: dict[Path, int], n_bins: int) -> list[list[Path]]:
+def bin_pack_by_size(sources: dict[Path, str], n_bins: int) -> list[dict[Path, str]]:
     """Bin-packs source files into `n_bins` bins to minimize the largest bin's total size."""
-    bins: list[tuple[int, int, list[Path]]] = [(0, i, []) for i in range(n_bins)]
+    bins: list[tuple[int, int, dict[Path, str]]] = [(0, i, {}) for i in range(n_bins)]
     heapq.heapify(bins)
 
-    for path, size in sorted(sizes.items(), key=lambda item: -item[1]):
-        total_size, i, bin_paths = heapq.heappop(bins)
-        bin_paths.append(path)
-        heapq.heappush(bins, (total_size + size, i, bin_paths))
+    for path, source in sorted(sources.items(), key=lambda item: -len(item[1])):
+        total_size, i, bin_files = heapq.heappop(bins)
+        bin_files[path] = source
+        heapq.heappush(bins, (total_size + len(source), i, bin_files))
 
-    return [bin_paths for _, _, bin_paths in bins]
+    return [bin_files for _, _, bin_files in bins]
 
 
 def parse_batch(batch: dict[Path, str]) -> tuple[list[T.Document], list[Path]]:
@@ -56,28 +57,30 @@ class WorkspaceIndex:
     def discover(
         self,
         advance: Callable[[int], None] = lambda _: None,
-    ) -> dict[Path, int]:
-        sources: dict[Path, int] = {}
+    ) -> dict[Path, str]:
+        source_files: dict[Path, str] = {}
         suffixes = (
             ".jsonnet",
             ".libsonnet",
             ".jsonnet.TEMPLATE",
         )
 
-        def scan_dirs(paths: list[str]) -> list[str]:
-            dirs: list[str] = []
+        def scan_dirs(paths: Iterable[str]) -> list[str]:
+            def scan(entry: os.DirEntry) -> Iterable[str]:
+                if entry.is_file():
+                    if entry.path.endswith(suffixes):
+                        file = Path(entry.path)
+                        source_files[file] = file.read_text()
+                        advance(1)
+                elif not entry.name.startswith((".", "experimental")):
+                    yield entry.path
 
-            for path in paths:
-                with os.scandir(path) as entries:
-                    for entry in entries:
-                        if entry.is_file():
-                            if entry.path.endswith(suffixes):
-                                sources[Path(entry.path)] = entry.stat().st_size
-                                advance(1)
-                        elif not entry.name.startswith((".", "experimental")):
-                            dirs.append(entry.path)
-
-            return dirs
+            return [
+                subdir
+                for path in paths
+                for entry in os.scandir(path)
+                for subdir in scan(entry)
+            ]
 
         with ThreadPoolExecutor(max_workers=(os.cpu_count() or 1) * 2) as pool:
             pending = {pool.submit(scan_dirs, [self.root.as_posix()])}
@@ -87,21 +90,17 @@ class WorkspaceIndex:
                 batches = batched(subdirs, 1024)
                 pending.update(pool.submit(scan_dirs, batch) for batch in batches)
 
-        return sources
+        return source_files
 
     def load(
         self,
-        sources: dict[Path, int],
+        source_files: dict[Path, str],
         parallelism: int,
         advance: Callable[[int], None] = lambda _: None,
     ) -> tuple[list[T.Document], list[Path]]:
         docs: list[T.Document] = []
         failed: list[Path] = []
-
-        bins: list[dict[Path, str]] = [
-            {path: path.read_text() for path in bin_paths}
-            for bin_paths in bin_pack_by_size(sources, parallelism)
-        ]
+        bins = bin_pack_by_size(source_files, parallelism)
 
         mp_context = multiprocessing.get_context("fork")
         progress_queue: multiprocessing.Queue[int | None] = mp_context.Queue()
