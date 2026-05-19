@@ -6,6 +6,15 @@ from pathlib import Path
 from typing import Annotated
 
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from typer import Argument, Option, Typer
 
 from joule.parsers.jsonnet import parse_document
@@ -64,10 +73,32 @@ def index(
 ):
 
     index = WorkspaceIndex(root.absolute())
-    sources = index.discover()
-    print(len(sources))
 
-    _, failed = index.load(sources, parallelism)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task("Discovering source files...", total=None)
+        sources = index.discover(advance=lambda n: progress.advance(task, n))
+        progress.update(task, total=len(sources))
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task("Parsing source files...", total=len(sources))
+        _, failed = index.load(
+            sources,
+            parallelism,
+            advance=lambda n: progress.advance(task, n),
+        )
+
     for path in failed:
         print(path)
 
