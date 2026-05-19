@@ -1,10 +1,12 @@
 import logging
+import os
 import sys
+import time
 from pathlib import Path
 from typing import Annotated
 
 from rich.console import Console
-from typer import Argument, Typer
+from typer import Argument, Option, Typer
 
 from joule.parsers.jsonnet import parse_document
 from joule.services.workspace_index import WorkspaceIndex
@@ -51,8 +53,22 @@ def index(
         Path,
         Argument(help="The root of the workspace to index.", exists=True),
     ],
+    parallelism: Annotated[
+        int,
+        Option(
+            "-p",
+            "--parallelism",
+            help="Number of worker processes used for parsing.",
+        ),
+    ] = os.cpu_count() or 1,
 ):
-    WorkspaceIndex(root.absolute().as_uri()).load()
+    _, failed = WorkspaceIndex(root.absolute()).load(parallelism)
+
+    if failed:
+        console = Console(stderr=True)
+        console.print(f"Failed to parse {len(failed)} file(s):", style="red")
+        for path in failed:
+            console.print(f"  {path}", style="red")
 
 
 if __name__ == "__main__":

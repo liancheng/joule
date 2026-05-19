@@ -1,22 +1,24 @@
 import heapq
+import multiprocessing
 import os
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from functools import reduce
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    wait,
+)
 from pathlib import Path
 
 import joule.trees as T
 from joule.parsers import parse_document
 
 
-def partition_by_sizes(sources: dict[Path, str], n_bins: int) -> list[dict[Path, str]]:
-    bins = [(0, i, {}) for i in range(n_bins)]
+def bin_pack_by_size(sources: dict[Path, str], n_bins: int) -> list[dict[Path, str]]:
+    """LPT-pack sources into n_bins to minimize the largest bin's total size."""
+    bins: list[tuple[int, int, dict[Path, str]]] = [(0, i, {}) for i in range(n_bins)]
     heapq.heapify(bins)
 
-    for path, source in sorted(
-        sources.items(),
-        key=lambda item: len(item[1]),
-        reverse=True,
-    ):
+    for path, source in sorted(sources.items(), key=lambda item: -len(item[1])):
         total_size, i, bin_files = heapq.heappop(bins)
         bin_files[path] = source
         heapq.heappush(bins, (total_size + len(source), i, bin_files))
@@ -24,49 +26,51 @@ def partition_by_sizes(sources: dict[Path, str], n_bins: int) -> list[dict[Path,
     return [bin_files for _, _, bin_files in bins]
 
 
+def parse_batch(batch: dict[Path, str]) -> tuple[list[T.Document], list[Path]]:
+    docs: list[T.Document] = []
+    failed: list[Path] = []
+
+    for path, source in batch.items():
+        try:
+            docs.append(parse_document(source, path.as_uri()))
+        except Exception:
+            failed.append(path)
+
+    return docs, failed
+
+
 class WorkspaceIndex:
-    def __init__(self, root_uri: T.URI) -> None:
-        self.root_uri = root_uri
+    def __init__(self, root: Path) -> None:
+        self.root = root
         self.documents: dict[T.URI, T.Document] = {}
         self.imports: dict[T.URI, T.URI] = {}
         self.importedBy: dict[T.URI, T.URI] = {}
 
-    def load(self):
-        sources = {}
-        suffixies = [".jsonnet", ".libsonnet", ".jsonnet.TEMPLATE"]
+    def load(self, parallelism: int) -> tuple[list[T.Document], list[Path]]:
+        sources: dict[Path, str] = {}
+        suffixes = (
+            ".jsonnet",
+            ".libsonnet",
+            ".jsonnet.TEMPLATE",
+        )
 
         def scan_dir(path: str) -> list[str]:
-            dirs = []
+            dirs: list[str] = []
 
             with os.scandir(path) as entries:
                 for entry in entries:
                     if entry.is_file():
-                        if any(entry.path.endswith(suffix) for suffix in suffixies):
+                        if entry.path.endswith(suffixes):
                             file = Path(entry.path)
                             sources[file] = file.read_text()
-                    else:
-                        if not entry.name.startswith("."):
-                            dirs.append(entry.path)
+                    elif not entry.name.startswith("."):
+                        dirs.append(entry.path)
 
             return dirs
 
-        def batch_parse(sources: dict[Path, str]):
-            return {
-                doc.uri: doc
-                for path, source in sources.items()
-                if (doc := parse_document(source, path.as_uri()))
-            }
-
-        N_CPU = os.cpu_count() or 1
-
-        with (
-            ThreadPoolExecutor(max_workers=N_CPU * 4) as parsing_pool,
-            ThreadPoolExecutor() as io_pool,
-        ):
-            root_path = Path.from_uri(self.root_uri)
-            pending = {io_pool.submit(scan_dir, root_path.as_posix())}
-
-            while len(pending) > 0:
+        with ThreadPoolExecutor() as io_pool:
+            pending = {io_pool.submit(scan_dir, self.root.as_posix())}
+            while pending:
                 done, pending = wait(pending, return_when=FIRST_COMPLETED)
                 pending.update(
                     io_pool.submit(scan_dir, subdir)
@@ -74,5 +78,16 @@ class WorkspaceIndex:
                     for subdir in future.result()
                 )
 
-            bins = partition_by_sizes(sources, os.cpu_count() or 1)
-            return reduce(lambda a, b: a | b, parsing_pool.map(batch_parse, bins))
+        docs: list[T.Document] = []
+        failed: list[Path] = []
+        bins = bin_pack_by_size(sources, parallelism)
+
+        with ProcessPoolExecutor(
+            max_workers=parallelism,
+            mp_context=multiprocessing.get_context("fork"),
+        ) as pool:
+            for batch_docs, batch_failed in pool.map(parse_batch, bins):
+                docs.extend(batch_docs)
+                failed.extend(batch_failed)
+
+        return docs, failed
