@@ -1,12 +1,14 @@
 import heapq
 import multiprocessing
 import os
+import threading
 from concurrent.futures import (
     FIRST_COMPLETED,
     ProcessPoolExecutor,
     ThreadPoolExecutor,
     wait,
 )
+from itertools import batched
 from pathlib import Path
 
 import joule.trees as T
@@ -14,8 +16,8 @@ from joule.parsers import parse_document
 
 
 def bin_pack_by_size(sources: dict[Path, str], n_bins: int) -> list[dict[Path, str]]:
-    """LPT-pack sources into n_bins to minimize the largest bin's total size."""
-    bins: list[tuple[int, int, dict[Path, str]]] = [(0, i, {}) for i in range(n_bins)]
+    """Bin-packs source files into `n_bins` bins to minimize the largest bin's total size."""
+    bins = [(0, i, {}) for i in range(n_bins)]
     heapq.heapify(bins)
 
     for path, source in sorted(sources.items(), key=lambda item: -len(item[1])):
@@ -46,7 +48,7 @@ class WorkspaceIndex:
         self.imports: dict[T.URI, T.URI] = {}
         self.importedBy: dict[T.URI, T.URI] = {}
 
-    def load(self, parallelism: int) -> tuple[list[T.Document], list[Path]]:
+    def discover(self) -> dict[Path, str]:
         sources: dict[Path, str] = {}
         suffixes = (
             ".jsonnet",
@@ -54,30 +56,38 @@ class WorkspaceIndex:
             ".jsonnet.TEMPLATE",
         )
 
-        def scan_dir(path: str) -> list[str]:
+        def scan_dirs(paths: list[str]) -> list[str]:
             dirs: list[str] = []
 
-            with os.scandir(path) as entries:
-                for entry in entries:
-                    if entry.is_file():
-                        if entry.path.endswith(suffixes):
-                            file = Path(entry.path)
-                            sources[file] = file.read_text()
-                    elif not entry.name.startswith("."):
-                        dirs.append(entry.path)
+            print(threading.get_ident(), len(paths), len(sources))
+
+            for path in paths:
+                with os.scandir(path) as entries:
+                    for entry in entries:
+                        if entry.is_file():
+                            if entry.path.endswith(suffixes):
+                                file = Path(entry.path)
+                                sources[file] = file.read_text()
+                        elif not entry.name.startswith((".", "experimental")):
+                            dirs.append(entry.path)
 
             return dirs
 
-        with ThreadPoolExecutor() as io_pool:
-            pending = {io_pool.submit(scan_dir, self.root.as_posix())}
+        with ThreadPoolExecutor(max_workers=(os.cpu_count() or 1) * 2) as pool:
+            pending = {pool.submit(scan_dirs, [self.root.as_posix()])}
             while pending:
                 done, pending = wait(pending, return_when=FIRST_COMPLETED)
-                pending.update(
-                    io_pool.submit(scan_dir, subdir)
-                    for future in done
-                    for subdir in future.result()
-                )
+                subdirs = [subdir for future in done for subdir in future.result()]
+                batches = batched(subdirs, 1024)
+                pending.update(pool.submit(scan_dirs, batch) for batch in batches)
 
+        return sources
+
+    def load(
+        self,
+        sources: dict[Path, str],
+        parallelism: int,
+    ) -> tuple[list[T.Document], list[Path]]:
         docs: list[T.Document] = []
         failed: list[Path] = []
         bins = bin_pack_by_size(sources, parallelism)

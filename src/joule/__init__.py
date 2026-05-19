@@ -62,13 +62,14 @@ def index(
         ),
     ] = os.cpu_count() or 1,
 ):
-    _, failed = WorkspaceIndex(root.absolute()).load(parallelism)
 
-    if failed:
-        console = Console(stderr=True)
-        console.print(f"Failed to parse {len(failed)} file(s):", style="red")
-        for path in failed:
-            console.print(f"  {path}", style="red")
+    index = WorkspaceIndex(root.absolute())
+    sources = index.discover()
+    print(len(sources))
+
+    _, failed = index.load(sources, parallelism)
+    for path in failed:
+        print(path)
 
 
 if __name__ == "__main__":
