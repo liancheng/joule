@@ -118,7 +118,7 @@ requires-dist = [
     { name = "pygls", specifier = ">=2.0.0" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "tree-sitter", specifier = ">=0.25.2" },
-    { name = "tree-sitter-jsonnet", editable = "vendor/tree-sitter-jsonnet" },
+    { name = "tree-sitter-jsonnet", editable = "vendor/tree-sitter-jrsonnet" },
     { name = "typer", specifier = ">=0.20.1" },
 ]
 
@@ -349,7 +349,7 @@ wheels = [
 [[package]]
 name = "tree-sitter-jsonnet"
 version = "0.0.1"
-source = { editable = "vendor/tree-sitter-jsonnet" }
+source = { editable = "vendor/tree-sitter-jrsonnet" }
 
 [package.optional-dependencies]
 core = [
@@ -357,7 +357,7 @@ core = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "tree-sitter", marker = "extra == 'core'", specifier = "~=0.21" }]
+requires-dist = [{ name = "tree-sitter", marker = "extra == 'core'", specifier = "~=0.24" }]
 provides-extras = ["core"]
 
 [[package]]
