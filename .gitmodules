@@ -2,6 +2,3 @@
 	path = vendor/tree-sitter-jsonnet
 	url = https://github.com/liancheng/tree-sitter-jsonnet
 	branch = master
-[submodule "vendor/tree-sitter-jrsonnet"]
-	path = vendor/tree-sitter-jrsonnet
-	url = https://github.com/deltarocks/tree-sitter-jrsonnet

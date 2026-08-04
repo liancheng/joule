@@ -1,3 +1,3 @@
 #!/bin/sh
 
-uv run pytest "$@"
+uv run pytest --full-trace "$@"
