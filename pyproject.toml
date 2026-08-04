@@ -8,7 +8,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pygls>=2.0.0",
     "rich>=14.2.0",
-    "tree-sitter>=0.25.2",
+    "tree-sitter>=0.25.2,<0.26",
     "tree-sitter-jsonnet",
     "typer>=0.20.1",
 ]
@@ -17,7 +17,7 @@ dependencies = [
 joule = "joule:app"
 
 [build-system]
-requires = ["uv_build"]
+requires = ["uv_build>=0.12.1,<0.13"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -35,7 +35,7 @@ exclude = [
 
 [tool.uv.workspace]
 members = [
-    "vendor/tree-sitter-jrsonnet",
+    "vendor/tree-sitter-jsonnet",
 ]
 
 [tool.uv.sources]
