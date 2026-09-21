@@ -5,6 +5,7 @@ description = "A toy Jsonnet language server"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "rich>=14.2.0",
     "tree-sitter>=0.25.2,<0.26",
     "tree-sitter-jsonnet",
     "typer>=0.20.1",
@@ -24,7 +25,6 @@ dev = [
     "parsy>=2.2",
     "pygls>=2.1.1",
     "pytest>=9.0.3",
-    "rich>=14.2.0",
     "ruff>=0.15.0",
 ]
 
