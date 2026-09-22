@@ -126,7 +126,9 @@ class Tree:
             return Malformed.from_cst(node)
 
     def __post_init__(self):
-        pass
+        self.parent: Tree | None = None
+        for child in self.children:
+            child.parent = self
 
     @property
     def pretty(self) -> str:
