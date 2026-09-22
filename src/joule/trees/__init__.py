@@ -125,6 +125,9 @@ class Tree:
         except MalformedError:
             return Malformed.from_cst(node)
 
+    def __post_init__(self):
+        pass
+
     @property
     def pretty(self) -> str:
         return str(PrettyTree(self))
@@ -392,6 +395,11 @@ class Id:
             expect_node_type(node, "var_id")
             return Id.Var(span_of(node), name=text_of(node))
 
+        def __post_init__(self):
+            super().__post_init__()
+            self.binding: VarBinding | None = None
+            self.references: list[Id.VarRef] = []
+
         Tree.register(from_cst, "var_id")
 
     @D.dataclass
@@ -402,6 +410,10 @@ class Id:
         def from_cst(node: ts.Node) -> Id.VarRef:
             expect_node_type(node, "var_ref_id")
             return Id.VarRef(span_of(node), name=text_of(node))
+
+        def __post_init__(self):
+            super().__post_init__()
+            self.var: Id.Var | None = None
 
         Tree.register(from_cst, "var_ref_id")
 
@@ -417,6 +429,10 @@ class Id:
         @staticmethod
         def from_string(string: Str) -> Id.Field:
             return Id.Field(string.span, name=string.value)
+
+        def __post_init__(self):
+            super().__post_init__()
+            self.binding: FieldBinding | None = None
 
         Tree.register(from_cst, "field_id")
 
@@ -1301,3 +1317,79 @@ class PrettyTree(Pretty):
 
     def __repr__(self):
         return super().__repr__()
+
+
+@D.dataclass
+class VarBinding:
+    """A class representing a variable bound to a target in a variable scope.
+
+    The type of the target is `Tree` instead of `Expr`, because a variable can be bound
+    to a for-spec in a list-/object-comprehension, and a for-spec is not an expression.
+    """
+
+    scope: VarScope
+    id: Id.Var
+    target: Tree
+
+
+@D.dataclass
+class VarScope:
+    owner: Tree
+    bindings: list[VarBinding] = D.field(default_factory=list)
+    parent: VarScope | None = None
+    children: list[VarScope] = D.field(default_factory=list)
+
+    def bind(self, var: Id.Var, to: Tree):
+        var.binding = VarBinding(self, var, to)
+        self.bindings.insert(0, var.binding)
+
+    def get(self, name: str) -> VarBinding | None:
+        return next(
+            iter(b for b in self.bindings if b.id.name == name),
+            None if self.parent is None else self.parent.get(name),
+        )
+
+    def nest(self, owner: Tree) -> VarScope:
+        child = VarScope(owner, [], parent=self)
+        self.children.append(child)
+        return child
+
+    @staticmethod
+    def empty(owner: Tree) -> VarScope:
+        return VarScope(owner)
+
+
+@D.dataclass
+class FieldBinding:
+    """A class representing a static field key bound to a field value."""
+
+    scope: FieldScope
+    id: Id.Field
+    target: Field
+
+
+@D.dataclass
+class FieldScope:
+    owner: Object
+    bindings: list[FieldBinding] = D.field(default_factory=list)
+    parent: FieldScope | None = None
+    children: list[FieldScope] = D.field(default_factory=list)
+
+    def bind(self, key: StaticKey, to: Field):
+        key.id.binding = FieldBinding(self, key.id, to)
+        self.bindings.insert(0, key.id.binding)
+
+    def get(self, name: str) -> FieldBinding | None:
+        return next(
+            iter(b for b in self.bindings if b.id.name == name),
+            None if self.parent is None else self.parent.get(name),
+        )
+
+    def nest(self, owner: Object) -> FieldScope:
+        child = FieldScope(owner, [], parent=self)
+        self.children.append(child)
+        return child
+
+    @staticmethod
+    def empty(owner: Object) -> FieldScope:
+        return FieldScope(owner)
