@@ -3,7 +3,7 @@ from joule.trees import BinaryOp as B
 from joule.trees import ForSpec, IfSpec, Paren
 from joule.trees import UnaryOp as U
 from tests import FakeDocumentTestCase
-from tests.dsl import arg, bind, field
+from tests.dsl import arg, bind, field, param
 
 
 class TestParser(FakeDocumentTestCase):
@@ -306,7 +306,7 @@ class TestParser(FakeDocumentTestCase):
                 t.body,
                 T.Fn(
                     t.span,
-                    params=[t.at(1).param("a")],
+                    params=[param(t.at(1).var("a"))],
                     body=t.at(2).var_ref("a"),
                 ),
             )
@@ -323,7 +323,7 @@ class TestParser(FakeDocumentTestCase):
                 t.body,
                 T.Fn(
                     t.span,
-                    params=[t.at(1).param("a", default=t.at(2).num(1))],
+                    params=[param(t.at(1).var("a"), default=t.at(2).num(1))],
                     body=t.at(3).var_ref("a"),
                 ),
             )
@@ -341,8 +341,8 @@ class TestParser(FakeDocumentTestCase):
                 T.Fn(
                     t.span,
                     params=[
-                        t.at(1).param("a"),
-                        t.at(2).param("b", default=t.at(3).var_ref("a")),
+                        param(t.at(1).var("a")),
+                        param(t.at(2).var("b"), default=t.at(3).var_ref("a")),
                     ],
                     body=B.Plus(
                         t.at(4).var_ref("a"),
@@ -625,7 +625,7 @@ class TestParser(FakeDocumentTestCase):
         ]
 
         field_k = field(
-            key=t.at(3).computed_field(t.at(7).var_ref("k")),
+            key=t.at(3).computed_key(t.at(7).var_ref("k")),
             value=B.Plus(
                 B.Plus(
                     t.at(4).var_ref("k"),

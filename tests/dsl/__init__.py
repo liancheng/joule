@@ -51,27 +51,49 @@ class SpanDSL(T.Span):
     def var_ref(self, name: str) -> T.Id.VarRef:
         return T.Id.VarRef(self, name)
 
-    def field(self, name: str) -> T.Id.Field:
-        return T.Id.Field(self, name)
-
-    def static_key(self, name: str) -> T.StaticKey:
-        return T.StaticKey(self, T.Id.Field(self, name))
-
-    def computed_field(self, expr: T.Expr) -> T.ComputedKey:
-        return T.ComputedKey(self, expr)
-
     def field_ref(self, name: str) -> T.Id.FieldRef:
         return T.Id.FieldRef(self, name)
 
     def param_ref(self, name: str) -> T.Id.ParamRef:
         return T.Id.ParamRef(self, name)
 
+    def static_key(self, name: str) -> T.StaticKey:
+        return T.StaticKey(self, T.Id.Field(self, name))
+
+    def computed_key(self, expr: T.Expr) -> T.ComputedKey:
+        return T.ComputedKey(self, expr)
+
     def array(self, *values: T.Expr) -> T.Array:
         return Array(self, list(values))
 
-    def param(self, name: str, default: T.Expr | None = None) -> T.Param:
-        span = self if default is None else self.merge(default.span)
-        return T.Param(span, self.var(name), default)
+
+def arg(value: T.Expr, name: T.Id.ParamRef | None = None) -> T.Arg:
+    span = value.span if name is None else name.span.merge(value.span)
+    return T.Arg(span, value, name)
+
+
+def bind(var: T.Id.Var, value: T.Expr) -> T.Bind:
+    return T.Bind(var.span.merge(value.span), var, value)
+
+
+def field(
+    key: T.FieldKey,
+    value: T.Expr,
+    inherited: bool = False,
+    visibility: T.Visibility = T.Visibility.Default,
+) -> T.Field:
+    return T.Field(
+        key.span.merge(value.span),
+        key=key,
+        value=value,
+        inherited=inherited,
+        visibility=visibility,
+    )
+
+
+def param(var: T.Id.Var, default: T.Expr | None = None) -> T.Param:
+    span = var.span if default is None else var.span.merge(default.span)
+    return T.Param(span, var, default)
 
 
 class LineMap:
@@ -234,27 +256,3 @@ class FakeDocument(LineMap):
             rendered.extend(ruler_lines)
 
         return Text("\n").join(rendered)
-
-
-def bind(var: T.Id.Var, value: T.Expr) -> T.Bind:
-    return T.Bind(var.span.merge(value.span), var, value)
-
-
-def arg(value: T.Expr, name: T.Id.ParamRef | None = None) -> T.Arg:
-    span = value.span if name is None else name.span.merge(value.span)
-    return T.Arg(span, value, name)
-
-
-def field(
-    key: T.FieldKey,
-    value: T.Expr,
-    inherited: bool = False,
-    visibility: T.Visibility = T.Visibility.Default,
-) -> T.Field:
-    return T.Field(
-        key.span.merge(value.span),
-        key=key,
-        value=value,
-        inherited=inherited,
-        visibility=visibility,
-    )
