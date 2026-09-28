@@ -1367,7 +1367,7 @@ class FieldBinding:
 
     scope: FieldScope
     id: Id.Field
-    target: Field
+    target: Expr
 
 
 @D.dataclass
