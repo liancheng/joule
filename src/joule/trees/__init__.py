@@ -199,6 +199,11 @@ class Paren(Expr):
 class Document(Tree):
     body: Expr
 
+    @override
+    def __post_init__(self):
+        super().__post_init__()
+        self.top_level_scope: VarScope | None = None
+
     @property
     @override
     def children(self) -> Iterable[Tree]:
@@ -1054,19 +1059,7 @@ class Visibility(StrEnum):
 
 
 @D.dataclass
-class FieldKey(Tree):
-    @staticmethod
-    def from_cst(node: ts.Node) -> FieldKey:
-        expect_node_type(node, "static_key", "computed_key")
-        return (
-            StaticKey.from_cst(node)
-            if node.type == "static_key"
-            else ComputedKey.from_cst(node)
-        )
-
-
-@D.dataclass
-class StaticKey(FieldKey):
+class StaticKey(Tree):
     id: Id.Field
 
     @property
@@ -1091,7 +1084,7 @@ class StaticKey(FieldKey):
 
 
 @D.dataclass
-class ComputedKey(FieldKey):
+class ComputedKey(Tree):
     expr: Expr
 
     @property
@@ -1106,6 +1099,9 @@ class ComputedKey(FieldKey):
         return ComputedKey(span_of(node), expr=Expr.from_cst(expr))
 
     Tree.register(from_cst, "computed_key")
+
+
+FieldKey = StaticKey | ComputedKey
 
 
 @D.dataclass
@@ -1125,7 +1121,7 @@ class Field(Tree):
     def from_cst(node: ts.Node) -> Field:
         expect_node_type(node, "field")
 
-        key = FieldKey.from_cst(field_of(node, "key"))
+        key = Field.field_key_from_cst(field_of(node, "key"))
         inherited = node.child_by_field_name("inherited") is not None
         visibility = enum_of(Visibility, field_of(node, "visibility"))
 
@@ -1145,6 +1141,15 @@ class Field(Tree):
             inherited=inherited,
             visibility=visibility,
             value=value,
+        )
+
+    @staticmethod
+    def field_key_from_cst(node: ts.Node) -> FieldKey:
+        expect_node_type(node, "static_key", "computed_key")
+        return (
+            StaticKey.from_cst(node)
+            if node.type == "static_key"
+            else ComputedKey.from_cst(node)
         )
 
     Tree.register(from_cst, "field")
