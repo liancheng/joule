@@ -9,6 +9,8 @@ from textwrap import dedent
 from rich.text import Text
 
 from joule import trees as T
+from joule.maybe import just
+from joule.services.scope_resolver import ScopeResolver
 from joule.trees import Array
 from tests.dsl.marked_span import parse_marked_spans
 
@@ -119,18 +121,14 @@ class LineMap:
 
 
 class FakeDocument(LineMap):
-    def __init__(
-        self,
-        text: str,
-        uri: str = "file:///tmp/test.jsonnet",
-        marks: bool = True,
-    ) -> None:
+    def __init__(self, text: str, uri: str = "file:///tmp/test.jsonnet") -> None:
         text = dedent(text)
-        text, self.spans = parse_marked_spans(text) if marks else (text, {})
+        text, self.spans = parse_marked_spans(text)
         super().__init__(text)
         self.uri = uri
         self.document = T.Tree.from_source(text).to(T.Document)
         self.body = self.document.body
+        ScopeResolver(self.document).resolve()
 
     @cached_property
     def span(self) -> SpanDSL:
@@ -146,6 +144,9 @@ class FakeDocument(LineMap):
         )
 
         return SpanDSL(merged_span.start, merged_span.end)
+
+    def node_at(self, *marks: int) -> T.Tree:
+        return just(self.body.node_at(self.at(*marks)))
 
     def start_of(self, mark: int) -> T.Point:
         return self.at(mark).start

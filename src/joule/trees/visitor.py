@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from joule import trees as T
 
 
@@ -14,8 +16,6 @@ class Visitor:
                 self.visit_document(t)
             case T.Expr():
                 self.visit_expr(t)
-            case T.ForSpec():
-                self.visit_for_spec(t)
             case T.Id.Field():
                 self.visit_field_id(t)
             case T.Id.FieldRef():
@@ -24,8 +24,6 @@ class Visitor:
                 self.visit_param_ref_id(t)
             case T.Id.Var():
                 self.visit_var_id(t)
-            case T.IfSpec():
-                self.visit_if_spec(t)
             case T.Param():
                 self.visit_param(t)
             case T.Slice():
@@ -69,6 +67,15 @@ class Visitor:
         del obj, f
         self.visit_expr(k.expr)
 
+    def visit_comp_spec(self, t: list[T.CompSpec], next: Callable[[], None]):
+        match t:
+            case []:
+                next()
+            case T.ForSpec() as first, *rest:
+                self.visit_for_spec(first, lambda: self.visit_comp_spec(rest, next))
+            case T.IfSpec() as first, *rest:
+                self.visit_if_spec(first, lambda: self.visit_comp_spec(rest, next))
+
     def visit_document(self, t: T.Document):
         self.visit_expr(t.body)
 
@@ -82,6 +89,8 @@ class Visitor:
         match t:
             case T.Array():
                 self.visit_array(t)
+            case T.ArrayComp():
+                self.visit_array_comp(t)
             case T.AssertedExpr():
                 self.visit_assert_expr(t)
             case T.Binary():
@@ -116,6 +125,8 @@ class Visitor:
                 self.visit_null(t)
             case T.Num():
                 self.visit_num(t)
+            case T.ObjComp():
+                self.visit_obj_comp(t)
             case T.Object():
                 self.visit_object(t)
             case T.Paren():
@@ -149,9 +160,10 @@ class Visitor:
             self.visit_param(p)
         self.visit_expr(t.body)
 
-    def visit_for_spec(self, t: T.ForSpec):
+    def visit_for_spec(self, t: T.ForSpec, next: Callable[[], None]):
         self.visit_var_id(t.id)
         self.visit_expr(t.source)
+        next()
 
     def visit_if(self, t: T.If):
         self.visit_expr(t.condition)
@@ -159,8 +171,9 @@ class Visitor:
         if t.alternative is not None:
             self.visit_expr(t.alternative)
 
-    def visit_if_spec(self, t: T.IfSpec):
+    def visit_if_spec(self, t: T.IfSpec, next: Callable[[], None]):
         self.visit_expr(t.condition)
+        next()
 
     def visit_import(self, t: T.Import):
         self.visit_importee(t.importee)
@@ -171,6 +184,12 @@ class Visitor:
     def visit_index(self, t: T.Index):
         self.visit_expr(t.target)
         self.visit(t.index)
+
+    def visit_array_comp(self, t: T.ArrayComp):
+        self.visit_comp_spec(
+            [t.for_spec] + t.extra_specs,
+            next=lambda: self.visit_expr(t.expr),
+        )
 
     def visit_local(self, t: T.Local):
         for b in t.binds:
@@ -185,6 +204,15 @@ class Visitor:
 
     def visit_num(self, t: T.Num):
         pass
+
+    def visit_obj_comp(self, t: T.ObjComp):
+        def next():
+            self.visit_computed_key(t, t.field, t.field.key.to(T.ComputedKey))
+            for b in t.binds:
+                self.visit_bind(b)
+            self.visit(t.field.value)
+
+        self.visit_comp_spec([t.for_spec] + t.extra_specs, next)
 
     def visit_object(self, t: T.Object):
         # The following traversal order is important:
