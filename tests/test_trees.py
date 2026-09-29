@@ -849,7 +849,7 @@ class TestParser(FakeDocumentTestCase):
             t = self.fake_document(
                 """\
                 if a then b else c
-                   ^1     ^2     ^3
+                |  ^1     ^2     ^3
                 """
             )
 
@@ -867,7 +867,7 @@ class TestParser(FakeDocumentTestCase):
             t = self.fake_document(
                 """\
                 if a then b
-                   ^1     ^2
+                |  ^1     ^2
                 """
             )
 
@@ -916,7 +916,7 @@ class TestParser(FakeDocumentTestCase):
             """\
             x * (y + z)
             ^1  ^^^^^^^2
-                 ^3  ^4
+            |    ^3  ^4
             """
         )
 
