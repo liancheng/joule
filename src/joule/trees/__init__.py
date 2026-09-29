@@ -146,6 +146,25 @@ class Tree:
     def children(self) -> Iterable[Tree]:
         return []
 
+    def node_at(self, target: Point | Span) -> Tree | None:
+        if isinstance(target, Point):
+            target = Span(target, target)
+
+        candidate = head_or_none(
+            node
+            for child in self.children
+            if child.span.contains(target)
+            for node in maybe(child.node_at(target))
+        )
+
+        match candidate:
+            case None if self.span.contains(target):
+                return self
+            case None:
+                return None
+            case node:
+                return node
+
 
 @D.dataclass
 class Expr(Tree):
@@ -671,13 +690,13 @@ class AssertedExpr(Expr):
 
 @D.dataclass
 class Param(Tree):
-    name: Id.Var
+    id: Id.Var
     default: Expr | None = None
 
     @property
     @override
     def children(self) -> Iterable[Tree]:
-        yield self.name
+        yield self.id
         yield from maybe(self.default)
 
     @staticmethod
@@ -689,7 +708,7 @@ class Param(Tree):
 
         return Param(
             span_of(node),
-            name=Id.Var.from_cst(var),
+            id=Id.Var.from_cst(var),
             default=head_or_none(Expr.from_cst(e) for e in maybe_default),
         )
 
@@ -730,13 +749,13 @@ class Fn(Expr):
 
 @D.dataclass
 class Bind(Tree):
-    name: Id.Var
+    id: Id.Var
     value: Expr
 
     @property
     @override
     def children(self) -> Iterable[Tree]:
-        yield self.name
+        yield self.id
         yield self.value
 
     @staticmethod
@@ -753,7 +772,7 @@ class Bind(Tree):
         fn_name, params, body, *_ = skip_comments(node.named_children)
         return Bind(
             span_of(node),
-            name=Id.Var.from_cst(fn_name),
+            id=Id.Var.from_cst(fn_name),
             value=Fn(
                 span_of(params).merge(span_of(body)),
                 params=[
@@ -768,7 +787,7 @@ class Bind(Tree):
         var, value, *_ = skip_comments(node.named_children)
         return Bind(
             span_of(node),
-            name=Id.Var.from_cst(var),
+            id=Id.Var.from_cst(var),
             value=Expr.from_cst(value),
         )
 
@@ -836,13 +855,13 @@ class If(Expr):
 @D.dataclass
 class Arg(Tree):
     value: Expr
-    name: Id.ParamRef | None = None
+    id: Id.ParamRef | None = None
 
     @property
     @override
     def children(self) -> Iterable[Tree]:
         yield self.value
-        yield from maybe(self.name)
+        yield from maybe(self.id)
 
     @staticmethod
     def from_cst(node: ts.Node) -> Arg:
@@ -861,7 +880,7 @@ class Arg(Tree):
                 return Arg(
                     span_of(node),
                     value=Expr.from_cst(value),
-                    name=Id.ParamRef.from_cst(name),
+                    id=Id.ParamRef.from_cst(name),
                 )
 
     Tree.register(from_cst, "argument")
@@ -1167,6 +1186,10 @@ class Object(Expr):
         "object_local": Bind.from_cst,
     }
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.field_scope: FieldScope | None = None
+
     @property
     @override
     def children(self) -> Iterable[Tree]:
@@ -1328,12 +1351,6 @@ class PrettyTree(Pretty):
 
 @D.dataclass
 class VarBinding:
-    """A class representing a variable bound to a target in a variable scope.
-
-    The type of the target is `Tree` instead of `Expr`, because a variable can be bound
-    to a for-spec in a list-/object-comprehension, and a for-spec is not an expression.
-    """
-
     scope: VarScope
     id: Id.Var
     target: Tree
@@ -1368,8 +1385,6 @@ class VarScope:
 
 @D.dataclass
 class FieldBinding:
-    """A class representing a static field key bound to a field value."""
-
     scope: FieldScope
     id: Id.Field
     target: Expr
@@ -1382,7 +1397,7 @@ class FieldScope:
     parent: FieldScope | None = None
     children: list[FieldScope] = D.field(default_factory=list)
 
-    def bind(self, key: StaticKey, to: Field):
+    def bind(self, key: StaticKey, to: Expr):
         key.id.binding = FieldBinding(self, key.id, to)
         self.bindings.insert(0, key.id.binding)
 
