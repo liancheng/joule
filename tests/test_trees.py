@@ -1,6 +1,5 @@
 import joule.trees as T
 from joule.trees import BinaryOp as B
-from joule.trees import ForSpec, IfSpec, Paren
 from joule.trees import UnaryOp as U
 from tests import FakeDocumentTestCase
 from tests.dsl import arg, bind, field, param
@@ -8,22 +7,22 @@ from tests.dsl import arg, bind, field, param
 
 class TestParser(FakeDocumentTestCase):
     def assertStrEqual(self, source: str, expected: str):
-        t = self.fake_document(source)
+        t = self.fake_document(source, marked=False)
         self.assertEqual(t.body, t.span.string(expected))
 
     def assertNumEqual(self, source: str, expected: float):
-        t = self.fake_document(source)
+        t = self.fake_document(source, marked=False)
         self.assertEqual(t.body, t.span.num(expected))
 
     def test_null(self):
-        t = self.fake_document("null")
+        t = self.fake_document("null", marked=False)
         self.assertEqual(t.body, t.span.null)
 
     def test_bool(self):
-        t = self.fake_document("true")
+        t = self.fake_document("true", marked=False)
         self.assertEqual(t.body, t.span.true)
 
-        t = self.fake_document("false")
+        t = self.fake_document("false", marked=False)
         self.assertEqual(t.body, t.span.false)
 
     def test_num(self):
@@ -120,14 +119,14 @@ class TestParser(FakeDocumentTestCase):
 
     def test_array(self):
         with self.subTest("empty"):
-            t = self.fake_document("[]")
+            t = self.fake_document("[]", marked=False)
             self.assertEqual(t.body, t.span.array())
 
         with self.subTest("nested"):
             t = self.fake_document(
                 """\
-                [[]]
-                |^^1
+                :   [[]]
+                >    ^^1
                 """
             )
 
@@ -140,8 +139,8 @@ class TestParser(FakeDocumentTestCase):
             with self.subTest(trailing_comma=maybe_comma == ","):
                 t = self.fake_document(
                     f"""\
-                    [1{maybe_comma}]
-                    |^1
+                    :   [1{maybe_comma}]
+                    >    ^1
                     """
                 )
 
@@ -152,8 +151,8 @@ class TestParser(FakeDocumentTestCase):
 
                 t = self.fake_document(
                     f"""\
-                    [1, 2{maybe_comma}]
-                    |^1 ^2
+                    :   [1, 2{maybe_comma}]
+                    >    ^1 ^2
                     """
                 )
 
@@ -169,8 +168,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("not"):
             t = self.fake_document(
                 """\
-                !true
-                |^^^^1
+                :   !true
+                >    ^^^^1
                 """
             )
 
@@ -182,8 +181,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("plus"):
             t = self.fake_document(
                 """\
-                +1
-                |^1
+                :   +1
+                >    ^1
                 """
             )
 
@@ -195,8 +194,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("negate"):
             t = self.fake_document(
                 """\
-                -1
-                |^1
+                :   -1
+                >    ^1
                 """
             )
 
@@ -208,8 +207,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("bit not"):
             t = self.fake_document(
                 """\
-                ~x
-                |^1
+                :   ~x
+                >    ^1
                 """
             )
 
@@ -221,8 +220,8 @@ class TestParser(FakeDocumentTestCase):
     def test_binary(self):
         t = self.fake_document(
             """\
-            v1 + v2 * v3 < v4 && v5 in v6 == v7
-            ^^1  ^^2  ^^3  ^^4   ^^5   ^^6   ^^7
+            :   v1 + v2 * v3 < v4 && v5 in v6 == v7
+            >   ^^1  ^^2  ^^3  ^^4   ^^5   ^^6   ^^7
             """
         )
 
@@ -246,8 +245,8 @@ class TestParser(FakeDocumentTestCase):
     def test_import(self):
         t = self.fake_document(
             """\
-            import "file"
-            |      ^^^^^^1
+            :   import "file"
+            >          ^^^^^^1
             """
         )
 
@@ -263,8 +262,8 @@ class TestParser(FakeDocumentTestCase):
     def test_assert(self):
         t = self.fake_document(
             """\
-            assert true; null
-            ^1     ^^^^2 ^^^^3
+            :   assert true; null
+            >   ^1     ^^^^2 ^^^^3
             """
         )
 
@@ -284,8 +283,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("no params"):
             t = self.fake_document(
                 """\
-                function() null
-                |          ^^^^1
+                :   function() null
+                >              ^^^^1
                 """
             )
 
@@ -297,8 +296,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("one param"):
             t = self.fake_document(
                 """\
-                function(a) a
-                |        ^1 ^2
+                :   function(a) a
+                >            ^1 ^2
                 """
             )
 
@@ -314,8 +313,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("param with default"):
             t = self.fake_document(
                 """\
-                function(a = 1) a
-                |        ^1  ^2 ^3
+                :   function(a = 1) a
+                >            ^1  ^2 ^3
                 """
             )
 
@@ -331,8 +330,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("multiple params"):
             t = self.fake_document(
                 """\
-                function(a, b = a) a + b
-                |        ^1 ^2  ^3 ^4  ^5
+                :   function(a, b = a) a + b
+                >            ^1 ^2  ^3 ^4  ^5
                 """
             )
 
@@ -355,8 +354,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("single bind"):
             t = self.fake_document(
                 """\
-                local x = 1; x
-                |     ^1  ^2 ^3
+                :   local x = 1; x
+                >         ^1  ^2 ^3
                 """
             )
 
@@ -372,9 +371,9 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("function bind"):
             t = self.fake_document(
                 """\
-                local f() = null; f
-                |     ^1
-                |      ^2   ^^^^3 ^4
+                :   local f() = null; f
+                >         ^1
+                >          ^2   ^^^^3 ^4
                 """
             )
 
@@ -396,8 +395,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("multiple binds"):
             t = self.fake_document(
                 """\
-                local x = 1, y = 2; x + y
-                |     ^1  ^2 ^3  ^4 ^5  ^6
+                :   local x = 1, y = 2; x + y
+                >         ^1  ^2 ^3  ^4 ^5  ^6
                 """
             )
 
@@ -420,8 +419,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("no args"):
             t = self.fake_document(
                 """\
-                f()
-                ^1
+                :   f()
+                >   ^1
                 """
             )
 
@@ -433,8 +432,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("positional and named args"):
             t = self.fake_document(
                 """\
-                f(1, a=2)
-                ^1^2 ^3^4
+                :   f(1, a=2)
+                >   ^1^2 ^3^4
                 """
             )
 
@@ -453,8 +452,8 @@ class TestParser(FakeDocumentTestCase):
     def test_array_comp(self):
         t = self.fake_document(
             """\
-            [i for i in x if true]
-            |^1^2  ^3   ^4^5 ^^^^6
+            :   [i for i in x if true]
+            >    ^1^2  ^3   ^4^5 ^^^^6
             """
         )
 
@@ -463,13 +462,13 @@ class TestParser(FakeDocumentTestCase):
             T.ArrayComp(
                 t.span,
                 expr=t.at(1).var_ref("i"),
-                for_spec=ForSpec(
+                for_spec=T.ForSpec(
                     t.at(2, 4),
                     id=t.at(3).var("i"),
                     source=t.at(4).var_ref("x"),
                 ),
                 extra_specs=[
-                    IfSpec(
+                    T.IfSpec(
                         t.at(5, 6),
                         condition=t.at(6).true,
                     )
@@ -479,14 +478,14 @@ class TestParser(FakeDocumentTestCase):
 
     def test_object(self):
         with self.subTest("empty"):
-            t = self.fake_document("{}")
+            t = self.fake_document("{}", marked=False)
             self.assertEqual(t.body, T.Object(t.span))
 
         with self.subTest("assert"):
             t = self.fake_document(
                 """\
-                { assert true }
-                | ^1     ^^^^2
+                :   { assert true }
+                >     ^1     ^^^^2
                 """
             )
 
@@ -503,8 +502,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("object local"):
             t = self.fake_document(
                 """\
-                { local v = 1 }
-                |       ^1  ^2
+                :   { local v = 1 }
+                >           ^1  ^2
                 """
             )
 
@@ -524,8 +523,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("object local before field"):
             t = self.fake_document(
                 """\
-                { local v = 1, f: v }
-                |       ^1  ^2 ^3 ^4
+                :   { local v = 1, f: v }
+                >           ^1  ^2 ^3 ^4
                 """
             )
 
@@ -551,8 +550,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("object local after field"):
             t = self.fake_document(
                 """\
-                { f: v, local v = 1 }
-                | ^1 ^2       ^3  ^4
+                :   { f: v, local v = 1 }
+                >     ^1 ^2       ^3  ^4
                 """
             )
 
@@ -578,9 +577,9 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("function field"):
             t = self.fake_document(
                 """\
-                { f(): true }
-                | ^1
-                |  ^2  ^^^^3
+                :   { f(): true }
+                >     ^1
+                >      ^2  ^^^^3
                 """
             )
 
@@ -597,19 +596,19 @@ class TestParser(FakeDocumentTestCase):
     def test_obj_comp(self):
         t = self.fake_document(
             """\
-            {
-                local x = 1,
-            |         ^1  ^2
-                [k]: k + x + y,
-            |   ^^^3 ^4  ^5  ^6
-            |    ^7
-                local y = 1,
-            |         ^8  ^9
-                for k in ks
-            |   ^10 ^11  ^^12
-                if k != null
-            |   ^13^14  ^^^^15
-            }
+            :   {
+            :       local x = 1,
+            >             ^1  ^2
+            :       [k]: k + x + y,
+            >       ^^^3 ^4  ^5  ^6
+            >        ^7
+            :       local y = 1,
+            >             ^8  ^9
+            :       for k in ks
+            >       ^10 ^11  ^^12
+            :       if k != null
+            >       ^13^14  ^^^^15
+            :   }
             """
         )
 
@@ -663,8 +662,8 @@ class TestParser(FakeDocumentTestCase):
     def test_field_access(self):
         t = self.fake_document(
             """\
-            obj.f1.f2
-            ^^^1^^2^^3
+            :   obj.f1.f2
+            >   ^^^1^^2^^3
             """
         )
 
@@ -684,8 +683,8 @@ class TestParser(FakeDocumentTestCase):
     def test_index(self):
         t = self.fake_document(
             """\
-            a[1]
-            ^1^2
+            :   a[1]
+            >   ^1^2
             """
         )
 
@@ -702,8 +701,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("start"):
             t = self.fake_document(
                 """\
-                a[1 :]
-                ^1^2^3
+                :   a[1 :]
+                >   ^1^2^3
                 """
             )
 
@@ -722,8 +721,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("end"):
             t = self.fake_document(
                 """\
-                a[: 1]
-                ^1^2^3
+                :   a[: 1]
+                >   ^1^2^3
                 """
             )
 
@@ -742,8 +741,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("step"):
             t = self.fake_document(
                 """\
-                a[: : 1]
-                ^1^2  ^3
+                :   a[: : 1]
+                >   ^1^2  ^3
                 """
             )
 
@@ -762,8 +761,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("start end"):
             t = self.fake_document(
                 """\
-                a[1 : 10 :]
-                ^1^2  ^^3^4
+                :   a[1 : 10 :]
+                >   ^1^2  ^^3^4
                 """
             )
 
@@ -783,8 +782,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("start step"):
             t = self.fake_document(
                 """\
-                a[1 : : 2]
-                ^1^2    ^3
+                :   a[1 : : 2]
+                >   ^1^2    ^3
                 """
             )
 
@@ -804,8 +803,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("end step"):
             t = self.fake_document(
                 """\
-                a[: 10 : 2]
-                ^1^2^^3  ^4
+                :   a[: 10 : 2]
+                >   ^1^2^^3  ^4
                 """
             )
 
@@ -825,8 +824,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("start end step"):
             t = self.fake_document(
                 """\
-                a[1 : 10 : 2]
-                ^1^2  ^^3  ^4
+                :   a[1 : 10 : 2]
+                >   ^1^2  ^^3  ^4
                 """
             )
 
@@ -848,8 +847,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("if-then-else"):
             t = self.fake_document(
                 """\
-                if a then b else c
-                |  ^1     ^2     ^3
+                :   if a then b else c
+                >      ^1     ^2     ^3
                 """
             )
 
@@ -866,8 +865,8 @@ class TestParser(FakeDocumentTestCase):
         with self.subTest("if-then"):
             t = self.fake_document(
                 """\
-                if a then b
-                |  ^1     ^2
+                :   if a then b
+                >      ^1     ^2
                 """
             )
 
@@ -883,8 +882,8 @@ class TestParser(FakeDocumentTestCase):
     def test_paren(self):
         t = self.fake_document(
             """\
-            (x)
-            |^1
+            :   (x)
+            >    ^1
             """
         )
 
@@ -895,9 +894,9 @@ class TestParser(FakeDocumentTestCase):
 
         t = self.fake_document(
             """\
-            ((x))
-            |^^^1
-            | ^2
+            :   ((x))
+            >    ^^^1
+            >     ^2
             """
         )
 
@@ -905,7 +904,7 @@ class TestParser(FakeDocumentTestCase):
             t.body,
             T.Paren(
                 t.span,
-                Paren(
+                T.Paren(
                     t.at(1),
                     t.at(2).var_ref("x"),
                 ),
@@ -914,31 +913,30 @@ class TestParser(FakeDocumentTestCase):
 
         t = self.fake_document(
             """\
-            x * (y + z)
-            ^1  ^^^^^^^2
-            |    ^3  ^4
+            :   x * (y + z)
+            >   ^1  ^^^^^^^2
+            >        ^3  ^4
             """
+        )
+
+        y_plus_z = B.Plus(
+            t.at(3).var_ref("y"),
+            t.at(4).var_ref("z"),
         )
 
         self.assertEqual(
             t.body,
             B.Multiply(
                 t.at(1).var_ref("x"),
-                T.Paren(
-                    t.at(2),
-                    B.Plus(
-                        t.at(3).var_ref("y"),
-                        t.at(4).var_ref("z"),
-                    ),
-                ),
+                T.Paren(t.at(2), y_plus_z),
             ),
         )
 
     def test_error(self):
         t = self.fake_document(
             """\
-            error 'BOO'
-            |     ^^^^^1
+            :   error 'BOO'
+            >         ^^^^^1
             """
         )
 
@@ -950,8 +948,8 @@ class TestParser(FakeDocumentTestCase):
     def test_malformed(self):
         t = self.fake_document(
             """\
-            { f1: 1, f2: { a b }, f3: 2 }
-            | ^^1 ^2 ^^3 ^^^^^^^4 ^^5 ^6
+            :   { f1: 1, f2: { a b }, f3: 2 }
+            >     ^^1 ^2 ^^3 ^^^^^^^4 ^^5 ^6
             """
         )
 

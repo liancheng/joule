@@ -20,5 +20,5 @@ class FakeDocumentTestCase(unittest.TestCase):
         else:
             super().assertEqual(first, second, msg)
 
-    def fake_document(self, source: str) -> FakeDocument:
-        return FakeDocument(source, uri=self.fake_uri)
+    def fake_document(self, source: str, marked=True) -> FakeDocument:
+        return FakeDocument(source, uri=self.fake_uri, marked=marked)
