@@ -222,7 +222,67 @@ TODO: How `didOpen`/`didChange`/`didSave`/`didClose` and on-disk file changes up
 
 ## Testing and benchmarking
 
-TODO: Testing strategy (unit tests and the `tests.dsl` marked-span DSL) and how TTII is measured against the [scalability](#scalability) targets.
+### Marked-span syntax
+
+Parsing and LSP tests need to refer to precise source positions: the span an AST node should have, the cursor position of a request, or the range a response should return. Tests annotate Jsonnet source with _marked spans_ instead of computing line and column numbers by hand. `tests.dsl.span_markers.parse` strips the annotations and returns the plain source together with a map from mark IDs to spans.
+
+Each line of an annotated source starts with a 4-character prefix:
+
+- `:   ` (a `:` followed by 3 spaces) marks a source line.
+- `>   ` (a `>` followed by 3 spaces) marks an annotation line, which marks spans on the preceding source line with runs of `^` followed by mark IDs:
+  - `^^^1`: the run's characters are span `1`.
+  - `^1,2`: several marks on the same run, separated by commas.
+
+  A source line can have several annotation lines, which helps when marks would otherwise overlap.
+
+Any other line prefix is an error.
+
+For example:
+
+```python
+t = self.fake_document(
+    """\
+    :   local x = 1, y = 2; x + y
+    >   ^1    ^2  ^3 ^4  ^5 ^6  ^7
+    """
+)
+
+x: Id.Var = t.var_at(2)             # `x` in `x = 1`
+x_ref: Id.VarRef = t.var_ref_at(6)  # `x` in `x + y`
+```
+
+Sources without marks use `fake_document(source, marked=False)`.
+
+Each mark covers a span on a single line. Longer spans, including spans across lines, are formed by passing several marks (in practice, two) to the `FakeDocument` helpers below. The result runs from the start of the earliest mark to the end of the latest one, so it's enough to mark just the first and last characters:
+
+```python
+t = self.fake_document(
+    """\
+    :   local obj = {
+    >               ^1
+    :       a: 1
+    :   };
+    >   ^2
+    :   obj
+    """
+)
+
+# The span of the object literal from `{` to `}`
+obj_span = t.at(1, 2)
+```
+
+`FakeDocument` parses the annotated source, runs scope resolution, and provides helpers:
+
+- `at(*marks)` returns the span covering the given marks. Its `SpanDSL` constructors (`num`, `var`, `array`, …) build expected trees with exact spans.
+- `node_at(*marks)` returns the node at that span, and `num_at`, `var_at` and `var_ref_at` return it as a specific node type.
+
+This keeps positions next to the code they refer to. Tests stay readable, and editing a test source only means moving the marks, never recomputing coordinates. The same marks serve both parser tests (expected spans) and LSP tests (request positions and expected ranges).
+
+When two trees of the same type differ, `FakeDocumentTestCase` shows a side-by-side diff of their pretty-printed forms (via ocdiff) instead of raw reprs. This is disabled when `CI` is set.
+
+### Benchmarking
+
+TODO: How TTII is measured against the [scalability](#scalability) targets.
 
 ## Open questions
 

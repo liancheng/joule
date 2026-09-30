@@ -36,8 +36,8 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_local(self):
         t = self.fake_document(
             """\
-            local x = 1, y = 2; x + y
-            ^1    ^2  ^3 ^4  ^5 ^6  ^7
+            :   local x = 1, y = 2; x + y
+            >   ^1    ^2  ^3 ^4  ^5 ^6  ^7
             """
         )
 
@@ -60,16 +60,16 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_object(self):
         t = self.fake_document(
             """\
-            {
-                f1: v1,
-            |     ^1^2
-                "f2":: v2,
-            |       ^3 ^4
-                local v1 = 3,
-            |         ^5   ^6
-                local v2 = 4,
-            |         ^7   ^8
-            }
+            :   {
+            :       f1: v1,
+            >         ^1^2
+            :       "f2":: v2,
+            >           ^3 ^4
+            :       local v1 = 3,
+            >             ^5   ^6
+            :       local v2 = 4,
+            >             ^7   ^8
+            :   }
             """
         )
 
@@ -98,12 +98,12 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_fn(self):
         t = self.fake_document(
             """\
-            function(a = 1, b = a)
-            |        ^1  ^2 ^3  ^4
-                local c = a + b;
-            |   ^5    ^6  ^7  ^8
-                c
-            |   ^9
+            :   function(a = 1, b = a)
+            >            ^1  ^2 ^3  ^4
+            :       local c = a + b;
+            >       ^5    ^6  ^7  ^8
+            :       c
+            >       ^9
             """
         )
 
@@ -136,9 +136,9 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_field_fn(self):
         t = self.fake_document(
             """\
-            { f(p): p }
-            |  ^^^^^^1
-            |   ^2  ^3
+            :   { f(p): p }
+            >      ^^^^^^1
+            >       ^2  ^3
             """
         )
 
@@ -152,12 +152,12 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_array_comp(self):
         t = self.fake_document(
             """\
-            [
-                local x = 1;
-                ^1    ^2  ^3
-                x + k for k in ks
-            |   ^4  ^5^6  ^7
-            ]
+            :   [
+            :       local x = 1;
+            >       ^1    ^2  ^3
+            :       x + k for k in ks
+            >       ^4  ^5^6  ^7
+            :   ]
             """
         )
 
@@ -179,16 +179,16 @@ class TestScopeResolver(FakeDocumentTestCase):
     def test_obj_comp(self):
         t = self.fake_document(
             """\
-            {
-                local v1 = 1,
-            |         ^1   ^2
-                ['f' + k]: v1 + v2 + k,
-            |          ^3  ^4   ^5   ^6
-                local v2 = 2,
-            |         ^7   ^8
-                for k in ks
-                ^9  ^10
-            }
+            :   {
+            :       local v1 = 1,
+            >             ^1   ^2
+            :       ['f' + k]: v1 + v2 + k,
+            >              ^3  ^4   ^5   ^6
+            :       local v2 = 2,
+            >             ^7   ^8
+            :       for k in ks
+            >       ^9  ^10
+            :   }
             """
         )
 
