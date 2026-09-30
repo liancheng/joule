@@ -146,11 +146,14 @@ class FakeDocument(LineMap):
     def node_at(self, *marks: int) -> T.Tree:
         return just(self.body.node_at(self.at(*marks)))
 
-    def start_of(self, mark: int) -> T.Point:
-        return self.at(mark).start
+    def num_at(self, *marks: int) -> T.Num:
+        return self.node_at(*marks).to(T.Num)
 
-    def end_of(self, mark: int) -> T.Point:
-        return self.at(mark).end
+    def var_at(self, *marks: int) -> T.Id.Var:
+        return self.node_at(*marks).to(T.Id.Var)
+
+    def var_ref_at(self, *marks: int) -> T.Id.VarRef:
+        return self.node_at(*marks).to(T.Id.VarRef)
 
     def highlight(self, spans: tuple[T.Span, str] | list[tuple[T.Span, str]]) -> Text:
         """Renders the Jsonnet document with given text ranges highlighted.
