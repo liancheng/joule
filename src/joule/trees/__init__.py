@@ -10,7 +10,7 @@ from joule.maybe import head_or_none, maybe
 from joule.trees.pretty import Pretty
 
 
-@D.dataclass(frozen=True, order=True)
+@D.dataclass(frozen=True, slots=True, order=True)
 class Point:
     line: int
     column: int
@@ -19,16 +19,56 @@ class Point:
         return f"{self.line}:{self.column}"
 
 
-@D.dataclass(frozen=True)
+# A span packs each endpoint into one int, `line << 32 | column`, instead of holding
+# two `Point`s. Packing preserves `Point` ordering as plain int ordering, so
+# `contains` and `merge` compare ints and never build a `Point`. 32 bits is the
+# width tree-sitter gives a column, so every position it reports fits.
+COLUMN_BITS = 32
+COLUMN_MASK = (1 << COLUMN_BITS) - 1
+
+
+def pack(line: int, column: int) -> int:
+    return line << COLUMN_BITS | column
+
+
+def unpack(packed: int) -> Point:
+    return Point(packed >> COLUMN_BITS, packed & COLUMN_MASK)
+
+
 class Span:
-    start: Point
-    end: Point
+    __slots__ = ("packed_end", "packed_start")
+
+    packed_start: int
+    packed_end: int
+
+    def __init__(self, start: Point, end: Point):
+        self.packed_start = pack(start.line, start.column)
+        self.packed_end = pack(end.line, end.column)
+
+    @classmethod
+    def packed(cls, start: int, end: int) -> Span:
+        span = object.__new__(cls)
+        span.packed_start = start
+        span.packed_end = end
+        return span
+
+    def __reduce__(self):
+        # The default reduction would restore the slots through `__setattr__`.
+        return type(self).packed, (self.packed_start, self.packed_end)
+
+    @property
+    def start(self) -> Point:
+        return unpack(self.packed_start)
+
+    @property
+    def end(self) -> Point:
+        return unpack(self.packed_end)
 
     def __eq__(self, other) -> bool:
         return (
             isinstance(other, Span)
-            and self.start == other.start
-            and self.end == other.end
+            and self.packed_start == other.packed_start
+            and self.packed_end == other.packed_end
         )
 
     def __repr__(self) -> str:
@@ -37,12 +77,16 @@ class Span:
     def contains(self, other: Point | Span) -> bool:
         if isinstance(other, Point):
             other = Span(other, other)
-        return self.start <= other.start and other.end <= self.end
+
+        return (
+            self.packed_start <= other.packed_start
+            and other.packed_end <= self.packed_end
+        )
 
     def merge(self, other: Span) -> Span:
-        return Span(
-            min(self.start, other.start),
-            max(self.end, other.end),
+        return Span.packed(
+            min(self.packed_start, other.packed_start),
+            max(self.packed_end, other.packed_end),
         )
 
 
@@ -51,7 +95,8 @@ def point_of(point: ts.Point) -> Point:
 
 
 def span_of(node: ts.Node) -> Span:
-    return Span(point_of(node.start_point), point_of(node.end_point))
+    start, end = node.start_point, node.end_point
+    return Span.packed(pack(start.row, start.column), pack(end.row, end.column))
 
 
 class MalformedError(Exception):
