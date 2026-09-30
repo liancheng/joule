@@ -11,7 +11,7 @@ from joule import trees as T
 from joule.maybe import just
 from joule.services.scope_resolver import ScopeResolver
 from joule.trees import Array
-from tests.dsl.marked_span import parse_marked_spans
+from tests.dsl import span_markers
 
 
 class SpanDSL(T.Span):
@@ -19,7 +19,7 @@ class SpanDSL(T.Span):
         return super().__repr__()
 
     @staticmethod
-    def atom(fn: Callable[[T.Span], T.TreeType]):
+    def atom(fn: Callable[[T.Span], T.TreeType]) -> T.TreeType:
         @property
         def apply(self) -> T.TreeType:
             return fn(self)
@@ -119,9 +119,14 @@ class LineMap:
 
 
 class FakeDocument(LineMap):
-    def __init__(self, text: str, uri: str = "file:///tmp/test.jsonnet") -> None:
+    def __init__(
+        self,
+        text: str,
+        uri: str = "file:///tmp/test.jsonnet",
+        marked=True,
+    ) -> None:
         text = dedent(text)
-        text, self.spans = parse_marked_spans(text)
+        text, self.spans = span_markers.parse(text) if marked else (text, {})
         super().__init__(text)
         self.uri = uri
         self.document = T.Tree.from_source(text).to(T.Document)

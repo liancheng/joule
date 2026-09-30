@@ -84,14 +84,6 @@ COLUMN_BITS = 32
 COLUMN_MASK = (1 << COLUMN_BITS) - 1
 
 
-def pack(line: int, column: int) -> int:
-    return line << COLUMN_BITS | column
-
-
-def unpack(packed: int) -> Point:
-    return Point(packed >> COLUMN_BITS, packed & COLUMN_MASK)
-
-
 class Span:
     __slots__ = ("packed_end", "packed_start")
 
@@ -99,8 +91,16 @@ class Span:
     packed_end: int
 
     def __init__(self, start: Point, end: Point):
-        self.packed_start = pack(start.line, start.column)
-        self.packed_end = pack(end.line, end.column)
+        self.packed_start = Span.pack(start.line, start.column)
+        self.packed_end = Span.pack(end.line, end.column)
+
+    @staticmethod
+    def pack(line: int, column: int) -> int:
+        return line << COLUMN_BITS | column
+
+    @staticmethod
+    def unpack(packed: int) -> Point:
+        return Point(packed >> COLUMN_BITS, packed & COLUMN_MASK)
 
     @classmethod
     def packed(cls, start: int, end: int) -> Span:
@@ -115,11 +115,11 @@ class Span:
 
     @property
     def start(self) -> Point:
-        return unpack(self.packed_start)
+        return Span.unpack(self.packed_start)
 
     @property
     def end(self) -> Point:
-        return unpack(self.packed_end)
+        return Span.unpack(self.packed_end)
 
     def __eq__(self, other) -> bool:
         return (
@@ -149,7 +149,10 @@ class Span:
 
 def span_of(node: ts.Node) -> Span:
     start, end = node.start_point, node.end_point
-    return Span.packed(pack(start.row, start.column), pack(end.row, end.column))
+    return Span.packed(
+        Span.pack(start.row, start.column),
+        Span.pack(end.row, end.column),
+    )
 
 
 class MalformedError(Exception):
