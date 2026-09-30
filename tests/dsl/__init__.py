@@ -1,5 +1,4 @@
 import bisect
-import dataclasses as D
 import functools
 from collections.abc import Callable
 from functools import cached_property
@@ -15,7 +14,6 @@ from joule.trees import Array
 from tests.dsl.marked_span import parse_marked_spans
 
 
-@D.dataclass(frozen=True)
 class SpanDSL(T.Span):
     def __repr__(self) -> str:
         return super().__repr__()
