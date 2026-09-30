@@ -9,6 +9,63 @@ import tree_sitter_jsonnet
 from joule.maybe import head_or_none, maybe
 from joule.trees.pretty import Pretty
 
+__all__ = [
+    "Arg",
+    "Array",
+    "ArrayComp",
+    "Assert",
+    "AssertedExpr",
+    "Binary",
+    "BinaryOp",
+    "Bind",
+    "Bool",
+    "Call",
+    "CompSpec",
+    "ComputedKey",
+    "Document",
+    "Dollar",
+    "Error",
+    "Expr",
+    "Field",
+    "FieldAccess",
+    "FieldBinding",
+    "FieldScope",
+    "Fn",
+    "ForSpec",
+    "Id",
+    "If",
+    "IfSpec",
+    "Import",
+    "ImportKind",
+    "Importee",
+    "Index",
+    "Local",
+    "Malformed",
+    "MalformedError",
+    "Null",
+    "Num",
+    "ObjComp",
+    "Object",
+    "Param",
+    "Paren",
+    "Point",
+    "PrettyTree",
+    "Self",
+    "Slice",
+    "Span",
+    "StaticKey",
+    "Str",
+    "Super",
+    "Tree",
+    "TreeType",
+    "Unary",
+    "UnaryOp",
+    "Unknown",
+    "VarBinding",
+    "VarScope",
+    "Visibility",
+]
+
 
 @D.dataclass(frozen=True, slots=True, order=True)
 class Point:
@@ -88,10 +145,6 @@ class Span:
             min(self.packed_start, other.packed_start),
             max(self.packed_end, other.packed_end),
         )
-
-
-def point_of(point: ts.Point) -> Point:
-    return Point(point.row, point.column)
 
 
 def span_of(node: ts.Node) -> Span:

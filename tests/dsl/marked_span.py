@@ -4,6 +4,8 @@ import parsy as P
 
 from joule.trees import Point, Span
 
+__all__ = ["parse_marked_spans"]
+
 
 @D.dataclass
 class Mark:
@@ -12,7 +14,7 @@ class Mark:
     close: bool
 
     def __post_init__(self):
-        assert not self.open or not self.close
+        assert not (self.open and self.close)
 
 
 @D.dataclass
