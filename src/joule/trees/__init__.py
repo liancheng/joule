@@ -128,6 +128,9 @@ class Span:
             and self.packed_end == other.packed_end
         )
 
+    def __hash__(self) -> int:
+        return hash((self.packed_start, self.packed_end))
+
     def __repr__(self) -> str:
         return f"{self.start!r}-{self.end!r}"
 
