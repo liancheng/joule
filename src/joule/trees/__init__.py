@@ -240,6 +240,20 @@ class Tree:
         for child in self.children:
             child.parent = self
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__hash__ = Tree.__hash__
+
+    def __hash__(self) -> int:
+        init_field_values = (
+            tuple(value) if isinstance(value, list) else value
+            for f in D.fields(self)
+            if f.init
+            for value in [getattr(self, f.name)]
+        )
+
+        return hash((type(self), *init_field_values))
+
     @property
     def pretty(self) -> str:
         return str(PrettyTree(self))
