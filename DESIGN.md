@@ -67,7 +67,7 @@ Joule works at two levels:
 - **Workspace level**: each LSP workspace folder maps to one `LanguageService`, which discovers the folder's Jsonnet files and builds its import graph. See [Workspace loading](#workspace-loading).
 - **Document level**: a document's full AST, with scopes resolved, is built on demand. See [Document analysis](#document-analysis).
 
-TODO: Component diagram and module layout (`joule.server`, `joule.services`, `joule.scan`, `joule.trees`).
+TODO: Component diagram and module layout (`joule.server`, `joule.providers`, `joule.scan`, `joule.trees`).
 
 ## Workspace loading
 

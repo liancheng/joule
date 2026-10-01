@@ -4,7 +4,7 @@ from lsprotocol import types as L
 from lsprotocol.types import WorkspaceFolder
 
 
-class LanguageService:
+class DocumentService:
     def __init__(self, folder: L.WorkspaceFolder):
         self.folder: WorkspaceFolder = folder
         self.imports: dict[Path, set[Path]] = {}
