@@ -97,4 +97,4 @@ class ScopeResolver(Visitor):
         for binding in maybe(self.var_scope.get(t.name)):
             var = binding.id.to(T.Id.Var)
             t.var = var
-            var.references.append(t)
+            var.add_ref(t)

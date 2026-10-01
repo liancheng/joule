@@ -535,8 +535,8 @@ class Id:
             compare=False,
         )
 
-        references: list[Id.VarRef] = D.field(
-            default_factory=list,
+        references: list[Id.VarRef] | None = D.field(
+            default=None,
             init=False,
             repr=False,
             compare=False,
@@ -546,6 +546,12 @@ class Id:
         def from_cst(node: ts.Node) -> Id.Var:
             expect_node_type(node, "var_id")
             return Id.Var(span_of(node), name=text_of(node))
+
+        def add_ref(self, ref: Id.VarRef):
+            if self.references is None:
+                self.references = [ref]
+            else:
+                self.references.append(ref)
 
         Tree.register(from_cst, "var_id")
 
@@ -1489,23 +1495,29 @@ class VarBinding:
 @D.dataclass(slots=True)
 class VarScope:
     owner: Tree
-    bindings: list[VarBinding] = D.field(default_factory=list)
     parent: VarScope | None = None
-    children: list[VarScope] = D.field(default_factory=list)
+    bindings: list[VarBinding] | None = None
 
     def bind(self, var: Id.Var, to: Tree):
         var.binding = VarBinding(self, var, to)
-        self.bindings.insert(0, var.binding)
+        if self.bindings is None:
+            self.bindings = [var.binding]
+        else:
+            self.bindings.insert(0, var.binding)
 
     def get(self, name: str) -> VarBinding | None:
         return next(
-            iter(b for b in self.bindings if b.id.name == name),
+            iter(
+                binding
+                for bindings in maybe(self.bindings)
+                for binding in bindings
+                if binding.id.name == name
+            ),
             None if self.parent is None else self.parent.get(name),
         )
 
     def nest(self, owner: Tree) -> VarScope:
-        child = VarScope(owner, [], parent=self)
-        self.children.append(child)
+        child = VarScope(owner, parent=self)
         return child
 
     @staticmethod
@@ -1523,23 +1535,29 @@ class FieldBinding:
 @D.dataclass(slots=True)
 class FieldScope:
     owner: Object
-    bindings: list[FieldBinding] = D.field(default_factory=list)
     parent: FieldScope | None = None
-    children: list[FieldScope] = D.field(default_factory=list)
+    bindings: list[FieldBinding] | None = None
 
     def bind(self, key: StaticKey, to: Expr):
         key.id.binding = FieldBinding(self, key.id, to)
-        self.bindings.insert(0, key.id.binding)
+        if self.bindings is None:
+            self.bindings = [key.id.binding]
+        else:
+            self.bindings.insert(0, key.id.binding)
 
     def get(self, name: str) -> FieldBinding | None:
         return next(
-            iter(b for b in self.bindings if b.id.name == name),
+            iter(
+                binding
+                for bindings in maybe(self.bindings)
+                for binding in bindings
+                if binding.id.name == name
+            ),
             None if self.parent is None else self.parent.get(name),
         )
 
     def nest(self, owner: Object) -> FieldScope:
-        child = FieldScope(owner, [], parent=self)
-        self.children.append(child)
+        child = FieldScope(owner, parent=self)
         return child
 
     @staticmethod
