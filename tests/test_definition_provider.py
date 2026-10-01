@@ -1,5 +1,5 @@
 from joule.maybe import just
-from joule.services.definition_provider import DefinitionProvider
+from joule.providers import DefinitionProvider
 from tests import FakeDocumentTestCase
 from tests.dsl import FakeDocument
 
