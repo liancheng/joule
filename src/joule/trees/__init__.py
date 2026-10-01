@@ -201,9 +201,16 @@ def skip_comments(nodes: Iterable[ts.Node]) -> Iterable[ts.Node]:
     return (node for node in nodes if node.type != "comment")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Tree:
     span: Span
+
+    parent: Tree | None = D.field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     registry: ClassVar[dict[str, FromCST]] = {}
 
@@ -230,7 +237,6 @@ class Tree:
             return Malformed.from_cst(node)
 
     def __post_init__(self):
-        self.parent: Tree | None = None
         for child in self.children:
             child.parent = self
 
@@ -270,7 +276,7 @@ class Tree:
                 return node
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Expr(Tree):
     @staticmethod
     def from_cst(node: ts.Node) -> Expr:
@@ -284,14 +290,14 @@ class Expr(Tree):
             return e
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Unknown(Expr):
     @staticmethod
     def from_cst(node: ts.Node) -> Unknown:
         return Unknown(span_of(node))
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Malformed(Expr):
     node_type: str
 
@@ -300,7 +306,7 @@ class Malformed(Expr):
         return Malformed(span_of(node), node.type)
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Paren(Expr):
     expr: Expr
 
@@ -318,14 +324,16 @@ class Paren(Expr):
     Tree.register(from_cst, "parenthesized")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Document(Tree):
     body: Expr
 
-    @override
-    def __post_init__(self):
-        super().__post_init__()
-        self.top_level_scope: VarScope | None = None
+    top_level_scope: VarScope | None = D.field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     @property
     @override
@@ -341,7 +349,7 @@ class Document(Tree):
     Tree.register(from_cst, "document")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Null(Expr):
     @staticmethod
     def from_cst(node: ts.Node) -> Null:
@@ -351,7 +359,7 @@ class Null(Expr):
     Tree.register(from_cst, "null")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Dollar(Expr):
     @staticmethod
     def from_cst(node: ts.Node) -> Dollar:
@@ -361,7 +369,7 @@ class Dollar(Expr):
     Tree.register(from_cst, "dollar")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Super(Expr):
     @staticmethod
     def from_cst(node: ts.Node) -> Super:
@@ -371,7 +379,7 @@ class Super(Expr):
     Tree.register(from_cst, "super")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Self(Expr):
     @staticmethod
     def from_cst(node: ts.Node) -> Self:
@@ -381,7 +389,7 @@ class Self(Expr):
     Tree.register(from_cst, "self")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Bool(Expr):
     value: bool
 
@@ -393,7 +401,7 @@ class Bool(Expr):
     Tree.register(from_cst, "boolean")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Num(Expr):
     value: float
 
@@ -416,7 +424,7 @@ class Num(Expr):
     Tree.register(from_cst, "number")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Str(Expr):
     value: str
 
@@ -516,40 +524,59 @@ class Str(Expr):
 
 
 class Id:
-    @D.dataclass
+    @D.dataclass(slots=True)
     class Var(Tree):
         name: str
+
+        binding: VarBinding | None = D.field(
+            default=None,
+            init=False,
+            repr=False,
+            compare=False,
+        )
+
+        references: list[Id.VarRef] = D.field(
+            default_factory=list,
+            init=False,
+            repr=False,
+            compare=False,
+        )
 
         @staticmethod
         def from_cst(node: ts.Node) -> Id.Var:
             expect_node_type(node, "var_id")
             return Id.Var(span_of(node), name=text_of(node))
 
-        def __post_init__(self):
-            super().__post_init__()
-            self.binding: VarBinding | None = None
-            self.references: list[Id.VarRef] = []
-
         Tree.register(from_cst, "var_id")
 
-    @D.dataclass
+    @D.dataclass(slots=True)
     class VarRef(Expr):
         name: str
+
+        var: Id.Var | None = D.field(
+            default=None,
+            init=False,
+            repr=False,
+            compare=False,
+        )
 
         @staticmethod
         def from_cst(node: ts.Node) -> Id.VarRef:
             expect_node_type(node, "var_ref_id")
             return Id.VarRef(span_of(node), name=text_of(node))
 
-        def __post_init__(self):
-            super().__post_init__()
-            self.var: Id.Var | None = None
-
         Tree.register(from_cst, "var_ref_id")
 
-    @D.dataclass
+    @D.dataclass(slots=True)
     class Field(Tree):
         name: str
+
+        binding: FieldBinding | None = D.field(
+            default=None,
+            init=False,
+            repr=False,
+            compare=False,
+        )
 
         @staticmethod
         def from_cst(node: ts.Node) -> Id.Field:
@@ -560,13 +587,9 @@ class Id:
         def from_string(string: Str) -> Id.Field:
             return Id.Field(string.span, name=string.value)
 
-        def __post_init__(self):
-            super().__post_init__()
-            self.binding: FieldBinding | None = None
-
         Tree.register(from_cst, "field_id")
 
-    @D.dataclass
+    @D.dataclass(slots=True)
     class FieldRef(Tree):
         name: str
 
@@ -577,7 +600,7 @@ class Id:
 
         Tree.register(from_cst, "field_ref_id")
 
-    @D.dataclass
+    @D.dataclass(slots=True)
     class ParamRef(Tree):
         name: str
 
@@ -589,7 +612,7 @@ class Id:
         Tree.register(from_cst, "param_ref_id")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Array(Expr):
     values: list[Expr]
 
@@ -647,7 +670,7 @@ class BinaryOp(StrEnum):
         return Binary(lhs.span.merge(rhs.span), self, lhs, rhs)
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Unary(Expr):
     op: UnaryOp
     operand: Expr
@@ -671,7 +694,7 @@ class Unary(Expr):
     Tree.register(from_cst, "unary")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Binary(Expr):
     op: BinaryOp
     lhs: Expr
@@ -707,14 +730,14 @@ class ImportKind(StrEnum):
     Bin = "importbin"
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Importee(Str):
     @staticmethod
     def from_string(string: Str) -> Importee:
         return Importee(string.span, string.value)
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Import(Expr):
     kind: ImportKind
     importee: Importee
@@ -737,7 +760,7 @@ class Import(Expr):
     Tree.register(from_cst, "import")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Assert(Tree):
     condition: Expr
     message: Expr | None = None
@@ -768,7 +791,7 @@ class Assert(Tree):
     Tree.register(from_cst, "assert")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class AssertedExpr(Expr):
     assertion: Assert
     body: Expr
@@ -792,7 +815,7 @@ class AssertedExpr(Expr):
     Tree.register(from_cst, "asserted_expr")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Param(Tree):
     id: Id.Var
     default: Expr | None = None
@@ -826,7 +849,7 @@ class Params:
         return [Param.from_cst(n) for n in skip_comments(node.named_children)]
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Fn(Expr):
     params: list[Param]
     body: Expr
@@ -851,7 +874,7 @@ class Fn(Expr):
     Tree.register(from_cst, "function")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Bind(Tree):
     id: Id.Var
     value: Expr
@@ -898,7 +921,7 @@ class Bind(Tree):
     Tree.register(from_cst, "binding")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Local(Expr):
     binds: list[Bind]
     body: Expr
@@ -922,7 +945,7 @@ class Local(Expr):
     Tree.register(from_cst, "local")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class If(Expr):
     condition: Expr
     consequence: Expr
@@ -956,7 +979,7 @@ class If(Expr):
     Tree.register(from_cst, "conditional")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Arg(Tree):
     value: Expr
     id: Id.ParamRef | None = None
@@ -990,7 +1013,7 @@ class Arg(Tree):
     Tree.register(from_cst, "argument")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Call(Expr):
     fn: Expr
     args: list[Arg]
@@ -1014,7 +1037,7 @@ class Call(Expr):
     Tree.register(from_cst, "call")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class FieldAccess(Expr):
     target: Expr
     field: Id.FieldRef
@@ -1038,7 +1061,7 @@ class FieldAccess(Expr):
     Tree.register(from_cst, "field_access")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Slice(Tree):
     start: Expr | None = None
     end: Expr | None = None
@@ -1070,7 +1093,7 @@ class Slice(Tree):
     Tree.register(from_cst, "slice")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Index(Expr):
     target: Expr
     index: Expr | Slice
@@ -1098,7 +1121,7 @@ class Index(Expr):
     Tree.register(from_cst, "index")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class ForSpec(Tree):
     id: Id.Var
     source: Expr
@@ -1122,7 +1145,7 @@ class ForSpec(Tree):
     Tree.register(from_cst, "for_spec")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class IfSpec(Tree):
     condition: Expr
 
@@ -1143,7 +1166,7 @@ class IfSpec(Tree):
 CompSpec = ForSpec | IfSpec
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class ArrayComp(Expr):
     expr: Expr
     for_spec: ForSpec
@@ -1181,7 +1204,7 @@ class Visibility(StrEnum):
     Forced = ":::"
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class StaticKey(Tree):
     id: Id.Field
 
@@ -1206,7 +1229,7 @@ class StaticKey(Tree):
     Tree.register(from_cst, "static_key")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class ComputedKey(Tree):
     expr: Expr
 
@@ -1227,7 +1250,7 @@ class ComputedKey(Tree):
 FieldKey = StaticKey | ComputedKey
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Field(Tree):
     key: FieldKey
     value: Expr
@@ -1278,21 +1301,24 @@ class Field(Tree):
     Tree.register(from_cst, "field")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Object(Expr):
     binds: list[Bind] = D.field(default_factory=list)
     asserts: list[Assert] = D.field(default_factory=list)
     fields: list[Field] = D.field(default_factory=list)
+
+    field_scope: FieldScope | None = D.field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     member_parsers: ClassVar[dict[str, FromCST]] = {
         "assert": Assert.from_cst,
         "field": Field.from_cst,
         "object_local": Bind.from_cst,
     }
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.field_scope: FieldScope | None = None
 
     @property
     @override
@@ -1324,7 +1350,7 @@ class Object(Expr):
     Tree.register(from_cst, "object")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class ObjComp(Expr):
     field: Field
     for_spec: ForSpec
@@ -1388,7 +1414,7 @@ class ObjComp(Expr):
     Tree.register(from_cst, "object_comp")
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class Error(Expr):
     expr: Expr
 
@@ -1442,7 +1468,7 @@ class PrettyTree(Pretty):
                 return [
                     PrettyTree(node=field_value, label=field.name)
                     for field, field_value in self.non_empty_fields(self.node)
-                    if field.name != "span"
+                    if field.name != "span" and field.repr
                 ]
             case list() as array if (size := len(array)) > 0:
                 return [PrettyTree(node=array[i], label=f"[{i}]") for i in range(size)]
@@ -1453,14 +1479,14 @@ class PrettyTree(Pretty):
         return super().__repr__()
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class VarBinding:
     scope: VarScope
     id: Id.Var
     target: Tree
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class VarScope:
     owner: Tree
     bindings: list[VarBinding] = D.field(default_factory=list)
@@ -1487,14 +1513,14 @@ class VarScope:
         return VarScope(owner)
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class FieldBinding:
     scope: FieldScope
     id: Id.Field
     target: Expr
 
 
-@D.dataclass
+@D.dataclass(slots=True)
 class FieldScope:
     owner: Object
     bindings: list[FieldBinding] = D.field(default_factory=list)
