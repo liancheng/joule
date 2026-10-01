@@ -120,6 +120,25 @@ Workspace folders may hold over 100k Jsonnet files in deep and wide directory tr
 
 Once a folder's import graph is ready, go-to-definition and find references can start from the relevant documents and follow the import graph, building only the ASTs they need.
 
+#### Design decision: eager vs. on-demand ASTs
+
+1. Build full ASTs, with scopes resolved, for every file while loading the workspace.
+   - **Pros:**
+     - Every semantic request can be answered without building ASTs first.
+     - Workspace-wide features, such as fuzzy workspace symbol search, have all the information they need.
+   - **Cons:**
+     - Adds AST construction and scope resolution for every file to loading, which works against the [TTII targets](#scalability).
+     - Keeps an AST for every file in memory.
+2. Build only CSTs and the import graph while loading, and build ASTs on demand.
+   - **Pros:**
+     - Loading does only cheap, parallelizable work: discovery, CST parsing, and extracting `import` nodes.
+     - Memory stays bounded by the [AST cache](#ast-cache).
+   - **Cons:**
+     - The first request touching a document pays for building its AST.
+     - Workspace-wide features need another way to get their information (see [Open questions](#open-questions)).
+
+Jwith High/Medium CI Impact oule takes option 2. Building ASTs for tens to hundreds of documents per request is cheap enough, while building all of them up front is not.
+
 ## Document analysis
 
 ### Parsing
@@ -132,7 +151,7 @@ A file's full AST, with scopes resolved, is built only when an LSP method needin
 
 #### AST cache
 
-The cache holds one entry per document URI. Each entry records a revision token for the content it was built from. A lookup hits only if the stored token matches the document's current token; otherwise the AST is rebuilt and the entry replaced. Keeping the token out of the key avoids piling up stale versions of the same document in the LRU.
+The cache holds one entry per document URI. Each entry records a revision token for the content it was built from. A lookup hits only if the stored token matches the document's current token; otherwise the AST is rebuilt and the entry replaced. See [where the revision token lives](#design-decision-where-the-revision-token-lives).
 
 The token comes from whoever owns the document's content:
 
@@ -145,7 +164,42 @@ The token comes from whoever owns the document's content:
 - **Closed documents.** mtime alone is not enough: some filesystems have coarse timestamps, and tools like `cp -p`, `rsync -t` and `tar` preserve mtime. Adding `size` and `inode` covers most of these cases, similar to the stat data git keeps in its index. A file written within the same timestamp tick as the cache fill (git's "racy git" problem) falls back to a content hash.
 - **Invalidation.** Entries are also dropped on `workspace/didChangeWatchedFiles`, so most lookups don't need a `stat`.
 
-A content hash for every document would be simpler and always correct. It is cheap for open documents, whose text is in memory, but for closed files every cache hit would read the whole file just to hash it. `stat` avoids that I/O, which matters for workspace-wide queries touching thousands of files.
+##### Design decision: where the revision token lives
+
+1. Include the revision token in the cache key, `(URI, token)`.
+   - **Pros:**
+     - A plain dictionary lookup; no separate validity check.
+   - **Cons:**
+     - Stale versions of the same document pile up in the LRU until they are evicted, crowding out live entries.
+2. Key by URI only, and store the token in the entry.
+   - **Pros:**
+     - At most one entry per document, so the LRU's capacity goes to live documents.
+   - **Cons:**
+     - Each lookup also compares the stored token with the current one.
+
+Joule takes option 2.
+
+##### Design decision: revision tokens for closed documents
+
+1. mtime only.
+   - **Pros:**
+     - Cheapest: one `stat` field.
+   - **Cons:**
+     - Misses changes on filesystems with coarse timestamps, and changes made by tools that preserve mtime (`cp -p`, `rsync -t`, `tar`).
+2. `stat` data: `(mtime_ns, size, inode)`, with a content-hash fallback for racy writes.
+   - **Pros:**
+     - Catches most of the cases mtime alone misses, at the cost of one `stat` per lookup.
+     - A cache hit never reads the file.
+   - **Cons:**
+     - More complex: needs the racy-write fallback to be fully correct.
+3. Content hash of every document.
+   - **Pros:**
+     - Simplest and always correct.
+     - Cheap for open documents, whose text is already in memory.
+   - **Cons:**
+     - For closed files, every cache hit reads the whole file just to hash it. This adds up for workspace-wide queries touching thousands of files.
+
+Joule takes option 2.
 
 Cache keys must be normalized the same way as import graph paths (lexically, without following symlinks, with consistent percent-encoding). Otherwise one file gets two entries, and lookups from the import graph miss the cache.
 
@@ -197,14 +251,19 @@ Jsonnet variables are always document-local: the `Id.Var` defining any `Id.VarRe
 There are at least two options for where to store resolution results:
 
 1. Like `ty`, store them in separate lookup tables keyed by hashes or stable IDs of AST nodes.
-   - Cleaner, and keeps AST nodes immutable, which suits languages that encourage immutability.
-   - Incremental computation libraries like Salsa help minimize recomputing the tables when a source file changes.
-   - Scales better as more kinds of information are collected in the future.
-   - More complicated to implement.
+   - **Pros:**
+     - Cleaner, and keeps AST nodes immutable, which suits languages that encourage immutability.
+     - Incremental computation libraries like Salsa help minimize recomputing the tables when a source file changes.
+     - Scales better as more kinds of information are collected in the future.
+   - **Cons:**
+     - More complicated to implement.
 2. Store them directly in the AST nodes.
-   - Easier to implement.
-   - Requires mutable AST nodes.
-   - Harder to track as the amount of information grows.
+   - **Pros:**
+     - Easier to implement.
+   - **Cons:**
+     - Requires mutable AST nodes.
+     - Harder to track as the amount of information grows.
+     - Prevents AST classes from being frozen `dataclass`es with an auto-generated hash method.
 
 Joule takes option 2. Jsonnet is a simple language: there isn't much information to collect or store, and recomputation is cheap enough that Joule can afford a full recomputation per file on every change. Python also has no mature Salsa equivalent, so option 1 would mean building the incremental machinery from scratch.
 
