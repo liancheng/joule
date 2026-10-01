@@ -159,7 +159,7 @@ def _extract_imports(path: Path, jpaths: tuple[Path, ...]) -> tuple[Path, list[P
     for node in captures.get("import", []):
         try:
             imp = Import.from_cst(node)
-        except (MalformedError, ValueError):
+        except MalformedError, ValueError:
             # A malformed import (e.g. within a file with syntax errors); skip it.
             continue
 
@@ -253,9 +253,7 @@ def imports(
     imported_by: dict[Path, set[Path]] = defaultdict(set)
 
     worker = functools.partial(_extract_imports, jpaths=jpaths)
-    for src, targets in run(
-        files, worker, jobs=jobs, description="Extracting imports"
-    ):
+    for src, targets in run(files, worker, jobs=jobs, description="Extracting imports"):
         imports_map[src] = targets
         for target in targets:
             imported_by[target].add(src)

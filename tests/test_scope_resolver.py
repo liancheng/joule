@@ -27,11 +27,13 @@ class TestScopeResolver(FakeDocumentTestCase):
         self.assertEqual(binding.target, field.value)
 
     def assertVarRef(self, var: T.Id.Var, *refs: T.Id.VarRef):
+        expected_refs = just(var.references)
+
         for ref in refs:
             self.assertEqual(ref.var, var)
-            self.assertIn(ref, var.references)
+            self.assertIn(ref, expected_refs)
 
-        self.assertEqual(len(var.references), len(refs))
+        self.assertEqual(len(expected_refs), len(refs))
 
     def test_local(self):
         t = self.fake_document(
