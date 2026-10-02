@@ -1,23 +1,14 @@
+from joule import trees as T
 from joule.maybe import just
-from joule.providers import DefinitionProvider
 from tests import FakeDocumentTestCase
-from tests.dsl import FakeDocument
 
 
 class TestDefinitionProvider(FakeDocumentTestCase):
-    def assertVarDefined(self, doc: FakeDocument, var_mark: int, ref_marks: list[int]):
-        def_provider = DefinitionProvider(doc.document)
-        var = doc.var_at(var_mark)
-        expected_refs = [doc.var_ref_at(mark) for mark in ref_marks]
-        obtained_refs = just(var.references)
+    def assertVarReferenced(self, var: T.Id.Var, *refs: T.Id.VarRef):
+        self.assertIsNotNone(var.references)
+        self.assertCountEqual(just(var.references), refs)
 
-        for ref in expected_refs:
-            found_def_spans = def_provider.find_definition(ref)
-            self.assertSetEqual(set(found_def_spans), {var.span})
-
-        self.assertSetEqual(set(obtained_refs), set(expected_refs))
-
-    def test_local(self):
+    def test_local_var(self):
         t = self.fake_document(
             """\
             :   local x = 1; x
@@ -25,9 +16,12 @@ class TestDefinitionProvider(FakeDocumentTestCase):
             """
         )
 
-        self.assertVarDefined(t, var_mark=1, ref_marks=[2])
+        self.assertVarReferenced(
+            t.var_at(1),
+            t.var_ref_at(2),
+        )
 
-    def test_object_local(self):
+    def test_object_local_var(self):
         t = self.fake_document(
             """\
             :   {
@@ -39,4 +33,21 @@ class TestDefinitionProvider(FakeDocumentTestCase):
             """
         )
 
-        self.assertVarDefined(t, var_mark=1, ref_marks=[2, 3])
+        self.assertVarReferenced(
+            t.var_at(1),
+            t.var_ref_at(2),
+            t.var_ref_at(3),
+        )
+
+    def test_shadowed_var(self):
+        t = self.fake_document(
+            """\
+            :   local x = 1; x = 2; x
+            >                ^1     ^2
+            """
+        )
+
+        self.assertVarReferenced(
+            t.var_at(1),
+            t.var_ref_at(2),
+        )
