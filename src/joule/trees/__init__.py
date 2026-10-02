@@ -1,4 +1,5 @@
 import dataclasses as D
+import typing
 from collections.abc import Callable, Iterable
 from enum import Enum, StrEnum
 from typing import Any, ClassVar, TypeVar, override
@@ -72,16 +73,29 @@ class Point:
     line: int
     column: int
 
+    # When stored in a `Span`, a `Point` is packed into one int, `line << 32 | column`.
+    #
+    # NOTE:
+    # - 32 bits is the width tree-sitter gives a column, so every position it fits.
+    # - Packing preserves `Point` ordering as plain int ordering, so `merge` and
+    #   `contains` in `Span` can compare the packed ints without building a `Point`.
+    COLUMN_BITS: ClassVar[int] = 32
+    COLUMN_MASK: ClassVar[int] = (1 << COLUMN_BITS) - 1
+
+    @staticmethod
+    def pack(line: int, column: int) -> int:
+        return line << Point.COLUMN_BITS | column
+
+    @staticmethod
+    def unpack(packed: int) -> Point:
+        return Point(packed >> Point.COLUMN_BITS, packed & Point.COLUMN_MASK)
+
+    @property
+    def packed(self) -> int:
+        return Point.pack(self.line, self.column)
+
     def __repr__(self) -> str:
         return f"{self.line}:{self.column}"
-
-
-# A span packs each endpoint into one int, `line << 32 | column`, instead of holding
-# two `Point`s. Packing preserves `Point` ordering as plain int ordering, so
-# `contains` and `merge` compare ints and never build a `Point`. 32 bits is the
-# width tree-sitter gives a column, so every position it reports fits.
-COLUMN_BITS = 32
-COLUMN_MASK = (1 << COLUMN_BITS) - 1
 
 
 class Span:
@@ -90,36 +104,25 @@ class Span:
     packed_start: int
     packed_end: int
 
-    def __init__(self, start: Point, end: Point):
-        self.packed_start = Span.pack(start.line, start.column)
-        self.packed_end = Span.pack(end.line, end.column)
-
-    @staticmethod
-    def pack(line: int, column: int) -> int:
-        return line << COLUMN_BITS | column
-
-    @staticmethod
-    def unpack(packed: int) -> Point:
-        return Point(packed >> COLUMN_BITS, packed & COLUMN_MASK)
+    def __init__(self, packed_start: int, packed_end: int):
+        self.packed_start = packed_start
+        self.packed_end = packed_end
 
     @classmethod
-    def packed(cls, start: int, end: int) -> Span:
-        span = object.__new__(cls)
-        span.packed_start = start
-        span.packed_end = end
-        return span
+    def from_points(cls, start: Point, end: Point) -> typing.Self:
+        return cls(start.packed, end.packed)
 
     def __reduce__(self):
         # The default reduction would restore the slots through `__setattr__`.
-        return type(self).packed, (self.packed_start, self.packed_end)
+        return type(self), (self.packed_start, self.packed_end)
 
     @property
     def start(self) -> Point:
-        return Span.unpack(self.packed_start)
+        return Point.unpack(self.packed_start)
 
     @property
     def end(self) -> Point:
-        return Span.unpack(self.packed_end)
+        return Point.unpack(self.packed_end)
 
     def __eq__(self, other) -> bool:
         return (
@@ -136,7 +139,7 @@ class Span:
 
     def contains(self, other: Point | Span) -> bool:
         if isinstance(other, Point):
-            other = Span(other, other)
+            other = Span.from_points(other, other)
 
         return (
             self.packed_start <= other.packed_start
@@ -144,7 +147,7 @@ class Span:
         )
 
     def merge(self, other: Span) -> Span:
-        return Span.packed(
+        return Span(
             min(self.packed_start, other.packed_start),
             max(self.packed_end, other.packed_end),
         )
@@ -152,9 +155,9 @@ class Span:
 
 def span_of(node: ts.Node) -> Span:
     start, end = node.start_point, node.end_point
-    return Span.packed(
-        Span.pack(start.row, start.column),
-        Span.pack(end.row, end.column),
+    return Span(
+        Point.pack(start.row, start.column),
+        Point.pack(end.row, end.column),
     )
 
 
@@ -272,7 +275,7 @@ class Tree:
 
     def node_at(self, target: Point | Span) -> Tree | None:
         if isinstance(target, Point):
-            target = Span(target, target)
+            target = Span.from_points(target, target)
 
         candidate = head_or_none(
             node

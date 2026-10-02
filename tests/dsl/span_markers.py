@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 import parsy as P
 
-from joule.trees import Span
+from joule.trees import Point, Span
 
 __all__ = ["parse"]
 
@@ -41,9 +41,9 @@ def parse(source: str) -> tuple[str, dict[int, Span]]:
         elif line.startswith(MARK_LEADER):
             span_marks: list[SpanMark] = SPAN_MARKS.parse(line[len(MARK_LEADER) :])
             spans |= {
-                mark_id: Span.packed(
-                    Span.pack(line_no, mark.start),
-                    Span.pack(line_no, mark.start + mark.length),
+                mark_id: Span(
+                    Point.pack(line_no, mark.start),
+                    Point.pack(line_no, mark.start + mark.length),
                 )
                 for mark in span_marks
                 for mark_id in mark.ids
