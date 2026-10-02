@@ -1,6 +1,5 @@
 import bisect
 import functools
-from collections.abc import Callable
 from functools import cached_property
 from itertools import accumulate, chain
 from textwrap import dedent
@@ -18,18 +17,21 @@ class SpanDSL(T.Span):
     def __repr__(self) -> str:
         return super().__repr__()
 
-    @staticmethod
-    def atom(fn: Callable[[T.Span], T.TreeType]) -> T.TreeType:
-        @property
-        def apply(self) -> T.TreeType:
-            return fn(self)
+    @property
+    def dolloar(self) -> T.Dollar:
+        return T.Dollar(self)
 
-        return apply
+    @property
+    def null(self) -> T.Null:
+        return T.Null(self)
 
-    dollar = atom(T.Dollar)
-    null = atom(T.Null)
-    self = atom(T.Self)
-    super = atom(T.Super)
+    @property
+    def self_(self) -> T.Self:
+        return T.Self(self)
+
+    @property
+    def super_(self) -> T.Super:
+        return T.Super(self)
 
     @property
     def true(self) -> T.Bool:
@@ -135,7 +137,7 @@ class FakeDocument(LineMap):
 
     @cached_property
     def span(self) -> SpanDSL:
-        return SpanDSL(
+        return SpanDSL.from_points(
             self.point_of(0),
             self.point_of(len(self.text)),
         )
@@ -146,7 +148,7 @@ class FakeDocument(LineMap):
             (self.spans[mark] for mark in marks),
         )
 
-        return SpanDSL(merged_span.start, merged_span.end)
+        return SpanDSL(merged_span.packed_start, merged_span.packed_end)
 
     def node_at(self, *marks: int) -> T.Tree:
         return just(self.body.node_at(self.at(*marks)))

@@ -1,7 +1,7 @@
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
-from joule.providers.language_service import DocumentService
+from joule.providers import DocumentService
 
 
 class JouleLanguageServer(LanguageServer):
