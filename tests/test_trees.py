@@ -5,7 +5,7 @@ from tests import FakeDocumentTestCase
 from tests.dsl import arg, bind, field, param
 
 
-class TestParser(FakeDocumentTestCase):
+class TestTrees(FakeDocumentTestCase):
     def assertStrEqual(self, source: str, expected: str):
         t = self.fake_document(source, marked=False)
         self.assertEqual(t.body, t.span.string(expected))
@@ -974,3 +974,13 @@ class TestParser(FakeDocumentTestCase):
                 ],
             ),
         )
+
+    def test_all_exports_every_tree(self):
+        def subclasses(cls: type) -> list[type]:
+            return [cls, *(c for sub in cls.__subclasses__() for c in subclasses(sub))]
+
+        for cls in subclasses(T.Tree):
+            # Nested classes such as `Id.Var` are exported through their enclosing class.
+            if getattr(T, cls.__name__, None) is cls:
+                with self.subTest(cls.__name__):
+                    self.assertIn(cls.__name__, T.__all__)
