@@ -1,9 +1,11 @@
 import dataclasses as D
+import functools
 import typing
 from collections.abc import Callable, Iterable
 from enum import Enum, StrEnum
 from typing import Any, ClassVar, TypeVar, override
 
+import lsprotocol.types as L
 import tree_sitter as ts
 import tree_sitter_jsonnet
 
@@ -65,6 +67,7 @@ __all__ = [
     "VarBinding",
     "VarScope",
     "Visibility",
+    "parser",
 ]
 
 
@@ -93,6 +96,10 @@ class Point:
     @property
     def packed(self) -> int:
         return Point.pack(self.line, self.column)
+
+    @property
+    def as_position(self) -> L.Position:
+        return L.Position(self.line, self.column)
 
     def __repr__(self) -> str:
         return f"{self.line}:{self.column}"
@@ -152,6 +159,13 @@ class Span:
             max(self.packed_end, other.packed_end),
         )
 
+    @property
+    def as_range(self) -> L.Range:
+        return L.Range(
+            self.start.as_position,
+            self.end.as_position,
+        )
+
 
 def span_of(node: ts.Node) -> Span:
     start, end = node.start_point, node.end_point
@@ -204,6 +218,11 @@ def skip_comments(nodes: Iterable[ts.Node]) -> Iterable[ts.Node]:
     return (node for node in nodes if node.type != "comment")
 
 
+@functools.cache
+def parser() -> ts.Parser:
+    return ts.Parser(ts.Language(tree_sitter_jsonnet.language()))
+
+
 @D.dataclass(slots=True)
 class Tree:
     span: Span
@@ -227,8 +246,7 @@ class Tree:
 
     @staticmethod
     def from_source(source: str) -> Tree:
-        ts_parser = ts.Parser(ts.Language(tree_sitter_jsonnet.language()))
-        root = ts_parser.parse(source.encode()).root_node
+        root = parser().parse(source.encode()).root_node
         return Tree.from_cst(root)
 
     @staticmethod
@@ -358,7 +376,7 @@ class Document(Tree):
         yield self.body
 
     @staticmethod
-    def from_cst(node: ts.Node) -> Tree:
+    def from_cst(node: ts.Node) -> Document:
         expect_node_type(node, "document")
         body, *_ = skip_comments(node.children)
         return Document(span_of(node), Expr.from_cst(body))

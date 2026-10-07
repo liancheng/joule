@@ -63,8 +63,8 @@ class Visitor:
         for a in t.args:
             self.visit_arg(a)
 
-    def visit_computed_key(self, obj: T.Object, f: T.Field, k: T.ComputedKey):
-        del obj, f
+    def visit_computed_key(self, f: T.Field, k: T.ComputedKey):
+        del f
         self.visit_expr(k.expr)
 
     def visit_comp_spec(self, t: list[T.CompSpec], next: Callable[[], None]):
@@ -207,7 +207,7 @@ class Visitor:
 
     def visit_obj_comp(self, t: T.ObjComp):
         def next():
-            self.visit_computed_key(t, t.field, t.field.key.to(T.ComputedKey))
+            self.visit_computed_key(t.field, t.field.key.to(T.ComputedKey))
             for b in t.binds:
                 self.visit_bind(b)
             self.visit(t.field.value)
@@ -229,7 +229,7 @@ class Visitor:
                 case T.StaticKey():
                     self.visit_static_key(t, f, f.key)
                 case _:
-                    self.visit_computed_key(t, f, f.key)
+                    self.visit_computed_key(f, f.key)
 
         for b in t.binds:
             self.visit_bind(b)
