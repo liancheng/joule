@@ -72,7 +72,7 @@ class ScopeResolver(Visitor):
     @override
     def visit_obj_comp(self, t: T.ObjComp):
         def next():
-            self.visit_computed_key(t, t.field, t.field.key.to(T.ComputedKey))
+            self.visit_computed_key(t.field, t.field.key.to(T.ComputedKey))
 
             with self.activate(self.var_scope.nest(owner=t)):
                 for b in t.binds:

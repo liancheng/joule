@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Self
 
 import tree_sitter as ts
-import tree_sitter_jsonnet
 
 from joule import trees as T
 from joule.maybe import head_or_none, maybe
@@ -17,14 +16,10 @@ __all__ = ["ImportGraph"]
 
 
 @functools.cache
-def import_parser() -> tuple[ts.Parser, ts.QueryCursor]:
-    # Initializing the tree-sitter parser and compiling the query once per worker
-    # process used for building the import graph.
-    lang = ts.Language(tree_sitter_jsonnet.language())
-    return (
-        ts.Parser(lang),
-        ts.QueryCursor(ts.Query(lang, "(import) @import")),
-    )
+def import_cursor() -> ts.QueryCursor:
+    # Compiling the query once per worker process (it costs ~66 µs each time).
+    query = ts.Query(T.parser().language, "(import) @import")
+    return ts.QueryCursor(query)
 
 
 def collect_importees(path: Path) -> tuple[list[str], bool]:
@@ -33,8 +28,7 @@ def collect_importees(path: Path) -> tuple[list[str], bool]:
     except OSError:
         return [], True
 
-    parser, cursor = import_parser()
-    root_node = parser.parse(source).root_node
+    root_node = T.parser().parse(source).root_node
 
     def get_import_or_none(node: ts.Node) -> T.Import | None:
         try:
@@ -44,7 +38,7 @@ def collect_importees(path: Path) -> tuple[list[str], bool]:
 
     imports = [
         import_.importee.value
-        for node in cursor.captures(root_node).get("import", [])
+        for node in import_cursor().captures(root_node).get("import", [])
         for import_ in maybe(get_import_or_none(node))
         if import_.kind == T.ImportKind.Default
     ]

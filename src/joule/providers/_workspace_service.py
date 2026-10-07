@@ -1,9 +1,11 @@
+import asyncio as A
 import shutil
 import subprocess
 from pathlib import Path
 
 from lsprotocol import types as L
 
+from joule import trees as T
 from joule.imports import ImportGraph
 
 
@@ -14,6 +16,25 @@ class WorkspaceService:
     def __init__(self, folder: L.WorkspaceFolder):
         self.folder: L.WorkspaceFolder = folder
         self.import_graph = None
+
+    def document_for(self, doc_uri: str) -> T.Document | None:
+        try:
+            source = Path.from_uri(doc_uri).read_bytes()
+            return T.Document.from_cst(T.parser().parse(source).root_node)
+        except OSError:
+            return None
+
+    async def start(self) -> None:
+        # TODO: Wire `extensions` and `ignore` through LSP configuration.
+        exts = ["jsonnet", "libsonnet", "jsonnet.TEMPLATE"]
+        docs = await A.to_thread(self.discover_docs, exts, [])
+        root = Path.from_uri(self.folder.uri).absolute()
+        graph = ImportGraph(root, [root], docs)
+        self.import_graph = await A.to_thread(graph.build)
+
+    @property
+    def ready(self) -> bool:
+        return self.import_graph is not None
 
     def discover_docs(self, extensions: list[str], ignore: list[str]) -> list[Path]:
         fd = shutil.which("fd") or shutil.which("fdfind")
