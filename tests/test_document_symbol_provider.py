@@ -4,7 +4,7 @@ import lsprotocol.types as L
 from lsprotocol.types import SymbolKind as K
 
 from joule import trees as T
-from joule.providers import DocumentSymbolProvider
+from joule.features.document_symbol import DocumentSymbolProvider
 from tests import FakeDocumentTestCase
 from tests.dsl import FakeDocument
 
