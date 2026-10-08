@@ -6,6 +6,7 @@ from joule.config import Config
 from joule.features import (
     DefinitionProvider,
     DocumentSymbolProvider,
+    FoldingRangeProvider,
     ReferencesProvider,
 )
 from joule.maybe import head_or_none, maybe
@@ -86,4 +87,14 @@ async def references(_: LanguageServer, params: L.ReferenceParams):
         location
         for doc in maybe(resolve_document(uri))
         for location in ReferencesProvider(uri, doc).serve(params.position)
+    ]
+
+
+@server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
+async def folding_range(_: LanguageServer, params: L.FoldingRangeParams):
+    uri = params.text_document.uri
+    return [
+        location
+        for doc in maybe(resolve_document(uri))
+        for location in FoldingRangeProvider().serve(doc)
     ]
