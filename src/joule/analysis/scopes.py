@@ -6,11 +6,18 @@ from joule.maybe import maybe
 from joule.syntax import trees as T
 from joule.syntax.visitor import Visitor
 
+__all__ = ["resolve"]
+
+
+def resolve(doc: T.Document) -> T.Document:
+    ScopeResolver(doc).resolve()
+    return doc
+
 
 class ScopeResolver(Visitor):
     def __init__(self, doc: T.Document):
         self.doc = doc
-        self.var_scope = T.VarScope(doc)
+        self.var_scope = T.VarScope.empty(doc)
 
     def resolve(self):
         self.visit(self.doc)
