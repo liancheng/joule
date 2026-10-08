@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 import parsy as P
 
-from joule.trees import Point, Span
+from joule.syntax.trees import Point, Span
 
 __all__ = ["parse"]
 

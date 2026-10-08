@@ -1,6 +1,6 @@
-from joule import trees as T
 from joule.maybe import just
-from joule.trees import BinaryOp as B
+from joule.syntax import trees as T
+from joule.syntax.trees import BinaryOp as B
 from tests import FakeDocumentTestCase
 
 

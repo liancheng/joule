@@ -2,8 +2,8 @@ from collections.abc import Iterable
 
 import lsprotocol.types as L
 
-from joule import trees as T
 from joule.maybe import maybe
+from joule.syntax import trees as T
 
 
 class DefinitionProvider:

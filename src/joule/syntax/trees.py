@@ -11,7 +11,7 @@ import tree_sitter as ts
 import tree_sitter_jsonnet
 
 from joule.maybe import head_or_none, maybe
-from joule.trees.pretty import Pretty
+from joule.syntax.pretty import Pretty
 
 __all__ = [
     "Arg",

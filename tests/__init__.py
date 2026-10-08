@@ -3,7 +3,7 @@ from typing import override
 
 import ocdiff
 
-from joule.trees import Tree
+from joule.syntax.trees import Tree
 from tests.dsl import FakeDocument
 
 

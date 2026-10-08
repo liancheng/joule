@@ -67,7 +67,7 @@ Joule works at two levels:
 - **Workspace level**: each LSP workspace folder maps to one `FolderIndex`, which discovers the folder's Jsonnet files and builds its import graph. See [Workspace loading](#workspace-loading).
 - **Document level**: a document's full AST, with scopes resolved, is built on demand. See [Document analysis](#document-analysis).
 
-TODO: Component diagram and module layout (`joule.cli`, `joule.server`, `joule.features`, `joule.workspace`, `joule.analysis`, `joule.trees`).
+TODO: Component diagram and module layout (`joule.cli`, `joule.server`, `joule.features`, `joule.workspace`, `joule.analysis`, `joule.syntax`).
 
 ## Workspace loading
 
@@ -143,7 +143,7 @@ Jwith High/Medium CI Impact oule takes option 2. Building ASTs for tens to hundr
 
 ### Parsing
 
-Joule parses Jsonnet source with tree-sitter into a concrete syntax tree (CST), then constructs an abstract syntax tree (AST) from it. The AST is represented by the `joule.trees.Tree` class hierarchy.
+Joule parses Jsonnet source with tree-sitter into a concrete syntax tree (CST), then constructs an abstract syntax tree (AST) from it. The AST is represented by the `joule.syntax.trees.Tree` class hierarchy.
 
 ### On-demand ASTs
 

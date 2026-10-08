@@ -1,6 +1,6 @@
-import joule.trees as T
-from joule.trees import BinaryOp as B
-from joule.trees import UnaryOp as U
+from joule.syntax import trees as T
+from joule.syntax.trees import BinaryOp as B
+from joule.syntax.trees import UnaryOp as U
 from tests import FakeDocumentTestCase
 from tests.dsl import arg, bind, field, param
 

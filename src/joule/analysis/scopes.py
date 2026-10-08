@@ -2,9 +2,9 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from typing import override
 
-from joule import trees as T
 from joule.maybe import maybe
-from joule.trees.visitor import Visitor
+from joule.syntax import trees as T
+from joule.syntax.visitor import Visitor
 
 
 class ScopeResolver(Visitor):

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from joule import trees as T
+from joule.syntax import trees as T
 
 
 class Visitor:

@@ -9,8 +9,8 @@ from typing import Self
 
 import tree_sitter as ts
 
-from joule import trees as T
 from joule.maybe import head_or_none, maybe
+from joule.syntax import trees as T
 
 __all__ = ["ImportGraph"]
 
