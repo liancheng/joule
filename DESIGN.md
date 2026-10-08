@@ -64,16 +64,16 @@ See [Cross-document analysis](#cross-document-analysis) for how Joule approaches
 
 Joule works at two levels:
 
-- **Workspace level**: each LSP workspace folder maps to one `LanguageService`, which discovers the folder's Jsonnet files and builds its import graph. See [Workspace loading](#workspace-loading).
+- **Workspace level**: each LSP workspace folder maps to one `FolderIndex`, which discovers the folder's Jsonnet files and builds its import graph. See [Workspace loading](#workspace-loading).
 - **Document level**: a document's full AST, with scopes resolved, is built on demand. See [Document analysis](#document-analysis).
 
-TODO: Component diagram and module layout (`joule.server`, `joule.providers`, `joule.trees`).
+TODO: Component diagram and module layout (`joule.cli`, `joule.server`, `joule.features`, `joule.workspace`, `joule.analysis`, `joule.trees`).
 
 ## Workspace loading
 
-### `LanguageService` and the import graph
+### `FolderIndex` and the import graph
 
-Each LSP workspace folder maps to one `LanguageService`. A `LanguageService` discovers all Jsonnet source files under its folder and builds the folder's import graph as two dictionaries:
+Each LSP workspace folder maps to one `FolderIndex`. A `FolderIndex` discovers all Jsonnet source files under its folder and builds the folder's import graph as two dictionaries:
 
 - **imports**: for each source file, the files it directly imports.
 - **imported-by**: for each source file, the files that directly import it.
