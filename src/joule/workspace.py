@@ -6,20 +6,25 @@ from pathlib import Path
 from lsprotocol import types as L
 
 from joule.analysis.imports import ImportGraph
+from joule.config import Config
 
 
 class FolderIndex:
     folder: L.WorkspaceFolder
+    config: Config
     import_graph: ImportGraph | None
 
-    def __init__(self, folder: L.WorkspaceFolder):
+    def __init__(self, folder: L.WorkspaceFolder, config: Config):
         self.folder: L.WorkspaceFolder = folder
+        self.config = config
         self.import_graph = None
 
     async def start(self) -> None:
-        # TODO: Wire `extensions` and `ignore` through LSP configuration.
-        exts = ["jsonnet", "libsonnet", "jsonnet.TEMPLATE"]
-        docs = await A.to_thread(self.discover_docs, exts, [])
+        docs = await A.to_thread(
+            self.discover_docs,
+            self.config.extensions,
+            self.config.jpaths,
+        )
         root = Path.from_uri(self.folder.uri).absolute()
         graph = ImportGraph(root, [root], docs)
         self.import_graph = await A.to_thread(graph.build)

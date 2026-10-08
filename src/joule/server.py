@@ -51,15 +51,16 @@ def resolve_document(uri: str) -> T.Document | None:
 
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
+    config = await load_config(ls)
     folders: dict[str, L.WorkspaceFolder] = ls.workspace.folders
-    ls.indexes = {uri: FolderIndex(folder) for uri, folder in folders.items()}
+    ls.indexes = {uri: FolderIndex(folder, config) for uri, folder in folders.items()}
 
     for index in ls.indexes.values():
         await index.start()
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
-async def document_symbol(_: JouleLanguageServer, params: L.DocumentSymbolParams):
+async def document_symbol(_: LanguageServer, params: L.DocumentSymbolParams):
     uri = params.text_document.uri
     return [
         symbol
@@ -69,7 +70,7 @@ async def document_symbol(_: JouleLanguageServer, params: L.DocumentSymbolParams
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
-async def definition(_: JouleLanguageServer, params: L.DefinitionParams):
+async def definition(_: LanguageServer, params: L.DefinitionParams):
     uri = params.text_document.uri
     return [
         location
