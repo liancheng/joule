@@ -4,12 +4,10 @@ from pygls.lsp.server import LanguageServer
 from joule import trees as T
 from joule.analysis.scopes import ScopeResolver
 from joule.config import Config
+from joule.features.definition import DefinitionProvider
+from joule.features.document_symbol import DocumentSymbolProvider
 from joule.maybe import head_or_none, maybe
-from joule.providers import (
-    DefinitionProvider,
-    DocumentSymbolProvider,
-    WorkspaceService,
-)
+from joule.providers import WorkspaceService
 
 
 def resolve_document(uri: str) -> T.Document | None:
