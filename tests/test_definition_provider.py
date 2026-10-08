@@ -1,7 +1,7 @@
 import lsprotocol.types as L
 
-from joule import trees as T
 from joule.features.definition import DefinitionProvider
+from joule.syntax import trees as T
 from tests import FakeDocumentTestCase
 from tests.dsl import FakeDocument
 

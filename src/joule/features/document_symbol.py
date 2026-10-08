@@ -4,9 +4,9 @@ from typing import override
 
 import lsprotocol.types as L
 
-from joule import trees as T
 from joule.maybe import maybe
-from joule.trees.visitor import Visitor
+from joule.syntax import trees as T
+from joule.syntax.visitor import Visitor
 
 
 class DocumentSymbolProvider(Visitor):
