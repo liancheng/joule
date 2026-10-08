@@ -2,6 +2,7 @@ import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
 from joule import trees as T
+from joule.config import Config
 from joule.maybe import head_or_none, maybe
 from joule.providers import (
     DefinitionProvider,
@@ -35,6 +36,20 @@ class JouleLanguageServer(LanguageServer):
 
 
 server = JouleLanguageServer("joule", "v0.0.1")
+
+
+async def load_config(ls: JouleLanguageServer) -> Config:
+    items = [L.ConfigurationItem(section=field) for field in Config.model_fields]
+    params = L.ConfigurationParams(items)
+    values = await ls.workspace_configuration_async(params)
+
+    return Config(
+        **{
+            section: config
+            for section, config in zip(Config.model_fields.keys(), values)
+            if config is not None
+        }
+    )
 
 
 @server.feature(L.INITIALIZED)
