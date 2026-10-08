@@ -9,30 +9,32 @@ from tests import FakeDocumentTestCase
 from tests.dsl import FakeDocument
 
 
-def symbol(
-    name: str,
-    kind: L.SymbolKind,
-    span: T.Span,
-    selection_span: T.Span | None = None,
-    children: list[L.DocumentSymbol] | None = None,
-) -> L.DocumentSymbol:
-    if selection_span is None:
-        selection_span = span
-
-    return L.DocumentSymbol(
-        name=name,
-        kind=kind,
-        range=span.to_range(),
-        selection_range=selection_span.to_range(),
-        children=children,
-    )
-
-
 def symbols_in(doc: FakeDocument) -> Sequence[L.DocumentSymbol]:
     return DocumentSymbolProvider(doc.document).serve()
 
 
 class TestDocumentSymbolProvider(FakeDocumentTestCase):
+    def symbol(
+        self,
+        name: str,
+        kind: L.SymbolKind,
+        span: T.Span,
+        selection_span: T.Span | None = None,
+        children: list[L.DocumentSymbol] | None = None,
+    ) -> L.DocumentSymbol:
+        if selection_span is None:
+            selection_span = span
+
+        self.assertTrue(span.contains(selection_span))
+
+        return L.DocumentSymbol(
+            name=name,
+            kind=kind,
+            range=span.to_range(),
+            selection_range=selection_span.to_range(),
+            children=children,
+        )
+
     def test_local(self):
         t = self.fake_document(
             """\
@@ -41,8 +43,8 @@ class TestDocumentSymbolProvider(FakeDocumentTestCase):
             """
         )
 
-        x = symbol("x", K.Variable, t.at(1), t.at(1, 2))
-        y = symbol("y", K.Variable, t.at(3), t.at(3, 4))
+        x = self.symbol("x", K.Variable, t.at(1, 2), t.at(1))
+        y = self.symbol("y", K.Variable, t.at(3, 4), t.at(3))
 
         self.assertEqual(symbols_in(t), [x, y])
 
@@ -54,8 +56,8 @@ class TestDocumentSymbolProvider(FakeDocumentTestCase):
             """
         )
 
-        x = symbol("x", K.Variable, t.at(1), t.at(1, 2))
-        y = symbol("y", K.Variable, t.at(3), t.at(3, 4))
+        x = self.symbol("x", K.Variable, t.at(1, 2), t.at(1))
+        y = self.symbol("y", K.Variable, t.at(3, 4), t.at(3))
 
         self.assertEqual(symbols_in(t), [x, y])
 
@@ -67,9 +69,9 @@ class TestDocumentSymbolProvider(FakeDocumentTestCase):
             """
         )
 
-        p = symbol("p", K.Variable, t.at(2), t.at(2))
-        q = symbol("q", K.Variable, t.at(3), t.at(3, 4))
-        func = symbol("func", K.Function, t.at(1), t.at(1, 5), [p, q])
+        p = self.symbol("p", K.Variable, t.at(2), t.at(2))
+        q = self.symbol("q", K.Variable, t.at(3, 4), t.at(3))
+        func = self.symbol("func", K.Function, t.at(1, 5), t.at(1), children=[p, q])
 
         self.assertEqual(symbols_in(t), [func])
 
@@ -81,8 +83,8 @@ class TestDocumentSymbolProvider(FakeDocumentTestCase):
             """
         )
 
-        b = symbol("b", K.Field, t.at(2), t.at(2, 3))
-        c = symbol("c", K.Field, t.at(4), t.at(4, 5))
-        a = symbol("a", K.Field, t.at(1), t.at(1, 6), [b, c])
+        b = self.symbol("b", K.Field, t.at(2, 3), t.at(2))
+        c = self.symbol("c", K.Field, t.at(4, 5), t.at(4))
+        a = self.symbol("a", K.Field, t.at(1, 6), t.at(1), children=[b, c])
 
         self.assertEqual(symbols_in(t), [a])
