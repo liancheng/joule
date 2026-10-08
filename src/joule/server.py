@@ -1,7 +1,7 @@
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
-from joule.analysis.scopes import ScopeResolver
+from joule.analysis.scopes import resolve
 from joule.config import Config
 from joule.features import DefinitionProvider, DocumentSymbolProvider
 from joule.maybe import head_or_none, maybe
@@ -42,11 +42,7 @@ async def load_config(ls: JouleLanguageServer) -> Config:
 
 
 def resolve_document(uri: str) -> T.Document | None:
-    if (doc := T.parse_document(uri)) is not None:
-        ScopeResolver(doc)
-        return doc
-
-    return None
+    return head_or_none(resolve(doc) for doc in maybe(T.parse_document(uri)))
 
 
 @server.feature(L.INITIALIZED)

@@ -6,7 +6,7 @@ from textwrap import dedent
 
 from rich.text import Text
 
-from joule.analysis.scopes import ScopeResolver
+from joule.analysis.scopes import resolve
 from joule.maybe import just
 from joule.syntax import trees as T
 from joule.syntax.trees import Array
@@ -133,7 +133,7 @@ class FakeDocument(LineMap):
         self.uri = uri
         self.document = T.Tree.from_source(text).to(T.Document)
         self.body = self.document.body
-        ScopeResolver(self.document).resolve()
+        resolve(self.document)
 
     @cached_property
     def span(self) -> SpanDSL:
