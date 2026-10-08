@@ -3,19 +3,10 @@ from pygls.lsp.server import LanguageServer
 
 from joule.analysis.scopes import ScopeResolver
 from joule.config import Config
-from joule.features.definition import DefinitionProvider
-from joule.features.document_symbol import DocumentSymbolProvider
+from joule.features import DefinitionProvider, DocumentSymbolProvider
 from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 from joule.workspace import FolderIndex
-
-
-def resolve_document(uri: str) -> T.Document | None:
-    if (doc := T.parse_document(uri)) is not None:
-        ScopeResolver(doc)
-        return doc
-
-    return None
 
 
 class JouleLanguageServer(LanguageServer):
@@ -48,6 +39,14 @@ async def load_config(ls: JouleLanguageServer) -> Config:
             if config is not None
         }
     )
+
+
+def resolve_document(uri: str) -> T.Document | None:
+    if (doc := T.parse_document(uri)) is not None:
+        ScopeResolver(doc)
+        return doc
+
+    return None
 
 
 @server.feature(L.INITIALIZED)
