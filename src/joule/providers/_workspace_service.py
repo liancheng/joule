@@ -5,7 +5,7 @@ from pathlib import Path
 
 from lsprotocol import types as L
 
-from joule.imports import ImportGraph
+from joule.analysis.imports import ImportGraph
 
 
 class WorkspaceService:
