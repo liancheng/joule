@@ -8,7 +8,7 @@ from lsprotocol import types as L
 from joule.analysis.imports import ImportGraph
 
 
-class WorkspaceService:
+class FolderIndex:
     folder: L.WorkspaceFolder
     import_graph: ImportGraph | None
 

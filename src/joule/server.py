@@ -7,7 +7,7 @@ from joule.config import Config
 from joule.features.definition import DefinitionProvider
 from joule.features.document_symbol import DocumentSymbolProvider
 from joule.maybe import head_or_none, maybe
-from joule.providers import WorkspaceService
+from joule.workspace import FolderIndex
 
 
 def resolve_document(uri: str) -> T.Document | None:
@@ -19,16 +19,16 @@ def resolve_document(uri: str) -> T.Document | None:
 
 
 class JouleLanguageServer(LanguageServer):
-    services: dict[str, WorkspaceService]
+    indexes: dict[str, FolderIndex]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.services = {}
+        self.indexes = {}
 
-    def get_workspace_service(self, uri: str) -> WorkspaceService | None:
+    def index_for(self, uri: str) -> FolderIndex | None:
         return head_or_none(
-            service
-            for folder_uri, service in sorted(self.services.items(), reverse=True)
+            index
+            for folder_uri, index in sorted(self.indexes.items(), reverse=True)
             if uri.startswith(folder_uri.rstrip("/") + "/")
         )
 
@@ -53,10 +53,10 @@ async def load_config(ls: JouleLanguageServer) -> Config:
 @server.feature(L.INITIALIZED)
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
     folders: dict[str, L.WorkspaceFolder] = ls.workspace.folders
-    ls.services = {uri: WorkspaceService(folder) for uri, folder in folders.items()}
+    ls.indexes = {uri: FolderIndex(folder) for uri, folder in folders.items()}
 
-    for service in ls.services.values():
-        await service.start()
+    for index in ls.indexes.values():
+        await index.start()
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)

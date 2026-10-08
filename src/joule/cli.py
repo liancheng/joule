@@ -8,8 +8,8 @@ from lsprotocol.types import WorkspaceFolder
 from typer import Typer
 
 from joule.analysis.imports import ImportGraph
-from joule.providers import WorkspaceService
 from joule.server import server
+from joule.workspace import FolderIndex
 
 app = Typer(
     no_args_is_help=True,
@@ -63,10 +63,10 @@ def benchmark(
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
     root = root.absolute()
-    workspace_service = WorkspaceService(WorkspaceFolder(root.as_uri(), root.name))
+    index = FolderIndex(WorkspaceFolder(root.as_uri(), root.name))
 
     start = time.perf_counter()
-    docs = workspace_service.discover_docs(extension, ignore)
+    docs = index.discover_docs(extension, ignore)
     discovered = time.perf_counter()
 
     graph = ImportGraph(root, [root], docs).build()
