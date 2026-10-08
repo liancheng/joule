@@ -7,7 +7,7 @@ import typer
 from lsprotocol.types import WorkspaceFolder
 from typer import Typer
 
-from joule.imports import ImportGraph
+from joule.analysis.imports import ImportGraph
 from joule.providers import WorkspaceService
 from joule.server import server
 

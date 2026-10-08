@@ -7,8 +7,8 @@ from textwrap import dedent
 from rich.text import Text
 
 from joule import trees as T
+from joule.analysis.scopes import ScopeResolver
 from joule.maybe import just
-from joule.providers import ScopeResolver
 from joule.trees import Array
 from tests.dsl import span_markers
 

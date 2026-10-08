@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from joule.imports import ImportGraph
+from joule.analysis.imports import ImportGraph
 
 
 class TestResolveImportee(unittest.TestCase):
