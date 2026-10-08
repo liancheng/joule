@@ -306,7 +306,7 @@ t = self.fake_document(
     """
 )
 
-x: Id.Var = t.var_at(2)             # `x` in `x = 1`
+x: Id.Var = t.var_at(2)  # `x` in `x = 1`
 x_ref: Id.VarRef = t.var_ref_at(6)  # `x` in `x + y`
 ```
 

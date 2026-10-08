@@ -60,8 +60,8 @@ class DocumentSymbolProvider(Visitor):
         symbol = L.DocumentSymbol(
             name=t.id.name,
             kind=kind,
-            range=t.id.span.as_range,
-            selection_range=t.span.as_range,
+            range=t.id.span.to_range(),
+            selection_range=t.span.to_range(),
         )
 
         self.add_symbol(symbol)
@@ -74,8 +74,8 @@ class DocumentSymbolProvider(Visitor):
         symbol = L.DocumentSymbol(
             name=t.id.name,
             kind=L.SymbolKind.Variable,
-            range=t.id.span.as_range,
-            selection_range=t.span.as_range,
+            range=t.id.span.to_range(),
+            selection_range=t.span.to_range(),
         )
 
         self.add_symbol(symbol)
@@ -92,8 +92,8 @@ class DocumentSymbolProvider(Visitor):
                     symbol = L.DocumentSymbol(
                         name=k.id.name,
                         kind=L.SymbolKind.Field,
-                        range=k.span.as_range,
-                        selection_range=f.span.as_range,
+                        range=k.span.to_range(),
+                        selection_range=f.span.to_range(),
                     )
 
                     self.add_symbol(symbol)
@@ -115,8 +115,8 @@ class DocumentSymbolProvider(Visitor):
             symbol = L.DocumentSymbol(
                 name=t.id.name,
                 kind=L.SymbolKind.Variable,
-                range=t.id.span.as_range,
-                selection_range=t.span.as_range,
+                range=t.id.span.to_range(),
+                selection_range=t.span.to_range(),
             )
 
             self.add_symbol(symbol)

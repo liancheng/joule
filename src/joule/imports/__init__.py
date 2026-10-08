@@ -18,7 +18,7 @@ __all__ = ["ImportGraph"]
 @functools.cache
 def import_cursor() -> ts.QueryCursor:
     # Compiling the query once per worker process (it costs ~66 µs each time).
-    query = ts.Query(T.parser().language, "(import) @import")
+    query = ts.Query(T.language(), "(import) @import")
     return ts.QueryCursor(query)
 
 
