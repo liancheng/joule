@@ -3,7 +3,11 @@ from pygls.lsp.server import LanguageServer
 
 from joule.analysis.scopes import resolve
 from joule.config import Config
-from joule.features import DefinitionProvider, DocumentSymbolProvider
+from joule.features import (
+    DefinitionProvider,
+    DocumentSymbolProvider,
+    ReferencesProvider,
+)
 from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 from joule.workspace import FolderIndex
@@ -72,4 +76,14 @@ async def definition(_: LanguageServer, params: L.DefinitionParams):
         location
         for doc in maybe(resolve_document(uri))
         for location in DefinitionProvider(uri, doc).serve(params.position)
+    ]
+
+
+@server.feature(L.TEXT_DOCUMENT_REFERENCES)
+async def references(_: LanguageServer, params: L.ReferenceParams):
+    uri = params.text_document.uri
+    return [
+        location
+        for doc in maybe(resolve_document(uri))
+        for location in ReferencesProvider(uri, doc).serve(params.position)
     ]
