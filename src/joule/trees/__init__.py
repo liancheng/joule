@@ -3,6 +3,7 @@ import functools
 import typing
 from collections.abc import Callable, Iterable
 from enum import Enum, StrEnum
+from pathlib import Path
 from typing import Any, ClassVar, TypeVar, override
 
 import lsprotocol.types as L
@@ -67,6 +68,8 @@ __all__ = [
     "VarBinding",
     "VarScope",
     "Visibility",
+    "language",
+    "parse_document",
     "parser",
 ]
 
@@ -90,16 +93,19 @@ class Point:
         return line << Point.COLUMN_BITS | column
 
     @staticmethod
-    def unpack(packed: int) -> Point:
-        return Point(packed >> Point.COLUMN_BITS, packed & Point.COLUMN_MASK)
+    def unpack(packed: int) -> tuple[int, int]:
+        return packed >> Point.COLUMN_BITS, packed & Point.COLUMN_MASK
 
     @property
     def packed(self) -> int:
         return Point.pack(self.line, self.column)
 
-    @property
-    def as_position(self) -> L.Position:
+    def to_position(self) -> L.Position:
         return L.Position(self.line, self.column)
+
+    @staticmethod
+    def from_lsp(pos: L.Position) -> Point:
+        return Point(pos.line, pos.character)
 
     def __repr__(self) -> str:
         return f"{self.line}:{self.column}"
@@ -125,11 +131,13 @@ class Span:
 
     @property
     def start(self) -> Point:
-        return Point.unpack(self.packed_start)
+        line, column = Point.unpack(self.packed_start)
+        return Point(line, column)
 
     @property
     def end(self) -> Point:
-        return Point.unpack(self.packed_end)
+        line, column = Point.unpack(self.packed_end)
+        return Point(line, column)
 
     def __eq__(self, other) -> bool:
         return (
@@ -159,11 +167,22 @@ class Span:
             max(self.packed_end, other.packed_end),
         )
 
-    @property
-    def as_range(self) -> L.Range:
+    def to_range(self) -> L.Range:
+        start_line, start_column = Point.unpack(self.packed_start)
+        end_line, end_column = Point.unpack(self.packed_end)
         return L.Range(
-            self.start.as_position,
-            self.end.as_position,
+            L.Position(start_line, start_column),
+            L.Position(end_line, end_column),
+        )
+
+    def to_location(self, uri: str) -> L.Location:
+        return L.Location(uri, self.to_range())
+
+    @staticmethod
+    def from_lsp(range: L.Range) -> Span:
+        return Span(
+            Point.pack(range.start.line, range.start.character),
+            Point.pack(range.end.line, range.end.character),
         )
 
 
@@ -216,11 +235,6 @@ FromCST = Callable[[ts.Node], "Tree"]
 
 def skip_comments(nodes: Iterable[ts.Node]) -> Iterable[ts.Node]:
     return (node for node in nodes if node.type != "comment")
-
-
-@functools.cache
-def parser() -> ts.Parser:
-    return ts.Parser(ts.Language(tree_sitter_jsonnet.language()))
 
 
 @D.dataclass(slots=True)
@@ -1598,3 +1612,22 @@ class FieldScope:
     @staticmethod
     def empty(owner: Object) -> FieldScope:
         return FieldScope(owner)
+
+
+@functools.cache
+def language() -> ts.Language:
+    return ts.Language(tree_sitter_jsonnet.language())
+
+
+@functools.cache
+def parser() -> ts.Parser:
+    return ts.Parser(language())
+
+
+def parse_document(uri: str) -> Document | None:
+    try:
+        source = Path.from_uri(uri).read_bytes()
+    except OSError:
+        return None
+
+    return Document.from_cst(parser().parse(source).root_node)

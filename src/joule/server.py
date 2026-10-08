@@ -1,8 +1,22 @@
 import lsprotocol.types as L
 from pygls.lsp.server import LanguageServer
 
+from joule import trees as T
 from joule.maybe import head_or_none, maybe
-from joule.providers import DocumentSymbolProvider, WorkspaceService
+from joule.providers import (
+    DefinitionProvider,
+    DocumentSymbolProvider,
+    ScopeResolver,
+    WorkspaceService,
+)
+
+
+def resolve_document(uri: str) -> T.Document | None:
+    if (doc := T.parse_document(uri)) is not None:
+        ScopeResolver(doc)
+        return doc
+
+    return None
 
 
 class JouleLanguageServer(LanguageServer):
@@ -12,11 +26,11 @@ class JouleLanguageServer(LanguageServer):
         super().__init__(*args, **kwargs)
         self.services = {}
 
-    def service_for(self, doc_uri: str) -> WorkspaceService | None:
+    def get_workspace_service(self, uri: str) -> WorkspaceService | None:
         return head_or_none(
             service
             for folder_uri, service in sorted(self.services.items(), reverse=True)
-            if doc_uri.startswith(folder_uri.rstrip("/") + "/")
+            if uri.startswith(folder_uri.rstrip("/") + "/")
         )
 
 
@@ -33,11 +47,20 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
-async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
+async def document_symbol(_: JouleLanguageServer, params: L.DocumentSymbolParams):
     uri = params.text_document.uri
     return [
         symbol
-        for service in maybe(ls.service_for(uri))
-        for doc in maybe(service.document_for(uri))
+        for doc in maybe(resolve_document(uri))
         for symbol in DocumentSymbolProvider(doc).serve()
+    ]
+
+
+@server.feature(L.TEXT_DOCUMENT_DEFINITION)
+async def definition(_: JouleLanguageServer, params: L.DefinitionParams):
+    uri = params.text_document.uri
+    return [
+        location
+        for doc in maybe(resolve_document(uri))
+        for location in DefinitionProvider(uri, doc).serve(params.position)
     ]

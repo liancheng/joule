@@ -5,7 +5,6 @@ from pathlib import Path
 
 from lsprotocol import types as L
 
-from joule import trees as T
 from joule.imports import ImportGraph
 
 
@@ -16,13 +15,6 @@ class WorkspaceService:
     def __init__(self, folder: L.WorkspaceFolder):
         self.folder: L.WorkspaceFolder = folder
         self.import_graph = None
-
-    def document_for(self, doc_uri: str) -> T.Document | None:
-        try:
-            source = Path.from_uri(doc_uri).read_bytes()
-            return T.Document.from_cst(T.parser().parse(source).root_node)
-        except OSError:
-            return None
 
     async def start(self) -> None:
         # TODO: Wire `extensions` and `ignore` through LSP configuration.

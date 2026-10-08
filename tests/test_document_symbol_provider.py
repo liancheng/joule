@@ -22,8 +22,8 @@ def symbol(
     return L.DocumentSymbol(
         name=name,
         kind=kind,
-        range=span.as_range,
-        selection_range=selection_span.as_range,
+        range=span.to_range(),
+        selection_range=selection_span.to_range(),
         children=children,
     )
 
