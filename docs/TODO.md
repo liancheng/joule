@@ -8,12 +8,12 @@ Current progress and remaining work. See [DESIGN.md](DESIGN.md) for the design.
 
 Each feature is a provider class in `joule.features`, and `joule.server` wires it to an LSP method. All implemented features need only the current document:
 
-| Method | Provider | Scope |
-| --- | --- | --- |
+| Method                        | Provider                 | Scope            |
+| ----------------------------- | ------------------------ | ---------------- |
 | `textDocument/documentSymbol` | `DocumentSymbolProvider` | Current document |
-| `textDocument/definition` | `DefinitionProvider` | Current document |
-| `textDocument/references` | `ReferencesProvider` | Current document |
-| `textDocument/foldingRange` | `FoldingRangeProvider` | Current document |
+| `textDocument/definition`     | `DefinitionProvider`     | Current document |
+| `textDocument/references`     | `ReferencesProvider`     | Current document |
+| `textDocument/foldingRange`   | `FoldingRangeProvider`   | Current document |
 
 For every request, the server parses the document and runs [scope resolution](DESIGN.md#scope-resolution) on it (`resolve_document`). None of these features reads the [import graph](DESIGN.md#folderindex-and-the-import-graph), so they also work for documents outside every workspace folder, such as a stray file in `/tmp`.
 
@@ -32,12 +32,6 @@ For every request, the server parses the document and runs [scope resolution](DE
 - `joule benchmark` measures discovery and import graph building. On Universe master (77k documents) both take about 11 to 12 seconds in total on a 10-core Mac.
 
 ## TODO
-
-### Bugs
-
-- [ ] `FolderIndex.start` passes `config.jpaths` to `discover_docs` as its `ignore` argument, so jpaths are excluded from discovery instead of used for resolution.
-- [ ] `config.exclude` is never used.
-- [ ] `ImportGraph` always gets `[root]` as its jpaths instead of `config.jpaths`.
 
 ### LSP features
 
