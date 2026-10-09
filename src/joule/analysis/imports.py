@@ -52,8 +52,8 @@ class ImportGraph:
     docs: list[Path]
 
     # Edge fields
-    imports: dict[Path, list[Path]]
-    imported_by: dict[Path, list[Path]]
+    imports: dict[Path, set[Path]]
+    imported_by: dict[Path, set[Path]]
 
     malformed: list[Path]
 
@@ -67,8 +67,8 @@ class ImportGraph:
         self.jpaths = jpaths
         self.docs = docs
 
-        self.imports = defaultdict(list)
-        self.imported_by = defaultdict(list)
+        self.imports = defaultdict(set)
+        self.imported_by = defaultdict(set)
 
         self.malformed = []
 
@@ -125,8 +125,8 @@ class ImportGraph:
             else:
                 for importee in importees:
                     if resolved := self.resolve_importee(importer, importee):
-                        self.imports[importer].append(resolved)
-                        self.imported_by[resolved].append(importer)
+                        self.imports[importer].add(resolved)
+                        self.imported_by[resolved].add(importer)
 
         return self
 
