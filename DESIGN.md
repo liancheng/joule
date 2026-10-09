@@ -4,8 +4,6 @@
 
 Joule is a Jsonnet language server built on pygls. It aims to scale to very large workspaces and to provide deeper semantic intelligence than existing Jsonnet language servers.
 
-TODO: Project status and scope of the first milestone.
-
 ## Goals
 
 ### Scalability
@@ -270,10 +268,6 @@ Joule takes option 2. Jsonnet is a simple language: there isn't much information
 ## Cross-document analysis
 
 TODO: How Joule follows values across `import` edges and function calls to answer queries like the [better intelligence](#better-intelligence) example: resolving what an imported file evaluates to, finding the call sites of an imported function via the imported-by graph, tracking which objects flow into a parameter, and following `("imported", URI)` field origins recorded by [scope resolution](#scope-resolution). Also how cached cross-document results are invalidated (see [AST cache](#ast-cache)).
-
-## LSP features
-
-TODO: Supported LSP methods, and for each, whether it needs only the current document or the workspace import graph.
 
 ## Document synchronization
 
