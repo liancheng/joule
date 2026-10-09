@@ -5,7 +5,7 @@ from pathlib import Path
 
 from lsprotocol import types as L
 
-from joule.analysis.imports import ImportGraph
+from joule.analysis.imports import ImportGraph, ImportGraphBuilder
 from joule.config import Config
 
 
@@ -27,8 +27,8 @@ class FolderIndex:
             self.config.extensions,
             self.config.exclude,
         )
-        graph = ImportGraph(root, jpaths, docs)
-        self.import_graph = await A.to_thread(graph.build)
+        builder = ImportGraphBuilder(root, jpaths)
+        self.import_graph = await A.to_thread(builder.build, docs)
 
     @property
     def ready(self) -> bool:

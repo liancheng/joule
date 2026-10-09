@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from joule.analysis.imports import CachedImportResolver, ImportGraph, ImportResolver
+from joule.analysis.imports import (
+    CachedImportResolver,
+    ImportGraphBuilder,
+    ImportResolver,
+)
 
 
 class Cases:
@@ -116,8 +120,8 @@ class TestCachedImportResolver(Cases.ResolveImportee):
     resolver_class = CachedImportResolver
 
 
-# A workspace covering every case of `ImportGraph.build`. Building starts a process pool,
-# so it is built once for all of `TestImportGraphBuild`.
+# A workspace covering every case of `ImportGraphBuilder.build`. Building starts a process
+# pool, so it is built once for all of `TestImportGraphBuilder`.
 BUILD_FILES = {
     # Imports `lib.libsonnet` twice, which must yield a single edge.
     "app/main.jsonnet": """
@@ -151,7 +155,7 @@ BUILD_DOCS = [
 ]
 
 
-class TestImportGraphBuild(unittest.TestCase):
+class TestImportGraphBuilder(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         tmp = tempfile.TemporaryDirectory()
@@ -163,7 +167,7 @@ class TestImportGraphBuild(unittest.TestCase):
             (cls.root / path).write_text(text)
 
         docs = [cls.root / doc for doc in BUILD_DOCS]
-        cls.graph = ImportGraph(cls.root, [Path("vendor")], docs).build()
+        cls.graph = ImportGraphBuilder(cls.root, [Path("vendor")]).build(docs)
 
     def path(self, rel: str) -> Path:
         return self.root / rel

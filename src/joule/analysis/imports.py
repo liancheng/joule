@@ -5,14 +5,19 @@ import os.path as P
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Self, override
+from typing import override
 
 import tree_sitter as ts
 
 from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 
-__all__ = ["CachedImportResolver", "ImportGraph", "ImportResolver"]
+__all__ = [
+    "CachedImportResolver",
+    "ImportGraph",
+    "ImportGraphBuilder",
+    "ImportResolver",
+]
 
 
 @functools.cache
@@ -141,10 +146,10 @@ class CachedImportResolver(ImportResolver):
 
 
 class ImportGraph:
+    """The import graph of a workspace folder, built by `ImportGraphBuilder`."""
+
     root: Path
     jpaths: list[Path]
-    docs: list[Path]
-    resolver: CachedImportResolver
 
     # Edge fields
     imports: dict[Path, set[Path]]
@@ -152,36 +157,53 @@ class ImportGraph:
 
     malformed: list[Path]
 
-    def __init__(self, root: Path, jpaths: list[Path], docs: list[Path]):
+    def __init__(self, root: Path, jpaths: list[Path]):
         self.root = root
         self.jpaths = jpaths
-        self.docs = docs
-        self.resolver = CachedImportResolver(root, jpaths)
 
         self.imports = defaultdict(set)
         self.imported_by = defaultdict(set)
 
         self.malformed = []
 
-    def build(self, batch_size: int = 256) -> Self:
+    def add_edge(self, importer: Path, importee: Path):
+        self.imports[importer].add(importee)
+        self.imported_by[importee].add(importer)
+
+
+class ImportGraphBuilder:
+    """Builds an `ImportGraph` from scratch.
+
+    Create one per bulk build and drop it afterwards. The resolution caches live only for
+    the duration of `build`, so the finished graph doesn't keep them alive.
+    """
+
+    root: Path
+    jpaths: list[Path]
+    batch_size: int
+
+    def __init__(self, root: Path, jpaths: list[Path], batch_size: int = 256):
+        self.root = root
+        self.jpaths = jpaths
+        self.batch_size = batch_size
+
+    def build(self, docs: list[Path]) -> ImportGraph:
+        graph = ImportGraph(self.root, self.jpaths)
+        resolver = CachedImportResolver(self.root, self.jpaths)
         parallelism = max(2, os.process_cpu_count() or 2)
 
         with ProcessPoolExecutor(max_workers=parallelism) as executor:
             raw_importees = itertools.zip_longest(
-                self.docs,
-                executor.map(collect_importees, self.docs, chunksize=batch_size),
+                docs,
+                executor.map(collect_importees, docs, chunksize=self.batch_size),
             )
 
         for importer, (importees, error) in raw_importees:
             if error:
-                self.malformed.append(importer)
+                graph.malformed.append(importer)
             else:
                 for importee in importees:
-                    if resolved := self.resolve_importee(importer, importee):
-                        self.imports[importer].add(resolved)
-                        self.imported_by[resolved].add(importer)
+                    if resolved := resolver.resolve(importer, importee):
+                        graph.add_edge(importer, resolved)
 
-        return self
-
-    def resolve_importee(self, importer: Path, importee: str) -> Path | None:
-        return self.resolver.resolve(importer, importee)
+        return graph
