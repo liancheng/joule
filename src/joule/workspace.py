@@ -20,20 +20,25 @@ class FolderIndex:
         self.import_graph = None
 
     async def start(self) -> None:
+        root = Path.from_uri(self.folder.uri).absolute()
+        jpaths = [Path(path) for path in self.config.jpaths]
         docs = await A.to_thread(
             self.discover_docs,
             self.config.extensions,
-            self.config.jpaths,
+            self.config.exclude,
         )
-        root = Path.from_uri(self.folder.uri).absolute()
-        graph = ImportGraph(root, [root], docs)
+        graph = ImportGraph(root, jpaths, docs)
         self.import_graph = await A.to_thread(graph.build)
 
     @property
     def ready(self) -> bool:
         return self.import_graph is not None
 
-    def discover_docs(self, extensions: list[str], ignore: list[str]) -> list[Path]:
+    def discover_docs(
+        self,
+        extensions: list[str],
+        exclude: list[str] | None,
+    ) -> list[Path]:
         fd = shutil.which("fd") or shutil.which("fdfind")
 
         if fd is None:
@@ -44,8 +49,9 @@ class FolderIndex:
         for extension in extensions:
             command += ["--extension", extension]
 
-        for pattern in ignore:
-            command += ["--exclude", pattern]
+        if exclude is not None:
+            for pattern in exclude:
+                command += ["--exclude", pattern]
 
         command += [".", Path.from_uri(self.folder.uri).absolute().as_posix()]
 

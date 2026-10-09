@@ -8,6 +8,7 @@ from lsprotocol.types import WorkspaceFolder
 from typer import Typer
 
 from joule.analysis.imports import ImportGraph
+from joule.config import Config
 from joule.server import server
 from joule.workspace import FolderIndex
 
@@ -17,7 +18,6 @@ app = Typer(
 )
 
 DEFAULT_EXTENSIONS = ["jsonnet", "libsonnet", "jsonnet.TEMPLATE"]
-DEFAULT_IGNORE = [".git"]
 
 
 @app.command()
@@ -45,14 +45,14 @@ def benchmark(
             help="File extension to include. Repeat to include several.",
         ),
     ] = DEFAULT_EXTENSIONS,
-    ignore: Annotated[
-        list[str],
+    exclude: Annotated[
+        list[str] | None,
         typer.Option(
-            "--ignore",
-            "-i",
+            "--exclude",
+            "-x",
             help="Glob of files or folders to ignore. Repeat to ignore several.",
         ),
-    ] = DEFAULT_IGNORE,
+    ] = None,
     malformed_output: Annotated[
         Path,
         typer.Option(
@@ -63,10 +63,11 @@ def benchmark(
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
     root = root.absolute()
-    index = FolderIndex(WorkspaceFolder(root.as_uri(), root.name))
+    config = Config(jpaths=[root], exclude=exclude, extensions=extension)
+    index = FolderIndex(WorkspaceFolder(root.as_uri(), root.name), config)
 
     start = time.perf_counter()
-    docs = index.discover_docs(extension, ignore)
+    docs = index.discover_docs(extension, exclude)
     discovered = time.perf_counter()
 
     graph = ImportGraph(root, [root], docs).build()
