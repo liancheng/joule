@@ -7,7 +7,7 @@ import typer
 from lsprotocol.types import WorkspaceFolder
 from typer import Typer
 
-from joule.analysis.imports import ImportGraph
+from joule.analysis.imports import ImportGraphBuilder
 from joule.config import Config
 from joule.server import server
 from joule.workspace import FolderIndex
@@ -70,7 +70,7 @@ def benchmark(
     docs = index.discover_docs(extension, exclude)
     discovered = time.perf_counter()
 
-    graph = ImportGraph(root, [root], docs).build()
+    graph = ImportGraphBuilder(root, [root]).build(docs)
     built = time.perf_counter()
 
     edges = sum(map(len, graph.imports.values()))

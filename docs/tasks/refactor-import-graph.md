@@ -19,7 +19,16 @@ Each step leaves the tests green and is its own commit. Every step is verified w
 - `./test.sh`, ruff, and `ty check`, including `tests/test_layering.py`.
 - `joule benchmark` on grafonnet and Universe master, with the same document, edge, and malformed counts as before the step: grafonnet 1,413 edges, Universe 141,332 edges with the root as jpath. Import graph build time must not regress.
 
-Prerequisite (done, uncommitted): `imports` and `imported_by` are `dict[Path, set[Path]]`, so one edge is stored per pair of files and edges can be removed in O(1).
+Prerequisite: `imports` and `imported_by` are `dict[Path, set[Path]]`, so one edge is stored per pair of files and edges can be removed in O(1).
+
+### Progress
+
+- [x] Prerequisite: edges as sets
+- [x] Step 1: Tests for `ImportGraph.build`
+- [x] Step 2: Separate import resolution from the graph
+- [x] Step 3: Introduce `ImportGraphBuilder`
+- [ ] Step 4: Keep the data needed for incremental updates
+- [ ] Step 5: Incremental updates
 
 ### Step 1: Tests for `ImportGraph.build`
 
