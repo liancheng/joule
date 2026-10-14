@@ -5,7 +5,6 @@ import os.path as P
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import override
 
 import tree_sitter as ts
 
@@ -13,7 +12,6 @@ from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 
 __all__ = [
-    "CachedImportResolver",
     "ImportGraph",
     "ImportGraphBuilder",
     "ImportResolver",
@@ -52,7 +50,7 @@ def collect_importees(path: Path) -> tuple[list[str], bool]:
 
 
 class ImportResolver:
-    """Resolves importees like Jsonnet's file importer, without caching.
+    """Resolves importees like Jsonnet's file importer.
 
     An absolute importee is used as-is. Otherwise it is tried relative to the importer's
     directory first, then relative to each jpath, later jpaths first. The first candidate
@@ -61,59 +59,27 @@ class ImportResolver:
 
     Paths are normalized lexically: `.` and `..` are collapsed as text, and symlinks are
     not followed.
+
+    Lookups are cached. The caches record only whether files exist, so they go stale once
+    a file is created or deleted. Create one resolver per batch of resolutions, such as a
+    bulk build or an incremental update, and drop it afterwards.
     """
 
     root: Path
     jpaths: list[Path]
-
-    def __init__(self, root: Path, jpaths: list[Path]):
-        self.root = root
-        self.jpaths = jpaths
-
-    def is_file(self, path: str) -> bool:
-        return P.isfile(P.abspath(path))
-
-    def same_dir(self, importer_dir: str, importee: str) -> str | None:
-        path = P.join(importer_dir, importee)
-        return path if self.is_file(path) else None
-
-    def via_jpaths(self, importee: str) -> str | None:
-        return head_or_none(
-            path
-            for jpath in reversed(self.jpaths)
-            if self.is_file(path := P.join(self.root, jpath, importee))
-        )
-
-    def resolve(self, importer: Path, importee: str) -> Path | None:
-        # Works on `str` paths with `os.path` to avoid building intermediate `Path`s.
-        if P.isabs(importee):
-            path = importee if self.is_file(importee) else None
-        else:
-            importer_dir = P.dirname(P.join(self.root, importer))
-            path = self.same_dir(importer_dir, importee) or self.via_jpaths(importee)
-
-        # `is_file` checked the lexically normalized path, so return that one.
-        return None if path is None else Path(P.abspath(path))
-
-
-class CachedImportResolver(ImportResolver):
-    """An `ImportResolver` that caches lookups, for resolving many importees in bulk.
-
-    The caches record only whether files exist, so they stay valid until a file is
-    created or deleted, or the jpaths change.
-    """
 
     _is_file: dict[str, bool]
     _same_dir: dict[tuple[str, str], str | None]
     _via_jpaths: dict[str, str | None]
 
     def __init__(self, root: Path, jpaths: list[Path]):
-        super().__init__(root, jpaths)
+        self.root = root
+        self.jpaths = jpaths
+
         self._is_file = {}
         self._same_dir = {}
         self._via_jpaths = {}
 
-    @override
     def is_file(self, path: str) -> bool:
         path = P.abspath(path)
         try:
@@ -123,26 +89,45 @@ class CachedImportResolver(ImportResolver):
             self._is_file[path] = result
             return result
 
-    @override
-    def same_dir(self, importer_dir: str, importee: str) -> str | None:
+    def try_abs_path(self, importee) -> str | None:
+        return importee if P.isabs(importee) else None
+
+    def try_same_dir(self, importer: Path, importee: str) -> str | None:
         # Normalized so that different spellings of one importee share an entry.
+        importer_dir = P.dirname(P.join(self.root, importer))
         importee = P.normpath(importee)
+
         try:
             return self._same_dir[(importer_dir, importee)]
         except KeyError:
-            result = super().same_dir(importer_dir, importee)
-            self._same_dir[(importer_dir, importee)] = result
-            return result
+            joined = P.join(importer_dir, importee)
+            path = joined if self.is_file(joined) else None
+            self._same_dir[(importer_dir, importee)] = path
+            return path
 
-    @override
-    def via_jpaths(self, importee: str) -> str | None:
+    def try_jpaths(self, importee: str) -> str | None:
         importee = P.normpath(importee)
+
         try:
             return self._via_jpaths[importee]
         except KeyError:
-            result = super().via_jpaths(importee)
+            result = head_or_none(
+                path
+                for jpath in reversed(self.jpaths)
+                if self.is_file(path := P.join(self.root, jpath, importee))
+            )
             self._via_jpaths[importee] = result
             return result
+
+    def resolve(self, importer: Path, importee: str) -> Path | None:
+        return head_or_none(
+            Path(P.abspath(path))
+            for path in maybe(
+                self.try_abs_path(importee)
+                or self.try_same_dir(importer, importee)
+                or self.try_jpaths(importee)
+            )
+        )
 
 
 class ImportGraph:
@@ -189,7 +174,7 @@ class ImportGraphBuilder:
 
     def build(self, docs: list[Path]) -> ImportGraph:
         graph = ImportGraph(self.root, self.jpaths)
-        resolver = CachedImportResolver(self.root, self.jpaths)
+        resolver = ImportResolver(self.root, self.jpaths)
         parallelism = max(2, os.process_cpu_count() or 2)
 
         with ProcessPoolExecutor(max_workers=parallelism) as executor:

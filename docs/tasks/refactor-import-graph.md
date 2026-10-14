@@ -45,18 +45,19 @@ Commit: `test: Cover ImportGraph.build`
 
 ### Step 2: Separate import resolution from the graph
 
-Move resolution out of `ImportGraph` into two resolvers with the same interface:
+Move resolution out of `ImportGraph` into an `ImportResolver(root, jpaths)` with the `_is_file`, `_same_dir`, and `_via_jpaths` caches. Bulk builds and incremental updates both use it.
 
-- `ImportResolver(root, jpaths)` resolves without caches. Incremental updates will use it.
-- `CachedImportResolver(ImportResolver)` adds the `_is_file`, `_same_dir`, and `_via_jpaths` caches by overriding the lookups. Bulk builds use it.
+The caches record only whether files exist, so they go stale once a file is created or deleted. Instead of invalidating them, create a fresh resolver for each batch of resolutions (a bulk build, or one incremental update) and drop it afterwards.
 
-`ImportGraph` keeps its current public API for now, delegating to a `CachedImportResolver`. Run the existing resolution tests against both resolvers, so that the two can't drift apart.
+`ImportGraph` keeps its current public API for now, delegating to an `ImportResolver`.
+
+> An earlier version of this step split resolution into an uncached `ImportResolver` for incremental updates and a `CachedImportResolver` subclass for bulk builds. That was merged into the single cached `ImportResolver` above: a short-lived cache is always valid, costs little on a small update, and leaves only one implementation to test.
 
 Commit: `refactor: Extract import resolution into ImportResolver`
 
 ### Step 3: Introduce `ImportGraphBuilder`
 
-- `ImportGraphBuilder(root, jpaths).build(docs) -> ImportGraph` owns the whole construction: the parallel `collect_importees` pass and resolution with a `CachedImportResolver`. It is ephemeral, created per build and dropped afterwards, which frees the caches (about 56 MiB on Universe).
+- `ImportGraphBuilder(root, jpaths).build(docs) -> ImportGraph` owns the whole construction: the parallel `collect_importees` pass and resolution with an `ImportResolver`. It is ephemeral, created per build and dropped afterwards, which frees the caches (about 56 MiB on Universe).
 - `ImportGraph` becomes the long-lived result: `root`, `jpaths`, `imports`, `imported_by`, and `malformed`. It has no caches and no `build` method.
 - Update `FolderIndex.start` and `joule benchmark` to use the builder. The builder still runs in `asyncio.to_thread` and the graph is published in one assignment, so no locking is needed.
 - Move the Step 1 tests to the builder.
@@ -76,7 +77,7 @@ Commit: `refactor: Keep raw importees and a file-name index in ImportGraph`
 
 ### Step 5: Incremental updates
 
-Add mutation methods to `ImportGraph`, using an uncached `ImportResolver`:
+Add mutation methods to `ImportGraph`, each resolving with a fresh `ImportResolver`:
 
 - `update_document(doc)`: re-collect the document's importees, diff them against `importees[doc]`, re-resolve only what changed, and update edges, `malformed`, and the file-name index.
 - `add_file(path)`: re-resolve the imports found through `importers_by_name[basename(path)]`. A new file can shadow a lower-priority candidate or make an unresolved import resolve. This applies to any file, including non-documents such as `.json` import targets. If `path` is a document, also collect and resolve its own imports.
