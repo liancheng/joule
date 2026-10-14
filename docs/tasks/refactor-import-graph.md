@@ -1,75 +1,79 @@
-# Refactoring `ImportGraph`
+# Refactor of `ImportGraph`
 
-`ImportGraph` mixes three concerns:
+`ImportGraph` has three concerns:
 
-1. The graph itself: the `imports` and `imported_by` edges.
-2. The caches that speed up resolving imports while building the graph.
-3. The indices needed to update the graph when files are created, deleted, or edited. These don't exist yet.
+1. The graph: the `imports` and `imported_by` edges.
+2. The caches that make import resolution faster during the build of the graph.
+3. The indices that Joule needs to update the graph when somebody creates, deletes, or edits a file. These indices do not exist yet.
 
 Proposal:
 
-- Split it into an `ImportGraph` holding the edges and the update indices, and an `ImportGraphBuilder` holding the caches.
-- The caches pay off only during a bulk build. They stay valid afterwards, since they record only whether files exist, but keeping them isn't worth it: they use much memory on large monorepos, and save at most a few milliseconds when re-resolving an edited document. So create a fresh `ImportGraphBuilder` for each bulk build and drop it afterwards.
-- Make `ImportGraph` mutable, so it can be updated in place when files are created, deleted, or edited.
+- Divide `ImportGraph` into two classes:
+  - `ImportGraph` holds the edges and the update indices.
+  - `ImportGraphBuilder` holds the caches.
+- The caches are useful only during a bulk build. They record only if files exist, so they stay valid until somebody creates or deletes a file. But it is not worth it to keep them. They use much memory on large monorepos, and they save a maximum of a few milliseconds when Joule resolves an edited document again. Thus, create a new `ImportGraphBuilder` for each bulk build, and discard it after the build.
+- Make `ImportGraph` mutable, so that Joule can update it in place when files change.
 
 ## Plan
 
-Each step leaves the tests green and is its own commit. Every step is verified with:
+Each step is one commit. After each step, all tests must pass. Verify each step with:
 
-- `./test.sh`, ruff, and `ty check`, including `tests/test_layering.py`.
-- `joule benchmark` on grafonnet and a large monorepo, with the same document, edge, and malformed counts as before the step: grafonnet 1,413 edges. Import graph build time must not regress.
+- `./test.sh`, ruff, and `ty check`.
+- `joule benchmark` on grafonnet and on a large monorepo. The document, edge, and malformed counts must be the same as before the step: 1,413 edges for grafonnet. The build time of the import graph must not increase.
 
-Prerequisite: `imports` and `imported_by` are `dict[Path, set[Path]]`, so one edge is stored per pair of files and edges can be removed in O(1).
+Prerequisite: `imports` and `imported_by` are `dict[Path, set[Path]]`. Thus the graph keeps one edge for each pair of files, and it can remove an edge in O(1).
 
 ### Progress
 
-- [x] Prerequisite: edges as sets
+- [x] Prerequisite: Edges as sets
 - [x] Step 1: Tests for `ImportGraph.build`
 - [x] Step 2: Separate import resolution from the graph
-- [x] Step 3: Introduce `ImportGraphBuilder`
-- [ ] Step 4: Keep the data needed for incremental updates
+- [x] Step 3: Add `ImportGraphBuilder`
+- [ ] Step 4: Keep the data for incremental updates
 - [ ] Step 5: Incremental updates
 
 ### Step 1: Tests for `ImportGraph.build`
 
-`build` has no tests today, so add them first, against the current API, to protect the following steps:
+`build` has no tests. Thus, first add tests against the current API. These tests protect the subsequent steps. Test these behaviors:
 
-- Edges in both directions (`imports`, `imported_by`).
-- A document importing the same file twice yields one edge.
-- Unresolved imports yield no edge.
-- `importstr` and `importbin` are ignored.
-- A document that fails to parse is listed in `malformed` and contributes no edges.
-- Imports resolved through jpaths and through the importer's directory.
+- The edges in the two directions (`imports` and `imported_by`).
+- If a document imports the same file two times, the graph has one edge.
+- An import that does not resolve gives no edge.
+- The build ignores `importstr` and `importbin`.
+- If a document does not parse, the build adds it to `malformed`, and the document gives no edges.
+- Imports resolve through jpaths and through the directory of the importer.
 
 Commit: `test: Cover ImportGraph.build`
 
 ### Step 2: Separate import resolution from the graph
 
-Move resolution out of `ImportGraph` into an `ImportResolver(root, jpaths)` with the `_is_file`, `_same_dir`, and `_via_jpaths` caches. Bulk builds and incremental updates both use it.
+Move import resolution from `ImportGraph` into `ImportResolver(root, jpaths)`. `ImportResolver` has the `_is_file`, `_same_dir`, and `_via_jpaths` caches. Bulk builds and incremental updates both use it.
 
-The caches record only whether files exist, so they go stale once a file is created or deleted. Instead of invalidating them, create a fresh resolver for each batch of resolutions (a bulk build, or one incremental update) and drop it afterwards.
+The caches record only if files exist. Thus they become incorrect after somebody creates or deletes a file. Do not invalidate the caches. Instead, create a new resolver for each batch of resolutions, and discard it after the batch. A batch is one bulk build or one incremental update.
 
-`ImportGraph` keeps its current public API for now, delegating to an `ImportResolver`.
+For now, `ImportGraph` keeps its current public API. It sends the resolution calls to an `ImportResolver`.
 
-> An earlier version of this step split resolution into an uncached `ImportResolver` for incremental updates and a `CachedImportResolver` subclass for bulk builds. That was merged into the single cached `ImportResolver` above: a short-lived cache is always valid, costs little on a small update, and leaves only one implementation to test.
+> An earlier version of this step had two resolvers: an `ImportResolver` without caches for incremental updates, and a `CachedImportResolver` subclass for bulk builds. This step now merges them into one `ImportResolver` with caches. A cache with a short life is always valid, and it costs little on a small update. Also, there is only one implementation to test.
 
 Commit: `refactor: Extract import resolution into ImportResolver`
 
-### Step 3: Introduce `ImportGraphBuilder`
+### Step 3: Add `ImportGraphBuilder`
 
-- `ImportGraphBuilder(root, jpaths).build(docs) -> ImportGraph` owns the whole construction: the parallel `collect_importees` pass and resolution with an `ImportResolver`. It is ephemeral, created per build and dropped afterwards, which frees the caches.
-- `ImportGraph` becomes the long-lived result: `root`, `jpaths`, `imports`, `imported_by`, and `malformed`. It has no caches and no `build` method.
-- Update `FolderIndex.start` and `joule benchmark` to use the builder. The builder still runs in `asyncio.to_thread` and the graph is published in one assignment, so no locking is needed.
+- `ImportGraphBuilder(root, jpaths).build(docs) -> ImportGraph` does all the construction: the parallel `collect_importees` pass, and the resolution with an `ImportResolver`. The builder has a short life. Create one for each build, and discard it after the build. This releases the caches.
+- `ImportGraph` becomes the result with a long life: `root`, `jpaths`, `imports`, `imported_by`, and `malformed`. It has no caches and no `build` method.
+- Change `FolderIndex.start` and `joule benchmark` so that they use the builder. The builder still runs in `asyncio.to_thread`, and one assignment publishes the graph. Thus a lock is not necessary.
 - Move the Step 1 tests to the builder.
 
 Commit: `refactor: Split ImportGraphBuilder out of ImportGraph`
 
-### Step 4: Keep the data needed for incremental updates
+### Step 4: Keep the data for incremental updates
 
-Add to `ImportGraph`, populated by the builder:
+Add these fields to `ImportGraph`. The builder sets their values.
 
-- `importees: dict[Path, list[str]]`: each document's raw importee strings, needed to re-resolve them.
-- `importers_by_name: dict[str, set[Path]]`: the file name of each importee (`P.basename(P.normpath(importee))`) mapped to the documents importing it. When a file is created or deleted, this finds every import that might resolve differently. It may over-select but never misses an import, because every candidate path of an importee ends with that file name.
+- `importees: dict[Path, list[str]]`: the raw importee strings of each document. Joule needs them to resolve the importees again.
+- `importers_by_name: dict[str, set[Path]]`: a map from the file name of each importee (`P.basename(P.normpath(importee))`) to the documents that import it.
+
+When somebody creates or deletes a file, `importers_by_name` finds all the imports that can resolve differently. It can select too many imports, but it never misses an import. The reason is that each candidate path of an importee ends with the file name of the importee.
 
 Make sure that the memory cost is acceptable on large monorepos.
 
@@ -77,16 +81,32 @@ Commit: `refactor: Keep raw importees and a file-name index in ImportGraph`
 
 ### Step 5: Incremental updates
 
-Add mutation methods to `ImportGraph`, each resolving with a fresh `ImportResolver`:
+Add methods that change `ImportGraph`. Each method resolves imports with a new `ImportResolver`.
 
-- `update_document(doc)`: re-collect the document's importees, diff them against `importees[doc]`, re-resolve only what changed, and update edges, `malformed`, and the file-name index.
-- `add_file(path)`: re-resolve the imports found through `importers_by_name[basename(path)]`. A new file can shadow a lower-priority candidate or make an unresolved import resolve. This applies to any file, including non-documents such as `.json` import targets. If `path` is a document, also collect and resolve its own imports.
-- `remove_file(path)`: drop the document's outgoing edges and index entries, then re-resolve the name-matched imports, which may now resolve to a lower-priority candidate.
+- `update_document(doc)`:
+  1. Collect the importees of the document again, and compare them with `importees[doc]`.
+  2. Resolve again only the importees that changed.
+  3. Update the edges, `malformed`, and the file-name index.
+- `add_file(path)`:
+  1. Resolve again the imports that `importers_by_name[basename(path)]` finds. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not documents, such as `.json` import targets.
+  2. If `path` is a document, also collect and resolve its imports.
+- `remove_file(path)`:
+  1. Remove the edges from the document, and its index entries.
+  2. Resolve again the imports that match the file name. These imports can now resolve to a candidate with a lower priority.
 
-Test each method against a full rebuild: apply a change to a temporary workspace, update the graph incrementally, and assert that it equals a graph freshly built from the changed workspace.
+Test each method against a full rebuild:
+
+1. Apply a change to a temporary workspace.
+2. Update the graph incrementally.
+3. Make sure that the graph is equal to a new graph that Joule builds from the changed workspace.
 
 Commit: `feat: Update ImportGraph incrementally on file changes`
 
 ### Out of scope
 
-Wiring these methods to LSP events (`workspace/didChangeWatchedFiles`, `textDocument/didSave`) and batching bursts of events, such as a `git checkout`, into a full rebuild. Track these in [TODO.md](../TODO.md) once Step 5 lands.
+This task does not include these items:
+
+- Connect these methods to LSP events (`workspace/didChangeWatchedFiles` and `textDocument/didSave`).
+- Combine bursts of events, such as a `git checkout`, into a full rebuild.
+
+After Step 5 is complete, record these items in [TODO.md](../TODO.md).
