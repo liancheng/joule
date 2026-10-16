@@ -51,7 +51,7 @@ def parse(source: str) -> tuple[str, dict[int, Span]]:
 
         else:
             raise ValueError(
-                "Each line in a document with marked spans annotations must start "
+                "Each line in a document with marked span annotations must start "
                 'with either ":   " for a source line or ">   " for an annotated line.'
             )
 

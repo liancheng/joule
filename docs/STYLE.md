@@ -71,7 +71,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
           self.doc = doc
   ```
 
-- Put related attributes in a group, with a short comment such as `# Edge fields`. Keep private state, such as caches, separate from the public attributes. Start the names of private attributes with `_`.
+- Put related attributes in a group. Keep private state, such as caches, separate from the public attributes. Start the names of private attributes with `_`.
 - If a class only holds data, use `@D.dataclass(slots=True)`. For a value type, also add `frozen=True`.
 - Use slots where memory is important. Joule builds ASTs for tens of thousands of files.
 - Some fields get their values after construction, for example `parent`, `field_scope`, and `top_level_scope`. Declare these fields with `D.field(default=None, init=False, repr=False, compare=False)`. Then they have no effect on equality, hashes, or printed output.
@@ -120,7 +120,8 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 ## Comments and docstrings
 
-- Write comments and docstrings in Simplified Technical English. See [Text style](#text-style).
+- Do not add a comment, except for a tricky corner case that is difficult to understand at a glance. Clear names and simple code are better than comments.
+- Write comments and docstrings in Simplified Technical English, at about 80%. See [Text style](#text-style).
 - Start a docstring with a one-line summary in the third person. For example: "Resolves importees like the file importer of Jsonnet." Then add paragraphs that tell the behavior and the constraints.
 - Write a docstring for a class if its contract is not obvious. Do not write docstrings for simple methods.
 - In a comment, tell why the code does something. Do not tell what it does. If a cost or a measurement is the reason, give the number:

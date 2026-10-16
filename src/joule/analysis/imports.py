@@ -50,21 +50,6 @@ def collect_importees(path: Path) -> tuple[list[str], bool]:
 
 
 class ImportResolver:
-    """Resolves importees like Jsonnet's file importer.
-
-    An absolute importee is used as-is. Otherwise it is tried relative to the importer's
-    directory first, then relative to each jpath, later jpaths first. The first candidate
-    naming an existing file wins. Relative importers and jpaths are taken relative to
-    the workspace root.
-
-    Paths are normalized lexically: `.` and `..` are collapsed as text, and symlinks are
-    not followed.
-
-    Lookups are cached. The caches record only whether files exist, so they go stale once
-    a file is created or deleted. Create one resolver per batch of resolutions, such as a
-    bulk build or an incremental update, and drop it afterwards.
-    """
-
     root: Path
     jpaths: list[Path]
 
@@ -131,8 +116,6 @@ class ImportResolver:
 
 
 class ImportGraph:
-    """The import graph of a workspace folder, built by `ImportGraphBuilder`."""
-
     root: Path
     jpaths: list[Path]
 
@@ -157,12 +140,6 @@ class ImportGraph:
 
 
 class ImportGraphBuilder:
-    """Builds an `ImportGraph` from scratch.
-
-    Create one per bulk build and drop it afterwards. The resolution caches live only for
-    the duration of `build`, so the finished graph doesn't keep them alive.
-    """
-
     root: Path
     jpaths: list[Path]
     batch_size: int
