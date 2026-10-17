@@ -21,7 +21,7 @@ class JouleLanguageServer(LanguageServer):
         super().__init__(*args, **kwargs)
         self.indexes = {}
 
-    def index_for(self, uri: str) -> FolderIndex | None:
+    def find_index(self, uri: str) -> FolderIndex | None:
         return head_or_none(
             index
             for folder_uri, index in sorted(self.indexes.items(), reverse=True)
@@ -54,6 +54,7 @@ def resolve_document(uri: str) -> T.Document | None:
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
     config = await load_config(ls)
     folders: dict[str, L.WorkspaceFolder] = ls.workspace.folders
+
     ls.indexes = {uri: FolderIndex(folder, config) for uri, folder in folders.items()}
 
     for index in ls.indexes.values():
@@ -61,40 +62,44 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
 
 
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
-async def document_symbol(_: LanguageServer, params: L.DocumentSymbolParams):
+async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     uri = params.text_document.uri
     return [
         symbol
-        for doc in maybe(resolve_document(uri))
+        for index in maybe(ls.find_index(uri))
+        for doc in maybe(index.resolve_document(uri))
         for symbol in DocumentSymbolProvider(doc).serve()
     ]
 
 
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
-async def definition(_: LanguageServer, params: L.DefinitionParams):
+async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(resolve_document(uri))
+        for index in maybe(ls.find_index(uri))
+        for doc in maybe(index.resolve_document(uri))
         for location in DefinitionProvider(uri, doc).serve(params.position)
     ]
 
 
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
-async def references(_: LanguageServer, params: L.ReferenceParams):
+async def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(resolve_document(uri))
+        for index in maybe(ls.find_index(uri))
+        for doc in maybe(index.resolve_document(uri))
         for location in ReferencesProvider(uri, doc).serve(params.position)
     ]
 
 
 @server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
-async def folding_range(_: LanguageServer, params: L.FoldingRangeParams):
+async def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(resolve_document(uri))
+        for index in maybe(ls.find_index(uri))
+        for doc in maybe(index.resolve_document(uri))
         for location in FoldingRangeProvider().serve(doc)
     ]
