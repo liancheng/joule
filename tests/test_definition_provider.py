@@ -8,6 +8,8 @@ from tests.dsl import FakeDocument
 
 class TestDefinitionProvider(FakeDocumentTestCase):
     def assertDefined(self, doc: FakeDocument, var: T.Id.Var, *points: T.Point):
+        __tracebackhide__ = True
+
         provider = DefinitionProvider(doc.uri, doc.document)
 
         for point in points:

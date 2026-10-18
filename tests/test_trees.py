@@ -7,10 +7,12 @@ from tests.dsl import arg, bind, field, param
 
 class TestTrees(FakeDocumentTestCase):
     def assertStrEqual(self, source: str, expected: str):
+        __tracebackhide__ = True
         t = self.fake_document(source, marked=False)
         self.assertEqual(t.body, t.span.string(expected))
 
     def assertNumEqual(self, source: str, expected: float):
+        __tracebackhide__ = True
         t = self.fake_document(source, marked=False)
         self.assertEqual(t.body, t.span.num(expected))
 

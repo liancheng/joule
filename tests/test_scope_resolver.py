@@ -6,6 +6,8 @@ from tests import FakeDocumentTestCase
 
 class TestScopeResolver(FakeDocumentTestCase):
     def assertVarBinding(self, owner: T.Tree, var: T.Id.Var, target: T.Tree):
+        __tracebackhide__ = True
+
         binding = var.binding
         self.assertIsNotNone(binding)
 
@@ -15,6 +17,8 @@ class TestScopeResolver(FakeDocumentTestCase):
         self.assertEqual(binding.target, target)
 
     def assertFieldBinding(self, owner: T.Object, field: T.Field):
+        __tracebackhide__ = True
+
         self.assertIsInstance(field.key, T.StaticKey)
         key = field.key.to(T.StaticKey)
 
@@ -27,6 +31,7 @@ class TestScopeResolver(FakeDocumentTestCase):
         self.assertEqual(binding.target, field.value)
 
     def assertVarRef(self, var: T.Id.Var, *refs: T.Id.VarRef):
+        __tracebackhide__ = True
         self.assertIsNotNone(var.references)
         expected_refs = just(var.references)
         self.assertCountEqual(expected_refs, refs)
