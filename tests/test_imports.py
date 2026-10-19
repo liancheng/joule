@@ -1,101 +1,263 @@
-import os
+import shutil
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 from joule.analysis.imports import ImportGraphBuilder, ImportResolver
+from joule.maybe import head_or_none, maybe
 
 
 class TestImportResolver(unittest.TestCase):
+    root: Path
+    current_jpaths: list[Path]
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
+        self.current_jpaths = []
 
     def touch(self, *paths: str):
         for path in paths:
-            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
-            (self.root / path).touch()
+            self.root.joinpath(path).parent.mkdir(parents=True, exist_ok=True)
+            self.root.joinpath(path).touch()
 
-    def resolve(self, importer: str, importee: str, jpaths: tuple[str, ...] = ()):
-        resolver = ImportResolver(self.root, [Path(p) for p in jpaths])
-        return resolver.resolve(Path(importer), importee)
+    @contextmanager
+    def provision(self, *entries: str):
+        for entry in entries:
+            match entry.split(" -> "):
+                case [str(dir)] if dir.endswith("/"):
+                    self.root.joinpath(dir).mkdir(parents=True, exist_ok=True)
+
+                case [str(file)]:
+                    path = self.root.joinpath(file)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch(exist_ok=True)
+
+                case [str(link), str(target)]:
+                    self.root.joinpath(link).symlink_to(
+                        target,
+                        target_is_directory=self.root.joinpath(target).is_dir(),
+                    )
+
+                case _:
+                    raise ValueError(
+                        'A provisioned entry must be a file ("file_name") a directory'
+                        ' ("dir_name/"), or a symlink ("link -> target").'
+                    )
+
+        try:
+            yield
+        finally:
+            for child in self.root.iterdir():
+                if child.is_dir(follow_symlinks=False):
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+
+    @contextmanager
+    def jpaths(self, *entries: str):
+        before = self.current_jpaths
+        self.current_jpaths = list(map(Path, entries))
+        try:
+            yield
+        finally:
+            self.current_jpaths = before
+
+    def assertResolved(
+        self,
+        *,
+        importer: str | Path,
+        importee: str | Path,
+        resolved: str | Path | None,
+    ):
+        __tracebackhide__ = True
+        resolver = ImportResolver(self.root, self.current_jpaths)
+        self.assertEqual(
+            head_or_none(
+                path.absolute().relative_to(self.root)
+                for path in maybe(resolver.resolve(Path(importer), str(importee)))
+            ),
+            head_or_none(
+                self.root.joinpath(path).absolute().relative_to(self.root)
+                for path in maybe(resolved)
+            ),
+        )
+
+    def assertUnresolved(
+        self,
+        *,
+        importer: str | Path,
+        importee: str | Path,
+    ):
+        __tracebackhide__ = True
+        self.assertResolved(importer=importer, importee=importee, resolved=None)
 
     def test_relative_to_importer(self):
-        self.touch("a/main.jsonnet", "a/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "lib.libsonnet"),
-            self.root / "a/lib.libsonnet",
-        )
+        with self.provision(
+            "a/main.jsonnet",
+            "a/lib.libsonnet",
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="lib.libsonnet",
+                resolved="a/lib.libsonnet",
+            )
 
-    def test_dots_are_collapsed(self):
-        self.touch("a/main.jsonnet", "b/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "../b/./lib.libsonnet"),
-            self.root / "b/lib.libsonnet",
-        )
+    def test_dots_collapsed(self):
+        with self.provision(
+            "a/main.jsonnet",
+            "b/lib.libsonnet",
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="../b/./lib.libsonnet",
+                resolved="b/lib.libsonnet",
+            )
 
-    def test_importer_dir_before_jpath(self):
-        self.touch("a/main.jsonnet", "a/lib.libsonnet", "vendor/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "lib.libsonnet", ("vendor",)),
-            self.root / "a/lib.libsonnet",
-        )
+    def test_same_dir_over_jpaths(self):
+        with (
+            self.jpaths("vendor"),
+            self.provision(
+                "a/main.jsonnet",
+                "a/lib.libsonnet",
+                "vendor/lib.libsonnet",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="lib.libsonnet",
+                resolved="a/lib.libsonnet",
+            )
 
-    def test_falls_back_to_jpath(self):
-        self.touch("a/main.jsonnet", "vendor/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "lib.libsonnet", ("vendor",)),
-            self.root / "vendor/lib.libsonnet",
-        )
+    def test_jpath_fallback(self):
+        with (
+            self.jpaths("vendor"),
+            self.provision(
+                "a/main.jsonnet",
+                "vendor/lib.libsonnet",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="lib.libsonnet",
+                resolved="vendor/lib.libsonnet",
+            )
 
     def test_later_jpath_wins(self):
-        self.touch("a/main.jsonnet", "j1/lib.libsonnet", "j2/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "lib.libsonnet", ("j1", "j2")),
-            self.root / "j2/lib.libsonnet",
-        )
+        with (
+            self.jpaths("j1", "j2"),
+            self.provision(
+                "a/main.jsonnet",
+                "j1/lib.libsonnet",
+                "j2/lib.libsonnet",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="lib.libsonnet",
+                resolved="j2/lib.libsonnet",
+            )
 
     def test_workspace_root_as_jpath(self):
-        self.touch("ci/builds/main.jsonnet", "ci/utils.jsonnet.TEMPLATE")
-        self.assertEqual(
-            self.resolve("ci/builds/main.jsonnet", "ci/utils.jsonnet.TEMPLATE", (".",)),
-            self.root / "ci/utils.jsonnet.TEMPLATE",
-        )
+        with (
+            self.jpaths("."),
+            self.provision(
+                "ci/builds/main.jsonnet",
+                "ci/utils.libsonnet",
+            ),
+        ):
+            self.assertResolved(
+                importer="ci/builds/main.jsonnet",
+                importee="ci/utils.libsonnet",
+                resolved="ci/utils.libsonnet",
+            )
 
     def test_absolute_importee(self):
-        self.touch("a/main.jsonnet", "b/lib.libsonnet")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", str(self.root / "b/lib.libsonnet"), ("a",)),
-            self.root / "b/lib.libsonnet",
-        )
+        with (
+            self.jpaths("a"),
+            self.provision(
+                "b/lib.libsonnet",
+                "a/main.jsonnet",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee=self.root.joinpath("b/lib.libsonnet"),
+                resolved="b/lib.libsonnet",
+            )
+
+        with (
+            self.jpaths("a"),
+            self.provision(
+                "a/main.jsonnet",
+                "a/lib.libsonnet",
+                "a/sub/",
+                "lib.libsonnet",
+                "link -> a/sub",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee=self.root.joinpath("link/../lib.libsonnet"),
+                # Absolute importee paths are returned as is without normalization.
+                resolved="link/../lib.libsonnet",
+            )
 
     def test_unresolved(self):
-        self.touch("a/main.jsonnet")
-        self.assertIsNone(self.resolve("a/main.jsonnet", "missing.libsonnet", (".",)))
+        with (
+            self.jpaths("."),
+            self.provision("a/main.jsonnet"),
+        ):
+            self.assertUnresolved(
+                importer="a/main.jsonnet",
+                importee="missing.libsonnet",
+            )
 
-    def test_symlinks_are_not_followed(self):
-        # `link` points to `real/sub`. Lexically, `link/../lib.libsonnet` is
-        # `lib.libsonnet` under the root, not `real/lib.libsonnet`.
-        self.touch("real/sub/main.jsonnet", "real/lib.libsonnet", "lib.libsonnet")
-        os.symlink(self.root / "real/sub", self.root / "link")
-        self.assertEqual(
-            self.resolve("link/main.jsonnet", "../lib.libsonnet"),
-            self.root / "lib.libsonnet",
-        )
+    def test_symlinks(self):
+        with self.provision(
+            "real/lib.libsonnet",
+            "real/sub/main.jsonnet",
+            "lib.libsonnet",
+            "link -> real/sub",
+        ):
+            self.assertResolved(
+                importer="link/main.jsonnet",
+                importee="../lib.libsonnet",
+                # Check importer parent directory:
+                #   => {root}/link/../lib.libsonnet
+                #   => {root}/lib.libsonnet
+                resolved="lib.libsonnet",
+            )
 
-    def test_jpath_candidates_are_normalized_before_existence_check(self):
-        # Under `j2`, `link/../x.libsonnet` exists only physically, through the link to
-        # `elsewhere/sub` (as `elsewhere/x.libsonnet`). Lexically it's `j2/x.libsonnet`,
-        # which doesn't exist, so the lower-priority `j1` must win.
-        self.touch("a/main.jsonnet", "j1/x.libsonnet", "elsewhere/x.libsonnet")
-        (self.root / "elsewhere/sub").mkdir()
-        (self.root / "j2").mkdir()
-        os.symlink(self.root / "elsewhere/sub", self.root / "j2/link")
-        self.assertEqual(
-            self.resolve("a/main.jsonnet", "link/../x.libsonnet", ("j1", "j2")),
-            self.root / "j1/x.libsonnet",
-        )
+        with (
+            self.jpaths("j1", "j2"),
+            self.provision(
+                "a/main.jsonnet",
+                "elsewhere/sub/",
+                "elsewhere/x.libsonnet",
+                "j1/x.libsonnet",
+                "j2/",
+                "j2/link -> elsewhere/sub",
+            ),
+        ):
+            self.assertResolved(
+                importer="a/main.jsonnet",
+                importee="link/../x.libsonnet",
+                # Check importer parent directory:
+                #   => {root}/a/link/../x.libsonnet
+                #   => {root}/a/x.libsonnet (Normalize)
+                #   => Not found
+                #
+                # Check jpath "j2":
+                #   => {root}/j2/x.libsonnet
+                #   => Not found
+                #
+                # Check jpath "j1":
+                #   => {root}/j1/x.libsonnet
+                resolved="j1/x.libsonnet",
+            )
 
 
 # A workspace covering every case of `ImportGraphBuilder.build`. Building starts a process

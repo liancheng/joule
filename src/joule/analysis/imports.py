@@ -78,26 +78,21 @@ class ImportResolver:
         return importee if P.isabs(importee) else None
 
     def try_same_dir(self, importer: Path, importee: str) -> str | None:
-        # Normalized so that different spellings of one importee share an entry.
         importer_dir = P.dirname(P.join(self.root, importer))
-        importee = P.normpath(importee)
 
         try:
             return self._same_dir[(importer_dir, importee)]
         except KeyError:
             joined = P.join(importer_dir, importee)
-            path = joined if self.is_file(joined) else None
-            self._same_dir[(importer_dir, importee)] = path
-            return path
+            path = P.abspath(joined) if self.is_file(joined) else None
+            return self._same_dir.setdefault((importer_dir, importee), path)
 
     def try_jpaths(self, importee: str) -> str | None:
-        importee = P.normpath(importee)
-
         try:
             return self._via_jpaths[importee]
         except KeyError:
             result = head_or_none(
-                path
+                P.abspath(path)
                 for jpath in reversed(self.jpaths)
                 if self.is_file(path := P.join(self.root, jpath, importee))
             )
@@ -106,11 +101,11 @@ class ImportResolver:
 
     def resolve(self, importer: Path, importee: str) -> Path | None:
         return head_or_none(
-            Path(P.abspath(path))
+            Path(path)
             for path in maybe(
                 self.try_abs_path(importee)
-                or self.try_same_dir(importer, importee)
-                or self.try_jpaths(importee)
+                or self.try_same_dir(importer, P.normpath(importee))
+                or self.try_jpaths(P.normpath(importee))
             )
         )
 
