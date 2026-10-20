@@ -1,4 +1,3 @@
-import shutil
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -10,64 +9,20 @@ from joule.analysis.imports import (
     ParallelImportGraphBuilder,
 )
 from joule.maybe import head_or_none, maybe
+from tests import Dir, FakeWorkspaceTestCase, File, SymLink
 
 
-class TestImportResolver(unittest.TestCase):
-    root: Path
-    current_jpaths: list[Path]
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
-        self.current_jpaths = []
-
-    def touch(self, *paths: str):
-        for path in paths:
-            self.root.joinpath(path).parent.mkdir(parents=True, exist_ok=True)
-            self.root.joinpath(path).touch()
-
-    @contextmanager
-    def provision(self, *entries: str):
-        for entry in entries:
-            match entry.split(" -> "):
-                case [str(dir)] if dir.endswith("/"):
-                    self.root.joinpath(dir).mkdir(parents=True, exist_ok=True)
-
-                case [str(file)]:
-                    path = self.root.joinpath(file)
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.touch(exist_ok=True)
-
-                case [str(link), str(target)]:
-                    self.root.joinpath(link).symlink_to(
-                        target,
-                        target_is_directory=self.root.joinpath(target).is_dir(),
-                    )
-
-                case _:
-                    raise ValueError(
-                        'A provisioned entry must be a file ("file_name") a directory'
-                        ' ("dir_name/"), or a symlink ("link -> target").'
-                    )
-
-        try:
-            yield
-        finally:
-            for child in self.root.iterdir():
-                if child.is_dir(follow_symlinks=False):
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
-
+class TestImportResolver(FakeWorkspaceTestCase):
     @contextmanager
     def jpaths(self, *entries: str):
-        before = self.current_jpaths
-        self.current_jpaths = list(map(Path, entries))
+        before = self.current_config
+        update = {"jpaths": list(entries)}
+        self.current_config = self.current_config.model_copy(update=update)
+
         try:
             yield
         finally:
-            self.current_jpaths = before
+            self.current_config = before
 
     def assertResolved(
         self,
@@ -77,7 +32,7 @@ class TestImportResolver(unittest.TestCase):
         resolved: str | Path | None,
     ):
         __tracebackhide__ = True
-        resolver = ImportResolver(self.root, self.current_jpaths)
+        resolver = ImportResolver(self.root, self.current_config.jpaths)
         self.assertEqual(
             head_or_none(
                 path.absolute().relative_to(self.root)
@@ -99,9 +54,9 @@ class TestImportResolver(unittest.TestCase):
         self.assertResolved(importer=importer, importee=importee, resolved=None)
 
     def test_relative_to_importer(self):
-        with self.provision(
-            "a/main.jsonnet",
-            "a/lib.libsonnet",
+        with self.layout(
+            File("a/main.jsonnet"),
+            File("a/lib.libsonnet"),
         ):
             self.assertResolved(
                 importer="a/main.jsonnet",
@@ -110,9 +65,9 @@ class TestImportResolver(unittest.TestCase):
             )
 
     def test_dots_collapsed(self):
-        with self.provision(
-            "a/main.jsonnet",
-            "b/lib.libsonnet",
+        with self.layout(
+            File("a/main.jsonnet"),
+            File("b/lib.libsonnet"),
         ):
             self.assertResolved(
                 importer="a/main.jsonnet",
@@ -123,10 +78,10 @@ class TestImportResolver(unittest.TestCase):
     def test_same_dir_over_jpaths(self):
         with (
             self.jpaths("vendor"),
-            self.provision(
-                "a/main.jsonnet",
-                "a/lib.libsonnet",
-                "vendor/lib.libsonnet",
+            self.layout(
+                File("a/main.jsonnet"),
+                File("a/lib.libsonnet"),
+                File("vendor/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -138,9 +93,9 @@ class TestImportResolver(unittest.TestCase):
     def test_jpath_fallback(self):
         with (
             self.jpaths("vendor"),
-            self.provision(
-                "a/main.jsonnet",
-                "vendor/lib.libsonnet",
+            self.layout(
+                File("a/main.jsonnet"),
+                File("vendor/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -152,10 +107,10 @@ class TestImportResolver(unittest.TestCase):
     def test_later_jpath_wins(self):
         with (
             self.jpaths("j1", "j2"),
-            self.provision(
-                "a/main.jsonnet",
-                "j1/lib.libsonnet",
-                "j2/lib.libsonnet",
+            self.layout(
+                File("a/main.jsonnet"),
+                File("j1/lib.libsonnet"),
+                File("j2/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -167,9 +122,9 @@ class TestImportResolver(unittest.TestCase):
     def test_workspace_root_as_jpath(self):
         with (
             self.jpaths("."),
-            self.provision(
-                "ci/builds/main.jsonnet",
-                "ci/utils.libsonnet",
+            self.layout(
+                File("ci/builds/main.jsonnet"),
+                File("ci/utils.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -181,9 +136,9 @@ class TestImportResolver(unittest.TestCase):
     def test_absolute_importee(self):
         with (
             self.jpaths("a"),
-            self.provision(
-                "b/lib.libsonnet",
-                "a/main.jsonnet",
+            self.layout(
+                File("b/lib.libsonnet"),
+                File("a/main.jsonnet"),
             ),
         ):
             self.assertResolved(
@@ -194,12 +149,12 @@ class TestImportResolver(unittest.TestCase):
 
         with (
             self.jpaths("a"),
-            self.provision(
-                "a/main.jsonnet",
-                "a/lib.libsonnet",
-                "a/sub/",
-                "lib.libsonnet",
-                "link -> a/sub",
+            self.layout(
+                File("a/main.jsonnet"),
+                File("a/lib.libsonnet"),
+                Dir("a/sub"),
+                File("lib.libsonnet"),
+                SymLink("link", target="a/sub"),
             ),
         ):
             self.assertResolved(
@@ -212,7 +167,9 @@ class TestImportResolver(unittest.TestCase):
     def test_unresolved(self):
         with (
             self.jpaths("."),
-            self.provision("a/main.jsonnet"),
+            self.layout(
+                File("a/main.jsonnet"),
+            ),
         ):
             self.assertUnresolved(
                 importer="a/main.jsonnet",
@@ -220,11 +177,11 @@ class TestImportResolver(unittest.TestCase):
             )
 
     def test_symlinks(self):
-        with self.provision(
-            "real/lib.libsonnet",
-            "real/sub/main.jsonnet",
-            "lib.libsonnet",
-            "link -> real/sub",
+        with self.layout(
+            File("real/lib.libsonnet"),
+            File("real/sub/main.jsonnet"),
+            File("lib.libsonnet"),
+            SymLink("link", target="real/sub"),
         ):
             self.assertResolved(
                 importer="link/main.jsonnet",
@@ -237,13 +194,13 @@ class TestImportResolver(unittest.TestCase):
 
         with (
             self.jpaths("j1", "j2"),
-            self.provision(
-                "a/main.jsonnet",
-                "elsewhere/sub/",
-                "elsewhere/x.libsonnet",
-                "j1/x.libsonnet",
-                "j2/",
-                "j2/link -> elsewhere/sub",
+            self.layout(
+                File("a/main.jsonnet"),
+                Dir("elsewhere/sub"),
+                File("elsewhere/x.libsonnet"),
+                File("j1/x.libsonnet"),
+                Dir("j2"),
+                SymLink("j2/link", target="elsewhere/sub"),
             ),
         ):
             self.assertResolved(

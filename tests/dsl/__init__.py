@@ -99,6 +99,9 @@ def param(var: T.Id.Var, default: T.Expr | None = None) -> T.Param:
 
 
 class LineMap:
+    text: str
+    line_offsets: list[int]
+
     def __init__(self, text: str) -> None:
         self.text = text
 
@@ -121,12 +124,11 @@ class LineMap:
 
 
 class FakeDocument(LineMap):
-    def __init__(
-        self,
-        text: str,
-        uri: str = "file:///tmp/test.jsonnet",
-        marked=True,
-    ) -> None:
+    uri: str
+    document: T.Document
+    body: T.Expr
+
+    def __init__(self, text: str, uri: str, marked=True) -> None:
         text = dedent(text)
         text, self.spans = span_markers.parse(text) if marked else (text, {})
         super().__init__(text)
