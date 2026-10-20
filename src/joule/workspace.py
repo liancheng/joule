@@ -1,13 +1,9 @@
-import asyncio as A
 import shutil
 import subprocess
 from pathlib import Path
 
-from lsprotocol import types as L
-
-from joule.analysis.imports import ImportGraph, ImportGraphBuilder
+from joule.analysis.imports import ImportGraph
 from joule.analysis.scopes import resolve
-from joule.config import Config
 from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 
@@ -44,33 +40,14 @@ def discover_docs(
 
 
 class FolderIndex:
-    folder: L.WorkspaceFolder
-    config: Config
+    root: Path
+    jpaths: list[Path]
     import_graph: ImportGraph | None
 
-    def __init__(self, folder: L.WorkspaceFolder, config: Config):
-        self.folder: L.WorkspaceFolder = folder
-        self.config = config
+    def __init__(self, root: Path, jpaths: list[Path]):
+        self.root = root
+        self.jpaths = jpaths
         self.import_graph = None
-
-    async def start(self) -> None:
-        builder = ImportGraphBuilder(
-            root=Path.from_uri(self.folder.uri).absolute(),
-            jpaths=[Path(path) for path in self.config.jpaths],
-        )
-
-        docs = await A.to_thread(
-            discover_docs,
-            Path.from_uri(self.folder.uri),
-            self.config.extensions,
-            self.config.exclude,
-        )
-
-        self.import_graph = await A.to_thread(builder.build, docs)
-
-    @property
-    def ready(self) -> bool:
-        return self.import_graph is not None
 
     # TODO: Caches resolved AST trees and invalidates on updates.
     def resolve_document(self, uri: str) -> T.Document | None:

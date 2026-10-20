@@ -29,8 +29,8 @@ Prerequisite: `imports` and `imported_by` are `dict[Path, set[Path]]`. Thus the 
 - [x] Step 1: Tests for `ImportGraph.build`
 - [x] Step 2: Separate import resolution from the graph
 - [x] Step 3: Add `ImportGraphBuilder`
-- [ ] Step 4: Keep the data for incremental updates
-- [ ] Step 5: Incremental updates
+- [ ] Step 4: Keep the data for incremental updates. Moved to step 3 of [refactor-folder-index.md](refactor-folder-index.md).
+- [ ] Step 5: Incremental updates. Moved to step 3 of [refactor-folder-index.md](refactor-folder-index.md).
 
 ### Step 1: Tests for `ImportGraph.build`
 

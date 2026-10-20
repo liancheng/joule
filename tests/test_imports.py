@@ -4,7 +4,11 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from joule.analysis.imports import ImportGraphBuilder, ImportResolver
+from joule.analysis.imports import (
+    ImportGraphBuilder,
+    ImportResolver,
+    ParallelImportGraphBuilder,
+)
 from joule.maybe import head_or_none, maybe
 
 
@@ -306,8 +310,8 @@ class TestImportGraphBuilder(unittest.TestCase):
             (cls.root / path).parent.mkdir(parents=True, exist_ok=True)
             (cls.root / path).write_text(text)
 
-        docs = [cls.root / doc for doc in BUILD_DOCS]
-        cls.graph = ImportGraphBuilder(cls.root, [Path("vendor")]).build(docs)
+        cls.docs = [cls.root / doc for doc in BUILD_DOCS]
+        cls.graph = ImportGraphBuilder(cls.root, [Path("vendor")]).build(cls.docs)
 
     def path(self, rel: str) -> Path:
         return self.root / rel
@@ -378,3 +382,11 @@ class TestImportGraphBuilder(unittest.TestCase):
     def test_malformed_documents_contribute_no_edges(self):
         self.assertEqual(self.imports_of("app/broken.jsonnet"), set())
         self.assertEqual(self.imports_of("app/deleted.jsonnet"), set())
+
+    def test_parallel_build_gives_the_same_graph(self):
+        builder = ParallelImportGraphBuilder(self.root, [Path("vendor")], batch_size=2)
+        graph = builder.build(self.docs)
+
+        self.assertEqual(graph.imports, self.graph.imports)
+        self.assertEqual(graph.imported_by, self.graph.imported_by)
+        self.assertEqual(graph.malformed, self.graph.malformed)

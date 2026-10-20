@@ -1,10 +1,11 @@
 import functools
-import itertools
 import os
 import os.path as P
 from collections import defaultdict
+from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import override
 
 import tree_sitter as ts
 
@@ -15,6 +16,7 @@ __all__ = [
     "ImportGraph",
     "ImportGraphBuilder",
     "ImportResolver",
+    "ParallelImportGraphBuilder",
 ]
 
 
@@ -25,7 +27,12 @@ def import_cursor() -> ts.QueryCursor:
     return ts.QueryCursor(query)
 
 
-def collect_importees(path: Path) -> tuple[list[str], bool]:
+type Importees = tuple[list[str], bool]
+
+type ImporteesCollector = Callable[[Path], Importees]
+
+
+def collect_importees(path: Path) -> Importees:
     try:
         source = path.read_bytes()
     except OSError:
@@ -134,28 +141,30 @@ class ImportGraph:
         self.imported_by[importee].add(importer)
 
 
+type MapFn = Callable[
+    [ImporteesCollector, list[Path]],
+    Iterable[Importees],
+]
+
+
 class ImportGraphBuilder:
     root: Path
     jpaths: list[Path]
-    batch_size: int
 
-    def __init__(self, root: Path, jpaths: list[Path], batch_size: int = 256):
+    def __init__(self, root: Path, jpaths: list[Path]):
         self.root = root
         self.jpaths = jpaths
-        self.batch_size = batch_size
 
     def build(self, docs: list[Path]) -> ImportGraph:
+        return self.do_build(docs, map)
+
+    def do_build(self, docs: list[Path], map_fn: MapFn) -> ImportGraph:
         graph = ImportGraph(self.root, self.jpaths)
         resolver = ImportResolver(self.root, self.jpaths)
-        parallelism = max(2, os.process_cpu_count() or 2)
 
-        with ProcessPoolExecutor(max_workers=parallelism) as executor:
-            raw_importees = itertools.zip_longest(
-                docs,
-                executor.map(collect_importees, docs, chunksize=self.batch_size),
-            )
+        importees_of = map_fn(collect_importees, docs)
 
-        for importer, (importees, error) in raw_importees:
+        for importer, (importees, error) in zip(docs, importees_of, strict=True):
             if error:
                 graph.malformed.append(importer)
             else:
@@ -164,3 +173,19 @@ class ImportGraphBuilder:
                         graph.add_edge(importer, resolved)
 
         return graph
+
+
+class ParallelImportGraphBuilder(ImportGraphBuilder):
+    batch_size: int
+
+    def __init__(self, root: Path, jpaths: list[Path], batch_size: int = 256):
+        super().__init__(root, jpaths)
+        self.batch_size = batch_size
+
+    @override
+    def build(self, docs: list[Path]) -> ImportGraph:
+        parallelism: int = max(2, os.process_cpu_count() or 2)
+
+        with ProcessPoolExecutor(max_workers=parallelism) as executor:
+            map_fn: MapFn = functools.partial(executor.map, chunksize=self.batch_size)
+            return self.do_build(docs, map_fn)

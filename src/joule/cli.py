@@ -4,13 +4,11 @@ from textwrap import dedent
 from typing import Annotated
 
 import typer
-from lsprotocol.types import WorkspaceFolder
 from typer import Typer
 
-from joule.analysis.imports import ImportGraphBuilder
-from joule.config import Config
+from joule.analysis.imports import ParallelImportGraphBuilder
 from joule.server import server
-from joule.workspace import FolderIndex
+from joule.workspace import discover_docs
 
 app = Typer(
     no_args_is_help=True,
@@ -63,14 +61,12 @@ def benchmark(
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
     root = root.absolute()
-    config = Config(jpaths=[root], exclude=exclude, extensions=extension)
-    index = FolderIndex(WorkspaceFolder(root.as_uri(), root.name), config)
 
     start = time.perf_counter()
-    docs = index.discover_docs(extension, exclude)
+    docs = discover_docs(root, extension, exclude)
     discovered = time.perf_counter()
 
-    graph = ImportGraphBuilder(root, [root]).build(docs)
+    graph = ParallelImportGraphBuilder(root, [root]).build(docs)
     built = time.perf_counter()
 
     edges = sum(map(len, graph.imports.values()))

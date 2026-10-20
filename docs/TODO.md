@@ -27,8 +27,8 @@ For each request, the server parses the document and runs [scope resolution](DES
 
 ### Workspace loading
 
-- `initialized` reads the configuration (`jpaths`, `exclude`, `extensions`) through `workspace/configuration`. Then it creates one `FolderIndex` for each workspace folder.
-- `FolderIndex` finds the documents with `fd`. Then it builds the import graph in a process pool, with batches of work and with cached import resolution.
+- `initialized` reads the configuration (`jpaths`, `exclude`, `extensions`) through `workspace/configuration`. Then it creates one `FolderService` for each workspace folder.
+- `FolderService` finds the documents with `fd`. Then it builds the import graph in a process pool, with batches of work and with cached import resolution.
 - `joule benchmark` measures the discovery and the build of the import graph.
 
 ## TODO
@@ -49,8 +49,8 @@ For each request, the server parses the document and runs [scope resolution](DES
 
 ### Server
 
-- [ ] **No workspace folders.** If the client sends no workspace folders, `initialized` creates no `FolderIndex`. The single-file features still work, but nothing uses the import graph.
-- [ ] **Readiness.** `FolderIndex.ready` exists, but no handler checks it yet. Also, `initialized` waits until the scan of each folder is complete before it returns.
+- [ ] **No workspace folders.** If the client sends no workspace folders, `initialized` creates no `FolderService`. The single-file features still work, but nothing uses the import graph.
+- [ ] **Readiness.** `FolderService.ready` exists, but no handler checks it yet. Also, `initialized` waits until the scan of each folder is complete before it returns.
 - [ ] **Scan failures.** If the discovery or the build of the import graph fails, `import_graph` stays `None`. Nothing tells the reason.
 
 ### Design document

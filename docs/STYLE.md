@@ -36,8 +36,8 @@ This document tells how to write code for Joule. Follow it, so that new code is 
   1. `syntax`: trees, the visitor, and the pretty-printer.
   2. `analysis`: scopes and imports.
   3. `features`: LSP providers.
-  4. `workspace`.
-  5. `server` and `cli`.
+  4. `workspace`: `FolderIndex` and the discovery of documents. This layer and the lower layers are synchronous.
+  5. `server` and `cli`. The `server` package has the code that uses `asyncio`, threads, or process pools: `JouleLanguageServer` and `FolderService`.
 
   A module can import modules from its layer and from lower layers. It must not import modules from higher layers.
 
