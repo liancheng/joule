@@ -51,7 +51,7 @@ For each request, the server parses the document and runs [scope resolution](DES
 
 - [ ] **No workspace folders.** If the client sends no workspace folders, `initialized` creates no `FolderService`. The single-file features still work, but nothing uses the import graph.
 - [ ] **Readiness.** `FolderService.ready` exists, but no handler checks it yet. Also, `initialized` waits until the scan of each folder is complete before it returns.
-- [ ] **Scan failures.** If the discovery or the build of the import graph fails, `import_graph` stays `None`. Nothing tells the reason.
+- [ ] **Scan failures.** If the discovery or the build of the import graph fails, `FolderService.index` stays `None`. Nothing tells the reason.
 
 ### Design document
 

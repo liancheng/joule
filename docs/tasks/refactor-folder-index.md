@@ -62,6 +62,7 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 ### Progress
 
 - [x] Step 1: Split `FolderService` and `FolderIndex`, and add `ParallelImportGraphBuilder`
+- [x] Step 1b: Build `FolderIndex` from a complete `ImportGraph`
 - [ ] Step 2: Refactor `TestImportGraphBuilder`
 - [ ] Step 3: Update the index on file events
 - [ ] Step 4: Cache the resolved documents
@@ -87,6 +88,16 @@ Also fix these issues:
 - `FolderIndex.start` calculates the root two times, in two different ways.
 
 Commit: ``refactor: Split `FolderService` out of `FolderIndex` ``
+
+### Step 1b: Build `FolderIndex` from a complete `ImportGraph`
+
+If `FolderIndex` must exist before its graph, each construction of an index has two steps. An example is `FakeWorkspaceTestCase.fake_workspace`. Thus:
+
+- `FolderIndex(import_graph)` gets a complete graph. It gets `root` from the graph, and it has no `jpaths`.
+- `FolderService` keeps `root` and `jpaths`. Its `index` is `None` until `start` publishes the complete index with one assignment. `ready` is `index is not None`.
+- `FolderService.resolve_document` uses the index if it exists. If not, it uses `workspace.resolve_document`, which has no cache. `JouleLanguageServer.resolve_document` uses the same function for documents that are not in a workspace folder. Thus single-document features do not wait for the index, and they also work for documents outside the workspace folders.
+
+Commit: ``refactor: Build `FolderIndex` from a complete `ImportGraph` ``
 
 ### Step 2: Refactor `TestImportGraphBuilder`
 

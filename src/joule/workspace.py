@@ -39,16 +39,16 @@ def discover_docs(
     return [Path(line) for line in result.stdout.splitlines() if line]
 
 
-class FolderIndex:
-    root: Path
-    jpaths: list[Path]
-    import_graph: ImportGraph | None
+def resolve_document(uri: str) -> T.Document | None:
+    return head_or_none(resolve(doc) for doc in maybe(T.parse_document(uri)))
 
-    def __init__(self, root: Path, jpaths: list[Path]):
-        self.root = root
-        self.jpaths = jpaths
-        self.import_graph = None
+
+class FolderIndex:
+    import_graph: ImportGraph
+
+    def __init__(self, import_graph: ImportGraph):
+        self.import_graph = import_graph
 
     # TODO: Caches resolved AST trees and invalidates on updates.
     def resolve_document(self, uri: str) -> T.Document | None:
-        return head_or_none(resolve(doc) for doc in maybe(T.parse_document(uri)))
+        return resolve_document(uri)

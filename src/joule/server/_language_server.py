@@ -10,6 +10,7 @@ from joule.features import (
 )
 from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
+from joule.workspace import resolve_document
 
 from ._folder_service import FolderService
 
@@ -29,11 +30,11 @@ class JouleLanguageServer(LanguageServer):
         )
 
     def resolve_document(self, uri: str) -> T.Document | None:
-        return head_or_none(
-            doc
-            for service in maybe(self.find_service(uri))
-            for doc in maybe(service.index.resolve_document(uri))
-        )
+        match self.find_service(uri):
+            case None:
+                return resolve_document(uri)
+            case service:
+                return service.resolve_document(uri)
 
 
 server = JouleLanguageServer("joule", "v0.0.1")
