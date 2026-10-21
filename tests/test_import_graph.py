@@ -35,21 +35,21 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_simple_import(self):
         f1 = self.fake_document(
             """\
-            local a = import "lib/f2.libsonnet";
-            local b = import "lib/f3.libsonnet";
+            local a = import "f2.libsonnet";
+            local b = import "f3.libsonnet";
             [a, b]
             """,
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
         f2 = self.fake_document(
             "1",
-            path="lib/f2.libsonnet",
+            path="f2.libsonnet",
         )
 
         f3 = self.fake_document(
             "2",
-            path="lib/f3.libsonnet",
+            path="f3.libsonnet",
         )
 
         with (
@@ -61,16 +61,16 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_duplicate_imports(self):
         f1 = self.fake_document(
             """\
-            local a = import "lib/f2.libsonnet";
-            local b = import "lib/f2.libsonnet";
+            local a = import "f2.libsonnet";
+            local b = import "f2.libsonnet";
             [a, b]
             """,
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
         f2 = self.fake_document(
             "1",
-            path="lib/f2.libsonnet",
+            path="f2.libsonnet",
         )
 
         with (
@@ -106,56 +106,56 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.assertImports(index, f1, f2, f3)
 
     def test_non_document_importee(self):
-        f1 = self.fake_document(
+        f = self.fake_document(
             'import "data.json"',
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
-        # Discovery does not find `.json` files, but they are import targets.
         data = self.fake_document(
             "{}",
-            path="app/data.json",
+            path="data.json",
         )
 
-        with self.fake_workspace(f1, data) as index:
-            self.assertImports(index, f1, data)
+        with self.fake_workspace(f, data) as index:
+            # Document discovery does not find `.json` files, but they are importees.
+            self.assertImports(index, f, data)
 
     def test_unresolved_import(self):
-        f1 = self.fake_document(
+        f = self.fake_document(
             'import "missing.libsonnet"',
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
-        with self.fake_workspace(f1) as index:
-            self.assertImports(index, f1)
+        with self.fake_workspace(f) as index:
+            self.assertImports(index, f)
 
     def test_importstr_and_importbin(self):
-        f1 = self.fake_document(
+        f = self.fake_document(
             """\
             local text = importstr "notes.txt";
             local blob = importbin "blob.bin";
             [text, blob]
             """,
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
         with (
             self.layout(
-                File("app/notes.txt", "notes"),
-                File("app/blob.bin", "blob"),
+                File("notes.txt", "notes"),
+                File("blob.bin", "blob"),
             ),
-            self.fake_workspace(f1) as index,
+            self.fake_workspace(f) as index,
         ):
-            self.assertImports(index, f1)
+            self.assertImports(index, f)
 
     def test_no_imports(self):
-        f1 = self.fake_document(
+        f = self.fake_document(
             "{}",
             path="app/f1.jsonnet",
         )
 
-        with self.fake_workspace(f1) as index:
-            self.assertImports(index, f1)
+        with self.fake_workspace(f) as index:
+            self.assertImports(index, f)
 
     def test_malformed_document(self):
         f1 = self.fake_document(
@@ -168,12 +168,12 @@ class TestImportGraph(FakeWorkspaceTestCase):
                 { malformed }
             ]
             """,
-            path="app/f1.jsonnet",
+            path="f1.jsonnet",
         )
 
         f2 = self.fake_document(
             "1",
-            path="app/f2.libsonnet",
+            path="f2.libsonnet",
         )
 
         with self.fake_workspace(f1, f2) as index:
