@@ -5,6 +5,7 @@ from itertools import accumulate, chain
 from pathlib import Path
 from textwrap import dedent
 
+import tree_sitter as ts
 from rich.text import Text
 
 from joule.analysis.scopes import resolve
@@ -126,17 +127,26 @@ class LineMap:
 
 class FakeDocument(LineMap):
     uri: str
-    document: T.Document
-    body: T.Expr
+    cst: ts.Tree
+    malformed: bool
 
     def __init__(self, text: str, uri: str) -> None:
         text = dedent(text)
         text, self.spans = span_markers.parse(text)
         super().__init__(text)
         self.uri = uri
-        self.document = T.Tree.from_source(text).to(T.Document)
-        self.body = self.document.body
-        resolve(self.document)
+        self.cst = T.parser().parse(text.encode())
+        self.malformed = self.cst.root_node.has_error
+
+    @cached_property
+    def document(self) -> T.Document:
+        doc = T.Tree.from_cst(self.cst.root_node).to(T.Document)
+        resolve(doc)
+        return doc
+
+    @cached_property
+    def body(self) -> T.Expr:
+        return self.document.body
 
     @cached_property
     def path(self) -> Path:
