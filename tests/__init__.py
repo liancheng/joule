@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from typing import final, override
+from typing import override
 
 import ocdiff
 
@@ -63,7 +63,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
-        self.current_config = Config(jpaths=["."])
+        self.current_config = Config()
 
     def purge(self):
         for child in self.root.iterdir():
@@ -91,6 +91,17 @@ class FakeWorkspaceTestCase(TreeTestCase):
 
                 case _:
                     raise TypeError(f"Unsupported layout entry: {entry!r}")
+
+    @contextmanager
+    def jpaths(self, *entries: str):
+        before = self.current_config
+        update = {"jpaths": list(entries)}
+        self.current_config = self.current_config.model_copy(update=update)
+
+        try:
+            yield
+        finally:
+            self.current_config = before
 
     @contextmanager
     def layout(self, *entries: FsEntry):

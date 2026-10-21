@@ -63,7 +63,7 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 
 - [x] Step 1: Split `FolderService` and `FolderIndex`, and add `ParallelImportGraphBuilder`
 - [x] Step 1b: Build `FolderIndex` from a complete `ImportGraph`
-- [ ] Step 2: Refactor `TestImportGraphBuilder`
+- [x] Step 2: Refactor `TestImportGraphBuilder`
 - [ ] Step 3: Update the index on file events
 - [ ] Step 4: Cache the resolved documents
 
