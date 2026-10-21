@@ -29,6 +29,9 @@ MARK_LEADER = ">   "
 
 
 def parse(source: str) -> tuple[str, dict[int, Span]]:
+    if not source.startswith(SOURCE_LEADER):
+        return source, {}
+
     line_no = -1
     source_lines: list[str] = []
     spans: dict[int, Span] = {}
@@ -51,8 +54,9 @@ def parse(source: str) -> tuple[str, dict[int, Span]]:
 
         else:
             raise ValueError(
-                "Each line in a document with marked span annotations must start "
-                'with either ":   " for a source line or ">   " for an annotated line.'
+                "In a document with span marks, each line must start with marked span "
+                'annotations must start with either ":   " for a source line or ">   " '
+                "for an annotated line."
             )
 
     return "\n".join(source_lines), spans

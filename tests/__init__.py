@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from typing import override
+from typing import final, override
 
 import ocdiff
 
@@ -30,8 +30,8 @@ class TreeTestCase(unittest.TestCase):
 class FakeDocumentTestCase(TreeTestCase):
     fake_uri = "file:///tmp/test.jsonnet"
 
-    def fake_document(self, source: str, marked=True) -> FakeDocument:
-        return FakeDocument(source, uri=self.fake_uri, marked=marked)
+    def fake_document(self, source: str) -> FakeDocument:
+        return FakeDocument(source, uri=self.fake_uri)
 
 
 @D.dataclass(frozen=True)
@@ -101,18 +101,24 @@ class FakeWorkspaceTestCase(TreeTestCase):
         finally:
             self.purge()
 
-    def fake_document(self, source: str, path: str, marked=True) -> FakeDocument:
+    def fake_document(self, source: str, path: str) -> FakeDocument:
         uri = self.root.joinpath(path).as_uri()
-        return FakeDocument(source, uri=uri, marked=marked)
+        return FakeDocument(source, uri=uri)
 
-    def fake_workspace(self, *docs: FakeDocument) -> FolderIndex:
+    @contextmanager
+    def fake_workspace(self, *docs: FakeDocument):
         self.provision(*(File(Path.from_uri(doc.uri), doc.text) for doc in docs))
 
-        builder = ImportGraphBuilder(self.root, self.current_config.jpaths)
         paths = discover_docs(
             self.root,
             self.current_config.extensions,
             self.current_config.exclude,
         )
 
-        return FolderIndex(builder.build(paths))
+        builder = ImportGraphBuilder(self.root, self.current_config.jpaths)
+        graph = builder.build(paths)
+
+        try:
+            yield FolderIndex(graph)
+        finally:
+            self.purge()

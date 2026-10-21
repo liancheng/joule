@@ -2,6 +2,7 @@ import bisect
 import functools
 from functools import cached_property
 from itertools import accumulate, chain
+from pathlib import Path
 from textwrap import dedent
 
 from rich.text import Text
@@ -128,14 +129,18 @@ class FakeDocument(LineMap):
     document: T.Document
     body: T.Expr
 
-    def __init__(self, text: str, uri: str, marked=True) -> None:
+    def __init__(self, text: str, uri: str) -> None:
         text = dedent(text)
-        text, self.spans = span_markers.parse(text) if marked else (text, {})
+        text, self.spans = span_markers.parse(text)
         super().__init__(text)
         self.uri = uri
         self.document = T.Tree.from_source(text).to(T.Document)
         self.body = self.document.body
         resolve(self.document)
+
+    @cached_property
+    def path(self) -> Path:
+        return Path.from_uri(self.uri)
 
     @cached_property
     def span(self) -> SpanDSL:

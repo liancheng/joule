@@ -8,23 +8,23 @@ from tests.dsl import arg, bind, field, param
 class TestTrees(FakeDocumentTestCase):
     def assertStrEqual(self, source: str, expected: str):
         __tracebackhide__ = True
-        t = self.fake_document(source, marked=False)
+        t = self.fake_document(source)
         self.assertEqual(t.body, t.span.string(expected))
 
     def assertNumEqual(self, source: str, expected: float):
         __tracebackhide__ = True
-        t = self.fake_document(source, marked=False)
+        t = self.fake_document(source)
         self.assertEqual(t.body, t.span.num(expected))
 
     def test_null(self):
-        t = self.fake_document("null", marked=False)
+        t = self.fake_document("null")
         self.assertEqual(t.body, t.span.null)
 
     def test_bool(self):
-        t = self.fake_document("true", marked=False)
+        t = self.fake_document("true")
         self.assertEqual(t.body, t.span.true)
 
-        t = self.fake_document("false", marked=False)
+        t = self.fake_document("false")
         self.assertEqual(t.body, t.span.false)
 
     def test_num(self):
@@ -121,7 +121,7 @@ class TestTrees(FakeDocumentTestCase):
 
     def test_array(self):
         with self.subTest("empty"):
-            t = self.fake_document("[]", marked=False)
+            t = self.fake_document("[]")
             self.assertEqual(t.body, t.span.array())
 
         with self.subTest("nested"):
@@ -480,7 +480,7 @@ class TestTrees(FakeDocumentTestCase):
 
     def test_object(self):
         with self.subTest("empty"):
-            t = self.fake_document("{}", marked=False)
+            t = self.fake_document("{}")
             self.assertEqual(t.body, T.Object(t.span))
 
         with self.subTest("assert"):
