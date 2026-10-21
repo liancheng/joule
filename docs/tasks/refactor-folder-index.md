@@ -154,4 +154,4 @@ Commit: ``feat: Cache the resolved documents in `FolderIndex` ``
 
 - Combine bursts of events, such as a `git checkout`, into a full build.
 
-After the plan is complete, record this item in [TODO.md](../TODO.md).
+After the plan is complete, record this item in `TODO.md`.

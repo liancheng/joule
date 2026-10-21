@@ -1,6 +1,6 @@
 # Joule Code Style
 
-This document tells how to write code for Joule. Follow it, so that new code is consistent with the current code. For what the code does and why, see [DESIGN.md](DESIGN.md).
+This document tells how to write code for Joule. Follow it, so that new code is consistent with the current code.
 
 ## Tools
 
@@ -135,7 +135,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 ## Performance
 
-Joule must operate on workspaces with 100k files (see [Scalability](DESIGN.md#scalability)). Thus, write hot paths carefully:
+Joule must operate on workspaces with 100k files. Thus, write hot paths carefully:
 
 - In tight loops, use `str` paths and `os.path`. Do not make intermediate `Path` objects. Add a comment that tells why.
 - To decrease memory, pack small values into one value. For example, `Span` keeps two packed `int`s, not two `Point`s.
@@ -146,7 +146,7 @@ Joule must operate on workspaces with 100k files (see [Scalability](DESIGN.md#sc
 
 - Write test classes in the `unittest` style. pytest runs them.
 - Put the tests for a module or a provider in `tests/test_<module>.py`.
-- If a test parses Jsonnet, make its class a subclass of `FakeDocumentTestCase`. Use the [marked-span syntax](DESIGN.md#marked-span-syntax) for positions. Do not calculate coordinates manually.
+- If a test parses Jsonnet, make its class a subclass of `FakeDocumentTestCase`. Use the marked-span syntax of `tests.dsl.span_markers` for positions. Do not calculate coordinates manually.
 - Name assertion helpers in camelCase, as `unittest` does: `assertDefined`, `assertVarBinding`. Name test methods `test_<case>`, in snake case.
 - To put related cases into one test, use `self.subTest(...)`.
 - To make expected trees, use the `SpanDSL` constructors and the helpers in `tests.dsl`, for example `t.at(1).num(1)`, `bind(...)`, and `field(...)`.
@@ -170,7 +170,7 @@ Joule must operate on workspaces with 100k files (see [Scalability](DESIGN.md#sc
 - Write documents in Simplified Technical English. See [Text style](#text-style).
 - Use short paragraphs, lists, and tables. To refer to information in a different section, link to that section. Do not repeat the information.
 - Record each design decision in a `#### Design decision: <question>` section. Give numbered options, each with **Pros:** and **Cons:**. Then write "Joule takes option N." and give the reason.
-- If a section is not complete, mark it with `TODO:`. Record open work in [TODO.md](TODO.md).
+- If a section is not complete, mark it with `TODO:`. Record open work in `TODO.md`.
 
 ## Text style
 
