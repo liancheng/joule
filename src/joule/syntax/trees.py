@@ -69,8 +69,8 @@ __all__ = [
     "VarScope",
     "Visibility",
     "language",
+    "parse",
     "parse_document",
-    "parser",
 ]
 
 
@@ -260,7 +260,7 @@ class Tree:
 
     @staticmethod
     def from_source(source: str) -> Tree:
-        root = parser().parse(source.encode()).root_node
+        root = parse(source).root_node
         return Tree.from_cst(root)
 
     @staticmethod
@@ -1622,6 +1622,11 @@ def language() -> ts.Language:
 @functools.cache
 def parser() -> ts.Parser:
     return ts.Parser(language())
+
+
+def parse(source: str | bytes) -> ts.Tree:
+    source = source.encode() if isinstance(source, str) else source
+    return parser().parse(source)
 
 
 def parse_document(uri: str) -> Document | None:

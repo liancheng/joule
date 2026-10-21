@@ -135,7 +135,7 @@ class FakeDocument(LineMap):
         text, self.spans = span_markers.parse(text)
         super().__init__(text)
         self.uri = uri
-        self.cst = T.parser().parse(text.encode())
+        self.cst = T.parse(text)
         self.malformed = self.cst.root_node.has_error
 
     @cached_property

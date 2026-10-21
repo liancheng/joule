@@ -38,7 +38,7 @@ def collect_importees(path: Path) -> Importees:
     except OSError:
         return [], True
 
-    root_node = T.parser().parse(source).root_node
+    root_node = T.parse(source).root_node
 
     def get_import_or_none(node: ts.Node) -> T.Import | None:
         try:
