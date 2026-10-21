@@ -161,16 +161,15 @@ class ImportGraphBuilder:
     def do_build(self, docs: list[Path], map_fn: MapFn) -> ImportGraph:
         graph = ImportGraph(self.root, self.jpaths)
         resolver = ImportResolver(self.root, self.jpaths)
-
         importees_of = map_fn(collect_importees, docs)
 
         for importer, (importees, error) in zip(docs, importees_of, strict=True):
             if error:
                 graph.malformed.append(importer)
-            else:
-                for importee in importees:
-                    if resolved := resolver.resolve(importer, importee):
-                        graph.add_edge(importer, resolved)
+
+            for importee in importees:
+                if resolved := resolver.resolve(importer, importee):
+                    graph.add_edge(importer, resolved)
 
         return graph
 

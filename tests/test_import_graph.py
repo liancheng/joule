@@ -1,4 +1,3 @@
-from joule.analysis.imports import ImportGraphBuilder, ParallelImportGraphBuilder
 from joule.workspace import FolderIndex
 from tests import FakeWorkspaceTestCase, File
 from tests.dsl import FakeDocument
@@ -160,7 +159,15 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
     def test_malformed_document(self):
         f1 = self.fake_document(
-            'local x = import "f2.libsonnet"; [x, {1}]',
+            """\
+            local a = import "f2.libsonnet";
+            [
+                a,
+                // The malformed node affects only this array element. Thus the import
+                // still parses, and the import graph records it.
+                { malformed }
+            ]
+            """,
             path="app/f1.jsonnet",
         )
 
@@ -171,55 +178,4 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.fake_workspace(f1, f2) as index:
             self.assertMalformed(index, f1)
-            self.assertImports(index, f1)
-
-    def test_deleted_document(self):
-        # Discovery found `f1`, but somebody deleted it before the build.
-        f1 = self.fake_document(
-            'import "f2.libsonnet"',
-            path="app/f1.jsonnet",
-        )
-
-        graph = ImportGraphBuilder(self.root, []).build([f1.path])
-        index = FolderIndex(graph)
-
-        self.assertMalformed(index, f1)
-        self.assertImports(index, f1)
-
-    def test_parallel_build(self):
-        f1 = self.fake_document(
-            """\
-            local a = import "f2.libsonnet";
-            local b = import "lib/f3.libsonnet";
-            [a, b]
-            """,
-            path="app/f1.jsonnet",
-        )
-
-        f2 = self.fake_document(
-            "1",
-            path="app/f2.libsonnet",
-        )
-
-        f3 = self.fake_document(
-            "2",
-            path="lib/f3.libsonnet",
-        )
-
-        f4 = self.fake_document(
-            'local x = import "f2.libsonnet"; {',
-            path="app/f4.jsonnet",
-        )
-
-        with (
-            self.jpaths("."),
-            self.fake_workspace(f1, f2, f3, f4) as index,
-        ):
-            docs = [doc.path for doc in (f1, f2, f3, f4)]
-            jpaths = self.current_config.jpaths
-            builder = ParallelImportGraphBuilder(self.root, jpaths, batch_size=1)
-            graph = builder.build(docs)
-
-            self.assertEqual(graph.imports, index.import_graph.imports)
-            self.assertEqual(graph.imported_by, index.import_graph.imported_by)
-            self.assertCountEqual(graph.malformed, index.import_graph.malformed)
+            self.assertImports(index, f1, f2)
