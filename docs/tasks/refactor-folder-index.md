@@ -1,23 +1,38 @@
-# Refactor of `FolderIndex`
+# Refactor of `FolderIndex` and `ImportGraph`
+
+The goal is a workspace index that changes when somebody creates, deletes, or edits a file. The index has two parts:
+
+1. The import graph: the `imports` and `imported_by` edges, and the indices that Joule needs to update the edges.
+2. The cache of resolved documents.
 
 Joule has two layers:
 
 - **The service layer** controls concurrency and parallelism. It uses `asyncio` so that the server stays responsive, and process pools so that large builds are fast. It is difficult to test this layer with `unittest`.
 - **The core layer** is synchronous and has the core logic. It is easy to test.
 
-`FolderIndex` has parts of the two layers. It also needs new functions:
+The classes are:
 
-1. `resolve_document` must cache the resolved documents. The cache must change when somebody creates, deletes, or edits a file.
-2. `ImportGraph` must also change on the same events.
+| Class                        | Layer   | Role                                                                                                           |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `FolderService`              | Service | Finds the documents, builds the index outside the event loop, and gets the LSP events of one workspace folder. |
+| `FolderIndex`                | Core    | Holds the `ImportGraph` and the cache of resolved documents.                                                   |
+| `ImportGraph`                | Core    | Holds the edges, `malformed`, and the update indices. It has no caches.                                        |
+| `ImportGraphBuilder`         | Core    | Builds an `ImportGraph` sequentially.                                                                          |
+| `ParallelImportGraphBuilder` | Service | Builds an `ImportGraph` with a process pool.                                                                   |
+| `ImportResolver`             | Core    | Resolves importees like the file importer of Jsonnet, with caches that have a short life.                      |
 
-Proposal:
+#### Design decision: How long do the resolver caches live?
 
-- Rename the current `FolderIndex` to `FolderService`. It is in the service layer.
-- Add a new `FolderIndex` class in the core layer. It holds the `ImportGraph` and the cache of resolved documents.
-- Divide `ImportGraphBuilder` in the same way:
-  - `ImportGraphBuilder.do_build(docs, map)` does the build with the `map` function that it gets.
-  - `ImportGraphBuilder.build(docs)` calls `do_build` with the builtin `map`. The build is sequential, so the tests can use it.
-  - `ParallelImportGraphBuilder.build(docs)` calls `do_build` with `ProcessPoolExecutor.map`. Production code uses it. The callers do not create an executor.
+The caches record only if files exist. Thus they become incorrect after somebody creates or deletes a file.
+
+1. Keep one resolver with the graph, and invalidate its caches on each event.
+   - **Pros:** A resolution after an edit can use the caches.
+   - **Cons:** The caches use much memory on large monorepos. They save only a few milliseconds on an incremental update. The invalidation rules are difficult to make correct.
+2. Create a new `ImportResolver` for each bulk build or incremental update, and discard it after.
+   - **Pros:** A cache with a short life is always correct. There is one implementation to test.
+   - **Cons:** An incremental update starts with empty caches.
+
+Joule takes option 2.
 
 #### Design decision: Which class owns `resolve_document`?
 
@@ -32,13 +47,13 @@ Joule takes option 2. `FolderIndex` gets each event. It updates the graph first,
 
 #### Design decision: Where does the process pool go?
 
-1. `ImportGraphBuilder.build` creates the pool, as before.
-   - **Pros:** No change.
+1. `ImportGraphBuilder.build` creates the pool.
+   - **Pros:** One class.
    - **Cons:** The core layer starts processes. The tests must build the graph only one time, in `setUpClass`.
 2. `build` gets a `map` parameter.
    - **Pros:** The tests can build sequentially.
    - **Cons:** Each production caller must create a `ProcessPoolExecutor`.
-3. `do_build` gets the `map` parameter. `build` is sequential, and `ParallelImportGraphBuilder.build` uses a pool.
+3. `do_build` gets the `map` parameter. `ImportGraphBuilder.build` is sequential, and `ParallelImportGraphBuilder.build` uses a pool.
    - **Pros:** The production callers get a parallel build with no setup. The tests get a cheap sequential build.
    - **Cons:** One more class.
 
@@ -48,71 +63,95 @@ Joule takes option 3.
 
 - `FolderIndex` is not thread-safe.
 - `FolderService` is the only writer of its `FolderIndex`. The event handlers change the index on the event loop.
-- The full build runs outside the event loop. One assignment publishes the result.
-- Events that arrive during the initial build go into a queue. The service applies them after the build. Alternatively, it does a new build. See "Bursts of file events" in [TODO.md](../TODO.md).
-- Requests for single-document features do not wait for the import graph.
+- The full build runs outside the event loop. One assignment publishes the complete index.
+- Events that arrive before the index exists go into a queue. The service applies them after the build.
+- Requests for single-document features do not wait for the index. Until the index exists, `FolderService.resolve_document` uses `workspace.resolve_document`, which has no cache.
 
 ## Plan
 
 Each step is one commit. After each step, all tests must pass. Verify each step with:
 
 - `./test.sh`, ruff, and `ty check`.
-- `joule benchmark` on grafonnet and on a large monorepo. The document, edge, and malformed counts must be the same as before the step. Before step 1, grafonnet has 1,413 edges.
+- `joule benchmark` on grafonnet and on a large monorepo. The document, edge, and malformed counts must be the same as before the step, and the build time must not increase. At this time, grafonnet has 1,413 edges.
 
 ### Progress
 
-- [x] Step 1: Split `FolderService` and `FolderIndex`, and add `ParallelImportGraphBuilder`
-- [x] Step 1b: Build `FolderIndex` from a complete `ImportGraph`
-- [x] Step 2: Refactor `TestImportGraphBuilder`
-- [ ] Step 3: Update the index on file events
-- [ ] Step 4: Cache the resolved documents
+- [x] Edges as sets
+- [x] Tests for the build of the import graph
+- [x] Separate import resolution from the graph
+- [x] Add `ImportGraphBuilder`
+- [x] Split `FolderService` and `FolderIndex`, and add `ParallelImportGraphBuilder`
+- [x] Build `FolderIndex` from a complete `ImportGraph`
+- [x] Refactor the tests of the import graph
+- [ ] Keep the data for incremental updates
+- [ ] Update the import graph incrementally
+- [ ] Update the index on file events
+- [ ] Cache the resolved documents
 
-### Step 1: Split `FolderService` and `FolderIndex`, and add `ParallelImportGraphBuilder`
+### Completed steps
 
-Make the structural changes. Do not add the cache or the event handlers.
+- **Edges as sets.** `imports` and `imported_by` are `dict[Path, set[Path]]`. Thus the graph keeps one edge for each pair of files, and it can remove an edge in O(1).
+- **Tests for the build.** The tests protect the subsequent steps.
+- **Separate import resolution.** `ImportResolver(root, jpaths)` has the `_is_file`, `_same_dir`, and `_via_jpaths` caches. See the design decision about the resolver caches.
+- **Add `ImportGraphBuilder`.** The builder does all the construction. `ImportGraph` is the result with a long life, and it has no caches.
+- **Split `FolderService` and `FolderIndex`.** The `joule.server` package has all the code of the service layer: `JouleLanguageServer` and `FolderService`. `joule.workspace` keeps `discover_docs` and `FolderIndex`, and it does not use `asyncio`. `ParallelImportGraphBuilder` builds with a process pool.
+- **Build `FolderIndex` from a complete `ImportGraph`.** `FolderIndex(import_graph)` gets `root` from the graph. `FolderService.index` is `None` until `start` publishes it. `FolderService.resolve_document` and `JouleLanguageServer.resolve_document` fall back to `workspace.resolve_document`. Thus single-document features also work before the build, and for documents outside the workspace folders.
+- **Refactor the tests.** `TestImportGraph` and `TestImportResolver` use `FakeWorkspaceTestCase`. Each test declares its own documents and files.
 
-- `FolderService(folder, config)` does the discovery with `fd` and the build in `asyncio.to_thread`. It also gives `ready` and its `index`.
-- `FolderIndex(root, jpaths)` holds `import_graph` and `resolve_document`.
-- Put all the code of the service layer into the `joule.server` package:
-  - `_language_server.py`: `JouleLanguageServer`, `server`, `load_config`, and the LSP handlers.
-  - `_folder_service.py`: `FolderService`.
-  - `__init__.py`: re-exports these names. The import of `_language_server` also registers the handlers.
-- `joule.workspace` keeps `discover_docs` and `FolderIndex`. It does not use `asyncio`.
-- Add `ImportGraphBuilder.do_build`, `ImportGraphBuilder.build`, and `ParallelImportGraphBuilder`.
-- `TestImportGraphBuilder` uses the sequential builder. One test makes sure that the parallel build gives the same graph.
+### Step: Keep the data for incremental updates
 
-Also fix these issues:
+Add these fields to `ImportGraph`. The builder sets their values.
 
-- `joule benchmark` fails, because it calls `FolderIndex.discover_docs`, which does not exist.
-- `server.py` has a module-level `resolve_document` and an import of `resolve` that nothing uses.
-- `FolderIndex.start` calculates the root two times, in two different ways.
+- `importees: dict[Path, list[str]]`: the raw importee strings of each document. Joule needs them to resolve the importees again.
+- `basename_imported_by: dict[str, set[Path]]`: a map from the file name of each importee (`P.basename(importee)`) to the documents that import it.
 
-Commit: ``refactor: Split `FolderService` out of `FolderIndex` ``
+When somebody creates a file, `basename_imported_by` finds all the imports that can resolve differently. It can select too many imports, but it never misses an import. The reason is that each candidate path of an importee ends with the file name of the importee. When somebody deletes a file, `imported_by` finds the affected imports exactly.
 
-### Step 1b: Build `FolderIndex` from a complete `ImportGraph`
+Make sure that the memory cost is acceptable on large monorepos.
 
-If `FolderIndex` must exist before its graph, each construction of an index has two steps. An example is `FakeWorkspaceTestCase.fake_workspace`. Thus:
+Commit: ``refactor: Keep raw importees and a file-name index in `ImportGraph` ``
 
-- `FolderIndex(import_graph)` gets a complete graph. It gets `root` from the graph, and it has no `jpaths`.
-- `FolderService` keeps `root` and `jpaths`. Its `index` is `None` until `start` publishes the complete index with one assignment. `ready` is `index is not None`.
-- `FolderService.resolve_document` uses the index if it exists. If not, it uses `workspace.resolve_document`, which has no cache. `JouleLanguageServer.resolve_document` uses the same function for documents that are not in a workspace folder. Thus single-document features do not wait for the index, and they also work for documents outside the workspace folders.
+### Step: Update the import graph incrementally
 
-Commit: ``refactor: Build `FolderIndex` from a complete `ImportGraph` ``
+Add methods that change `ImportGraph`. Each method resolves imports with a new `ImportResolver`.
 
-### Step 2: Refactor `TestImportGraphBuilder`
+- `update_file(path)`:
+  1. Collect the importees of the document again. Also collect them if the document is malformed, as the build does.
+  2. Replace the edges of the document, its index entries, and its entry in `malformed`.
+- `add_file(path)`:
+  1. Resolve again the imports that `basename_imported_by[basename(path)]` finds. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not documents, such as `.json` import targets.
+  2. If `path` is a document, also collect and resolve its imports.
+- `remove_file(path)`:
+  1. Remove the edges from the document, and its index entries.
+  2. Resolve again the imports in `imported_by[path]`. These imports can now resolve to a candidate with a lower priority.
 
-The user does this step manually. The new tests use a testing DSL, so that they are easier to read.
+Test each method against a full build:
 
-### Step 3: Update the index on file events
+1. Apply a change to a workspace of `FakeWorkspaceTestCase`.
+2. Update the graph incrementally.
+3. Make sure that the graph is equal to a new graph that `ImportGraphBuilder` builds from the changed workspace.
 
-- Add the event methods to `FolderIndex`. They update the import graph.
-- Connect `workspace/didChangeWatchedFiles` to these methods through `FolderService`.
-- Reuse the design of steps 4 and 5 of [refactor-import-graph.md](refactor-import-graph.md): the raw importees, the file-name index, and the tests that compare the result with a full build.
+Commit: ``feat: Update `ImportGraph` incrementally on file changes``
 
-### Step 4: Cache the resolved documents
+### Step: Update the index on file events
+
+- Add the event methods to `FolderIndex`. They call the methods of `ImportGraph`.
+- Connect `workspace/didChangeWatchedFiles` to these methods through `FolderService`. Before the index exists, put the events in a queue, and apply them after the build.
+
+Commit: ``feat: Update `FolderIndex` on file events``
+
+### Step: Cache the resolved documents
 
 - Add an LRU cache of resolved documents to `FolderIndex`.
 - Use the `(mtime_ns, size)` of the file as the cache key. For an open buffer, use the LSP version of the document. Then the cache of one document stays correct without events. The events are necessary only for invalidation across documents.
 - Read the open buffers (`didOpen`, `didChange`, and `didClose`). They have priority over the files on the disk. At this time, `T.parse_document` reads only from the disk.
 
-Step 4 does not need step 3. You can do it first.
+This step does not need the previous steps. You can do it first.
+
+Commit: ``feat: Cache the resolved documents in `FolderIndex` ``
+
+### Out of scope
+
+- Combine bursts of events, such as a `git checkout`, into a full build.
+
+After the plan is complete, record this item in [TODO.md](../TODO.md).
