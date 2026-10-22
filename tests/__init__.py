@@ -34,29 +34,25 @@ class FakeDocumentTestCase(TreeTestCase):
         return FakeDocument(source, uri=self.fake_uri)
 
 
-@D.dataclass(frozen=True)
-class FsEntry:
-    path: str | Path
-
-
-@D.dataclass(frozen=True)
-class File(FsEntry):
-    content: str = ""
-
-
-@D.dataclass(frozen=True)
-class Dir(FsEntry):
-    pass
-
-
-@D.dataclass(frozen=True)
-class SymLink(FsEntry):
-    target: str | Path
-
-
 class FakeWorkspaceTestCase(TreeTestCase):
     root: Path
     current_config: Config
+
+    @D.dataclass(frozen=True)
+    class FsEntry:
+        path: str | Path
+
+    @D.dataclass(frozen=True)
+    class File(FsEntry):
+        content: str = ""
+
+    @D.dataclass(frozen=True)
+    class Dir(FsEntry):
+        pass
+
+    @D.dataclass(frozen=True)
+    class SymLink(FsEntry):
+        target: str | Path
 
     @override
     def setUp(self):
@@ -72,19 +68,28 @@ class FakeWorkspaceTestCase(TreeTestCase):
             else:
                 child.unlink()
 
+    def file(self, path: str | Path, content: str = "") -> File:
+        return self.File(path, content)
+
+    def dir(self, path: str | Path) -> Dir:
+        return self.Dir(path)
+
+    def symlink(self, link: str | Path, target: str | Path) -> SymLink:
+        return self.SymLink(link, target)
+
     def provision(self, *entries: FsEntry):
         for entry in entries:
             path = self.root.joinpath(entry.path)
 
             match entry:
-                case Dir():
+                case self.Dir():
                     path.mkdir(parents=True, exist_ok=True)
 
-                case File(content=content):
+                case self.File(content=content):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content)
 
-                case SymLink(target=target):
+                case self.SymLink(target=target):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     target = self.root.joinpath(target)
                     path.symlink_to(target, target_is_directory=target.is_dir())
@@ -117,8 +122,8 @@ class FakeWorkspaceTestCase(TreeTestCase):
         return FakeDocument(source, uri=uri)
 
     @contextmanager
-    def fake_workspace(self, *docs: FakeDocument):
-        self.provision(*(File(Path.from_uri(doc.uri), doc.text) for doc in docs))
+    def workspace(self, *docs: FakeDocument):
+        self.provision(*(self.file(Path.from_uri(doc.uri), doc.text) for doc in docs))
 
         paths = discover_docs(
             self.root,

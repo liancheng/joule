@@ -2,7 +2,7 @@ from pathlib import Path
 
 from joule.analysis.imports import ImportResolver
 from joule.maybe import head_or_none, maybe
-from tests import Dir, FakeWorkspaceTestCase, File, SymLink
+from tests import FakeWorkspaceTestCase
 
 
 class TestImportResolver(FakeWorkspaceTestCase):
@@ -37,8 +37,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
 
     def test_relative_to_importer(self):
         with self.layout(
-            File("a/main.jsonnet"),
-            File("a/lib.libsonnet"),
+            self.file("a/main.jsonnet"),
+            self.file("a/lib.libsonnet"),
         ):
             self.assertResolved(
                 importer="a/main.jsonnet",
@@ -48,8 +48,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
 
     def test_dots_collapsed(self):
         with self.layout(
-            File("a/main.jsonnet"),
-            File("b/lib.libsonnet"),
+            self.file("a/main.jsonnet"),
+            self.file("b/lib.libsonnet"),
         ):
             self.assertResolved(
                 importer="a/main.jsonnet",
@@ -61,9 +61,9 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("vendor"),
             self.layout(
-                File("a/main.jsonnet"),
-                File("a/lib.libsonnet"),
-                File("vendor/lib.libsonnet"),
+                self.file("a/main.jsonnet"),
+                self.file("a/lib.libsonnet"),
+                self.file("vendor/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -76,8 +76,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("vendor"),
             self.layout(
-                File("a/main.jsonnet"),
-                File("vendor/lib.libsonnet"),
+                self.file("a/main.jsonnet"),
+                self.file("vendor/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -90,9 +90,9 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("j1", "j2"),
             self.layout(
-                File("a/main.jsonnet"),
-                File("j1/lib.libsonnet"),
-                File("j2/lib.libsonnet"),
+                self.file("a/main.jsonnet"),
+                self.file("j1/lib.libsonnet"),
+                self.file("j2/lib.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -105,8 +105,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("."),
             self.layout(
-                File("ci/builds/main.jsonnet"),
-                File("ci/utils.libsonnet"),
+                self.file("ci/builds/main.jsonnet"),
+                self.file("ci/utils.libsonnet"),
             ),
         ):
             self.assertResolved(
@@ -119,8 +119,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("a"),
             self.layout(
-                File("b/lib.libsonnet"),
-                File("a/main.jsonnet"),
+                self.file("b/lib.libsonnet"),
+                self.file("a/main.jsonnet"),
             ),
         ):
             self.assertResolved(
@@ -132,11 +132,11 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("a"),
             self.layout(
-                File("a/main.jsonnet"),
-                File("a/lib.libsonnet"),
-                Dir("a/sub"),
-                File("lib.libsonnet"),
-                SymLink("link", target="a/sub"),
+                self.file("a/main.jsonnet"),
+                self.file("a/lib.libsonnet"),
+                self.dir("a/sub"),
+                self.file("lib.libsonnet"),
+                self.symlink("link", target="a/sub"),
             ),
         ):
             self.assertResolved(
@@ -150,7 +150,7 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("."),
             self.layout(
-                File("a/main.jsonnet"),
+                self.file("a/main.jsonnet"),
             ),
         ):
             self.assertUnresolved(
@@ -160,10 +160,10 @@ class TestImportResolver(FakeWorkspaceTestCase):
 
     def test_symlinks(self):
         with self.layout(
-            File("real/lib.libsonnet"),
-            File("real/sub/main.jsonnet"),
-            File("lib.libsonnet"),
-            SymLink("link", target="real/sub"),
+            self.file("real/lib.libsonnet"),
+            self.file("real/sub/main.jsonnet"),
+            self.file("lib.libsonnet"),
+            self.symlink("link", target="real/sub"),
         ):
             self.assertResolved(
                 importer="link/main.jsonnet",
@@ -177,12 +177,12 @@ class TestImportResolver(FakeWorkspaceTestCase):
         with (
             self.jpaths("j1", "j2"),
             self.layout(
-                File("a/main.jsonnet"),
-                Dir("elsewhere/sub"),
-                File("elsewhere/x.libsonnet"),
-                File("j1/x.libsonnet"),
-                Dir("j2"),
-                SymLink("j2/link", target="elsewhere/sub"),
+                self.file("a/main.jsonnet"),
+                self.dir("elsewhere/sub"),
+                self.file("elsewhere/x.libsonnet"),
+                self.file("j1/x.libsonnet"),
+                self.dir("j2"),
+                self.symlink("j2/link", target="elsewhere/sub"),
             ),
         ):
             self.assertResolved(

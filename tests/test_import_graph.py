@@ -1,5 +1,5 @@
 from joule.workspace import FolderIndex
-from tests import FakeWorkspaceTestCase, File
+from tests import FakeWorkspaceTestCase
 from tests.dsl import FakeDocument
 
 
@@ -81,7 +81,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with (
             self.jpaths("."),
-            self.fake_workspace(f1, f2, f3) as index,
+            self.workspace(f1, f2, f3) as index,
         ):
             self.assertImports(index, f1, f2, f3)
 
@@ -102,7 +102,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with (
             self.jpaths("."),
-            self.fake_workspace(f1, f2) as index,
+            self.workspace(f1, f2) as index,
         ):
             self.assertImports(index, f1, f2)
 
@@ -128,7 +128,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with (
             self.jpaths("vendor"),
-            self.fake_workspace(f1, f2, f3) as index,
+            self.workspace(f1, f2, f3) as index,
         ):
             self.assertImports(index, f1, f2, f3)
 
@@ -143,7 +143,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="data.json",
         )
 
-        with self.fake_workspace(f, data) as index:
+        with self.workspace(f, data) as index:
             # Document discovery does not find `.json` files, but they are importees.
             self.assertImports(index, f, data)
 
@@ -153,7 +153,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f1.jsonnet",
         )
 
-        with self.fake_workspace(f) as index:
+        with self.workspace(f) as index:
             self.assertImports(index, f)
 
     def test_importstr_and_importbin(self):
@@ -168,10 +168,10 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with (
             self.layout(
-                File("notes.txt", "notes"),
-                File("blob.bin", "blob"),
+                self.file("notes.txt", "notes"),
+                self.file("blob.bin", "blob"),
             ),
-            self.fake_workspace(f) as index,
+            self.workspace(f) as index,
         ):
             self.assertImports(index, f)
 
@@ -181,7 +181,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="app/f1.jsonnet",
         )
 
-        with self.fake_workspace(f) as index:
+        with self.workspace(f) as index:
             self.assertImports(index, f)
 
     def test_malformed_document(self):
@@ -203,7 +203,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f2.libsonnet",
         )
 
-        with self.fake_workspace(f1, f2) as index:
+        with self.workspace(f1, f2) as index:
             self.assertMalformed(index, f1)
             self.assertImports(index, f1, f2)
 
@@ -222,7 +222,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f2.libsonnet",
         )
 
-        with self.fake_workspace(f1, f2) as index:
+        with self.workspace(f1, f2) as index:
             self.assertImportees(index, f1, "f2.libsonnet", "missing.libsonnet")
             self.assertBasenameImported(index, "f2.libsonnet", f1)
             self.assertBasenameImported(index, "missing.libsonnet", f1)
@@ -249,7 +249,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with (
             self.jpaths("vendor"),
-            self.fake_workspace(f1, f2, f3) as index,
+            self.workspace(f1, f2, f3) as index,
         ):
             self.assertImportees(index, f1, "../lib/./f2.libsonnet", "sub/f3.libsonnet")
             self.assertBasenameImported(index, "f2.libsonnet", f1)
@@ -271,6 +271,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="c/f3.jsonnet",
         )
 
-        with self.fake_workspace(f1, f2, f3) as index:
+        with self.workspace(f1, f2, f3) as index:
             self.assertBasenameImported(index, "util.libsonnet", f1, f2)
             self.assertBasenameImported(index, "util.jsonnet", f3)
