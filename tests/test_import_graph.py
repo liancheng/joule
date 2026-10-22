@@ -32,6 +32,33 @@ class TestImportGraph(FakeWorkspaceTestCase):
             [doc.path.relative_to(self.root) for doc in docs],
         )
 
+    def assertImportees(
+        self,
+        index: FolderIndex,
+        importer: FakeDocument,
+        *raw_importees: str,
+    ):
+        __tracebackhide__ = True
+        self.assertSetEqual(
+            index.import_graph.importees.get(importer.path, set()),
+            set(raw_importees),
+        )
+
+    def assertBasenameImported(
+        self,
+        index: FolderIndex,
+        basename: str,
+        *importers: FakeDocument,
+    ):
+        __tracebackhide__ = True
+        self.assertSetEqual(
+            {
+                path.relative_to(self.root)
+                for path in index.import_graph.basename_imported_by.get(basename, set())
+            },
+            {importer.path.relative_to(self.root) for importer in importers},
+        )
+
     def test_simple_import(self):
         f1 = self.fake_document(
             """\
@@ -179,3 +206,71 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.fake_workspace(f1, f2) as index:
             self.assertMalformed(index, f1)
             self.assertImports(index, f1, f2)
+
+    def test_importees_include_unresolved_imports(self):
+        f1 = self.fake_document(
+            """\
+            local a = import "f2.libsonnet";
+            local b = import "missing.libsonnet";
+            [a, b]
+            """,
+            path="f1.jsonnet",
+        )
+
+        f2 = self.fake_document(
+            "1",
+            path="f2.libsonnet",
+        )
+
+        with self.fake_workspace(f1, f2) as index:
+            self.assertImportees(index, f1, "f2.libsonnet", "missing.libsonnet")
+            self.assertBasenameImported(index, "f2.libsonnet", f1)
+            self.assertBasenameImported(index, "missing.libsonnet", f1)
+
+    def test_importees_are_raw_strings(self):
+        f1 = self.fake_document(
+            """\
+            local a = import "../lib/./f2.libsonnet";
+            local b = import "sub/f3.libsonnet";
+            [a, b]
+            """,
+            path="app/f1.jsonnet",
+        )
+
+        f2 = self.fake_document(
+            "1",
+            path="lib/f2.libsonnet",
+        )
+
+        f3 = self.fake_document(
+            "2",
+            path="vendor/sub/f3.libsonnet",
+        )
+
+        with (
+            self.jpaths("vendor"),
+            self.fake_workspace(f1, f2, f3) as index,
+        ):
+            self.assertImportees(index, f1, "../lib/./f2.libsonnet", "sub/f3.libsonnet")
+            self.assertBasenameImported(index, "f2.libsonnet", f1)
+            self.assertBasenameImported(index, "f3.libsonnet", f1)
+
+    def test_importers_of_same_file_name(self):
+        f1 = self.fake_document(
+            'import "util.libsonnet"',
+            path="a/f1.jsonnet",
+        )
+
+        f2 = self.fake_document(
+            'import "../lib/util.libsonnet"',
+            path="b/f2.jsonnet",
+        )
+
+        f3 = self.fake_document(
+            'import "util.jsonnet"',
+            path="c/f3.jsonnet",
+        )
+
+        with self.fake_workspace(f1, f2, f3) as index:
+            self.assertBasenameImported(index, "util.libsonnet", f1, f2)
+            self.assertBasenameImported(index, "util.jsonnet", f3)

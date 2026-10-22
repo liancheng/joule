@@ -1,6 +1,7 @@
 import functools
 import os
 import os.path as P
+import sys
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
@@ -125,6 +126,10 @@ class ImportGraph:
     imports: dict[Path, set[Path]]
     imported_by: dict[Path, set[Path]]
 
+    # Incremental update fields
+    importees: dict[Path, set[str]]
+    basename_imported_by: dict[str, set[Path]]
+
     malformed: list[Path]
 
     def __init__(self, root: Path, jpaths: list[Path]):
@@ -134,11 +139,25 @@ class ImportGraph:
         self.imports = defaultdict(set)
         self.imported_by = defaultdict(set)
 
+        self.importees = defaultdict(set)
+        self.basename_imported_by = defaultdict(set)
+
         self.malformed = []
 
-    def add_edge(self, importer: Path, importee: Path):
-        self.imports[importer].add(importee)
-        self.imported_by[importee].add(importer)
+    def add_import(
+        self,
+        importer: Path,
+        raw_importee: str,
+        resolved_importee: Path | None,
+    ):
+        raw_importee = sys.intern(raw_importee)
+
+        self.importees[importer].add(raw_importee)
+        self.basename_imported_by[P.basename(raw_importee)].add(importer)
+
+        if resolved_importee is not None:
+            self.imports[importer].add(resolved_importee)
+            self.imported_by[resolved_importee].add(importer)
 
 
 type MapFn = Callable[
@@ -168,8 +187,8 @@ class ImportGraphBuilder:
                 graph.malformed.append(importer)
 
             for importee in importees:
-                if resolved := resolver.resolve(importer, importee):
-                    graph.add_edge(importer, resolved)
+                resolved = resolver.resolve(importer, importee)
+                graph.add_import(importer, importee, resolved)
 
         return graph
 
