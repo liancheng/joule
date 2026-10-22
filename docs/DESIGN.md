@@ -346,6 +346,13 @@ If two trees of the same type are not equal, `FakeDocumentTestCase` shows a side
 
 TODO: Tell how Joule measures TTII against the [scalability](#scalability) targets.
 
+## Possible optimizations
+
+Do these only if a measurement shows a real problem.
+
+- **Interned paths in the import graph.** Each import resolution makes a new `Path`. Thus a file that many documents import exists as many `Path` objects, and each `Path` keeps its own cached strings and lists. Instead, store the paths of the graph as `str`s, and intern them with `sys.intern`, as Joule already does for the raw importees. Then the graph keeps one small string for each file. `sys.intern` does not accept `Path`s. A dictionary that keeps one `Path` for each file is also possible, but it saves less memory. The cost is that the resolver returns `str`s, and the callers convert between `Path` and `str` at the boundary.
+- **Interned identifier names in the AST cache.** The same identifier names occur in many documents. If the [AST cache](#ast-cache) keeps many ASTs, intern the `name` of each `Id` node in its `from_cst`. Python frees an interned string when nothing refers to it, so the evicted ASTs do not keep their names in memory. Do not intern all the text of the CST. String literals and numbers repeat less, and the extra work costs more than it saves.
+
 ## Open questions
 
 - How does the server get the jpath? The options are `initializationOptions`, `workspace/configuration`, a default for each folder such as the repository root, or a combination.
