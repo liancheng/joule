@@ -150,7 +150,19 @@ Joule must operate on workspaces with 100k files. Thus, write hot paths carefull
 - Name assertion helpers in camelCase, as `unittest` does: `assertDefined`, `assertVarBinding`. Name test methods `test_<case>`, in snake case.
 - To put related cases into one test, use `self.subTest(...)`.
 - To make expected trees, use the `SpanDSL` constructors and the helpers in `tests.dsl`, for example `t.at(1).num(1)`, `bind(...)`, and `field(...)`.
-- If a test needs real files, make them in a `tempfile.TemporaryDirectory()` and resolve its path. If the setup is expensive, do it in `setUpClass`. An example of an expensive setup is a process pool.
+- If a test needs real files, make its class a subclass of `FakeWorkspaceTestCase`. Make the documents with `fake_document(source, path=...)`, and the other files with `layout(File(...), Dir(...), SymLink(...))`.
+
+### Self-contained tests
+
+A reader must understand a test without other parts of the file. Write each test as a short scenario that the reader can read from top to bottom:
+
+- **Do not write tautological tests.** A test must be able to fail if the code under test is incorrect. Do not get the expected value from the code under test, or from a copy of its logic, for example the inverted map of the edges. Do not assert only what the setup of the test made true, for example that a file exists after the test made it. Make the expected value only from the data of the test, for example the fake documents or the `SpanDSL` constructors.
+- **Declare the data in the test.** Each test makes only the documents and files that it needs, next to its assertions. Do not share one large fixture, such as a module-level workspace, between tests. A shared fixture separates the data from the test that uses it. Also, a change for one test can break other tests.
+- **Remove expensive setup. Do not share it.** Do not put state in `setUpClass` to make a slow setup run only one time. Instead, make the setup cheap. For example, use the sequential `ImportGraphBuilder` in tests, not the process pool of `ParallelImportGraphBuilder`.
+- **Make the setup visible.** Use context managers, such as `jpaths(...)`, `layout(...)`, and `fake_workspace(...)`, in the `with` statement of the test. Python enters them in sequence. Thus put each setting before the context manager that uses it, for example `jpaths(...)` before `fake_workspace(...)`.
+- **Assert at the level of the domain.** Write assertion helpers that take the objects of the test, for example `assertImports(index, f1, f2)`. Do not use raw paths or the internal dictionaries in the tests.
+- **Make failures easy to read.** In each assertion helper, set `__tracebackhide__ = True`, so that a failure points to the line in the test. Show paths relative to the workspace root.
+- **Let the names and the sources tell the case.** If a comment must explain the data, the data is too far from the test. Comment only a corner case that the source cannot show.
 
 ## Shell scripts
 
