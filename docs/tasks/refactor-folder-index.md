@@ -146,7 +146,7 @@ Commit: ``feat: Update `FolderIndex` on file events``
 
 - Add an LRU cache of resolved documents to `FolderIndex`.
 - Use the `(mtime_ns, size)` of the file as the cache key. For an open buffer, use the LSP version of the document. Then the cache of one document stays correct without events. The events are necessary only for invalidation across documents.
-- Read the open buffers (`didOpen`, `didChange`, and `didClose`). They have priority over the files on the disk. At this time, `T.parse_document` reads only from the disk.
+- Read the open buffers (`didOpen`, `didChange`, and `didClose`). They have priority over the files on the disk. At this time, `workspace.resolve_document` reads only from the disk.
 
 This step does not need the previous steps. You can do it first.
 

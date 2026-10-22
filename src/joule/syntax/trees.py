@@ -3,7 +3,6 @@ import functools
 import typing
 from collections.abc import Callable, Iterable
 from enum import Enum, StrEnum
-from pathlib import Path
 from typing import Any, ClassVar, TypeVar, override
 
 import lsprotocol.types as L
@@ -70,7 +69,6 @@ __all__ = [
     "Visibility",
     "language",
     "parse",
-    "parse_document",
 ]
 
 
@@ -1619,20 +1617,10 @@ def language() -> ts.Language:
     return ts.Language(tree_sitter_jsonnet.language())
 
 
-@functools.cache
-def parser() -> ts.Parser:
-    return ts.Parser(language())
-
-
 def parse(source: str | bytes) -> ts.Tree:
+    @functools.cache
+    def parser() -> ts.Parser:
+        return ts.Parser(language())
+
     source = source.encode() if isinstance(source, str) else source
     return parser().parse(source)
-
-
-def parse_document(uri: str) -> Document | None:
-    try:
-        source = Path.from_uri(uri).read_bytes()
-    except OSError:
-        return None
-
-    return Document.from_cst(parser().parse(source).root_node)

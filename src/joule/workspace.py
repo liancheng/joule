@@ -4,7 +4,6 @@ from pathlib import Path
 
 from joule.analysis.imports import ImportGraph
 from joule.analysis.scopes import resolve
-from joule.maybe import head_or_none, maybe
 from joule.syntax import trees as T
 
 
@@ -40,7 +39,14 @@ def discover_docs(
 
 
 def resolve_document(uri: str) -> T.Document | None:
-    return head_or_none(resolve(doc) for doc in maybe(T.parse_document(uri)))
+    try:
+        source = Path.from_uri(uri).read_bytes()
+        doc = T.Document.from_cst(T.parse(source).root_node)
+    except OSError, T.MalformedError:
+        return None
+
+    resolve(doc)
+    return doc
 
 
 class FolderIndex:
