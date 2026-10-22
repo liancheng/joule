@@ -119,9 +119,6 @@ class ImportResolver:
 
 
 class ImportGraph:
-    root: Path
-    jpaths: list[Path]
-
     # Edge fields
     imports: dict[Path, set[Path]]
     imported_by: dict[Path, set[Path]]
@@ -132,10 +129,7 @@ class ImportGraph:
 
     malformed: list[Path]
 
-    def __init__(self, root: Path, jpaths: list[Path]):
-        self.root = root
-        self.jpaths = jpaths
-
+    def __init__(self):
         self.imports = defaultdict(set)
         self.imported_by = defaultdict(set)
 
@@ -178,7 +172,7 @@ class ImportGraphBuilder:
         return self.do_build(docs, map)
 
     def do_build(self, docs: list[Path], map_fn: MapFn) -> ImportGraph:
-        graph = ImportGraph(self.root, self.jpaths)
+        graph = ImportGraph()
         resolver = ImportResolver(self.root, self.jpaths)
         importees_of = map_fn(collect_importees, docs)
 

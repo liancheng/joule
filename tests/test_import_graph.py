@@ -14,22 +14,25 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         graph = index.import_graph
 
-        obtained_importees = graph.imports.get(importer.path, set())
-        obtained = {path.relative_to(self.root) for path in obtained_importees}
-        expected = {importee.path.relative_to(self.root) for importee in importees}
-        self.assertSetEqual(obtained, expected)
+        self.assertSetEqual(
+            {self.rel_path(path) for path in graph.imports.get(importer.path, set())},
+            {self.rel_path(importee) for importee in importees},
+        )
 
         for importee in importees:
-            obtained_importers = graph.imported_by.get(importee.path, set())
-            obtained = {path.relative_to(self.root) for path in obtained_importers}
-            expected = {importer.path.relative_to(self.root)}
-            self.assertSetEqual(obtained, expected)
+            self.assertSetEqual(
+                {
+                    self.rel_path(path)
+                    for path in graph.imported_by.get(importee.path, set())
+                },
+                {self.rel_path(importer)},
+            )
 
     def assertMalformed(self, index: FolderIndex, *docs: FakeDocument):
         __tracebackhide__ = True
         self.assertCountEqual(
-            [path.relative_to(self.root) for path in index.import_graph.malformed],
-            [doc.path.relative_to(self.root) for doc in docs],
+            [self.rel_path(path) for path in index.import_graph.malformed],
+            [self.rel_path(doc) for doc in docs],
         )
 
     def assertImportees(
@@ -51,12 +54,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
         *importers: FakeDocument,
     ):
         __tracebackhide__ = True
+        graph = index.import_graph
         self.assertSetEqual(
             {
-                path.relative_to(self.root)
-                for path in index.import_graph.basename_imported_by.get(basename, set())
+                self.rel_path(path)
+                for path in graph.basename_imported_by.get(basename, set())
             },
-            {importer.path.relative_to(self.root) for importer in importers},
+            {self.rel_path(importer) for importer in importers},
         )
 
     def test_simple_import(self):
@@ -84,6 +88,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, f2, f3) as index,
         ):
             self.assertImports(index, f1, f2, f3)
+            self.assertBasenameImported(index, "f2.libsonnet", f1)
+            self.assertBasenameImported(index, "f3.libsonnet", f1)
 
     def test_duplicate_imports(self):
         f1 = self.fake_document(
@@ -105,12 +111,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, f2) as index,
         ):
             self.assertImports(index, f1, f2)
+            self.assertBasenameImported(index, "f2.libsonnet", f1)
 
     def test_importer_dir_and_jpaths(self):
         f1 = self.fake_document(
             """\
-            local a = import "f2.libsonnet";
-            local b = import "f3.libsonnet";
+            local a = import "./f2.libsonnet";
+            local b = import "sub/f3.libsonnet";
             [a, b]
             """,
             path="app/f1.jsonnet",
@@ -123,7 +130,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         f3 = self.fake_document(
             "2",
-            path="vendor/f3.libsonnet",
+            path="vendor/sub/f3.libsonnet",
         )
 
         with (
@@ -131,6 +138,9 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, f2, f3) as index,
         ):
             self.assertImports(index, f1, f2, f3)
+            self.assertImportees(index, f1, "./f2.libsonnet", "sub/f3.libsonnet")
+            self.assertBasenameImported(index, "f2.libsonnet", f1)
+            self.assertBasenameImported(index, "f3.libsonnet", f1)
 
     def test_non_document_importee(self):
         f = self.fake_document(
@@ -146,6 +156,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f, data) as index:
             # Document discovery does not find `.json` files, but they are importees.
             self.assertImports(index, f, data)
+            self.assertBasenameImported(index, "data.json", f)
 
     def test_unresolved_import(self):
         f = self.fake_document(
@@ -155,6 +166,9 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f) as index:
             self.assertImports(index, f)
+            # Unresolved importees are kept. A new file can make them resolve.
+            self.assertImportees(index, f, "missing.libsonnet")
+            self.assertBasenameImported(index, "missing.libsonnet", f)
 
     def test_importstr_and_importbin(self):
         f = self.fake_document(
@@ -174,6 +188,9 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f) as index,
         ):
             self.assertImports(index, f)
+            self.assertImportees(index, f)
+            self.assertBasenameImported(index, "notes.txt")
+            self.assertBasenameImported(index, "blob.bin")
 
     def test_no_imports(self):
         f = self.fake_document(
@@ -183,6 +200,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f) as index:
             self.assertImports(index, f)
+            self.assertImportees(index, f)
 
     def test_malformed_document(self):
         f1 = self.fake_document(
@@ -206,54 +224,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f1, f2) as index:
             self.assertMalformed(index, f1)
             self.assertImports(index, f1, f2)
-
-    def test_importees_include_unresolved_imports(self):
-        f1 = self.fake_document(
-            """\
-            local a = import "f2.libsonnet";
-            local b = import "missing.libsonnet";
-            [a, b]
-            """,
-            path="f1.jsonnet",
-        )
-
-        f2 = self.fake_document(
-            "1",
-            path="f2.libsonnet",
-        )
-
-        with self.workspace(f1, f2) as index:
-            self.assertImportees(index, f1, "f2.libsonnet", "missing.libsonnet")
             self.assertBasenameImported(index, "f2.libsonnet", f1)
-            self.assertBasenameImported(index, "missing.libsonnet", f1)
-
-    def test_importees_are_raw_strings(self):
-        f1 = self.fake_document(
-            """\
-            local a = import "../lib/./f2.libsonnet";
-            local b = import "sub/f3.libsonnet";
-            [a, b]
-            """,
-            path="app/f1.jsonnet",
-        )
-
-        f2 = self.fake_document(
-            "1",
-            path="lib/f2.libsonnet",
-        )
-
-        f3 = self.fake_document(
-            "2",
-            path="vendor/sub/f3.libsonnet",
-        )
-
-        with (
-            self.jpaths("vendor"),
-            self.workspace(f1, f2, f3) as index,
-        ):
-            self.assertImportees(index, f1, "../lib/./f2.libsonnet", "sub/f3.libsonnet")
-            self.assertBasenameImported(index, "f2.libsonnet", f1)
-            self.assertBasenameImported(index, "f3.libsonnet", f1)
 
     def test_importers_of_same_file_name(self):
         f1 = self.fake_document(

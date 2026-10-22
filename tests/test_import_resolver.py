@@ -17,16 +17,13 @@ class TestImportResolver(FakeWorkspaceTestCase):
         resolver = ImportResolver(self.root, self.current_config.jpaths)
         self.assertEqual(
             head_or_none(
-                path.absolute().relative_to(self.root)
+                self.rel_path(path)
                 for path in maybe(resolver.resolve(Path(importer), str(importee)))
             ),
-            head_or_none(
-                self.root.joinpath(path).absolute().relative_to(self.root)
-                for path in maybe(resolved)
-            ),
+            head_or_none(self.rel_path(path) for path in maybe(resolved)),
         )
 
-    def assertUnresolved(
+    def assertNotResolved(
         self,
         *,
         importer: str | Path,
@@ -153,7 +150,7 @@ class TestImportResolver(FakeWorkspaceTestCase):
                 self.file("a/main.jsonnet"),
             ),
         ):
-            self.assertUnresolved(
+            self.assertNotResolved(
                 importer="a/main.jsonnet",
                 importee="missing.libsonnet",
             )

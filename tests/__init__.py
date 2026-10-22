@@ -61,6 +61,10 @@ class FakeWorkspaceTestCase(TreeTestCase):
         self.root = Path(tmp.name).resolve()
         self.current_config = Config()
 
+    def rel_path(self, path_like: str | Path | FakeDocument) -> Path:
+        path_like = path_like.path if isinstance(path_like, FakeDocument) else path_like
+        return self.root.joinpath(path_like).relative_to(self.root)
+
     def purge(self):
         for child in self.root.iterdir():
             if child.is_dir(follow_symlinks=False):
