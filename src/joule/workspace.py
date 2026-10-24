@@ -17,7 +17,9 @@ def discover_docs(
     if fd is None:
         raise RuntimeError("`fd` not found in PATH")
 
-    command = [fd, "--type", "file", "--follow", "--absolute-path"]
+    # Do not follow symlinks. Editors report only the real paths of files. Thus a
+    # document under a symlinked directory never gets updates.
+    command = [fd, "--type", "file", "--absolute-path"]
 
     for extension in extensions:
         command += ["--extension", extension]

@@ -80,7 +80,7 @@ Each LSP workspace folder has one `FolderService`. A `FolderService` finds all t
 
 For each workspace folder, Joule does these steps:
 
-1. Find all the Jsonnet files with `fd`.
+1. Find all the Jsonnet files with `fd`. Do not follow symlinks. Editors report only the real paths of files, so a document under a symlinked directory never gets updates.
 2. Parse each file into a CST with tree-sitter.
 3. Find all the `import` nodes. Ignore the `importstr` and `importbin` nodes.
 4. Parse each node into an `Import` AST node, and get the importee path.
