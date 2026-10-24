@@ -61,59 +61,59 @@ class ImportResolver:
     root: Path
     jpaths: list[Path]
 
-    _is_file: dict[str, bool]
-    _same_dir: dict[tuple[str, str], str | None]
-    _via_jpaths: dict[str, str | None]
+    _is_file_cache: dict[str, bool]
+    _same_dir_cache: dict[tuple[str, str], str | None]
+    _via_jpaths_cache: dict[str, str | None]
 
     def __init__(self, root: Path, jpaths: list[Path]):
         self.root = root
         self.jpaths = jpaths
 
-        self._is_file = {}
-        self._same_dir = {}
-        self._via_jpaths = {}
+        self._is_file_cache = {}
+        self._same_dir_cache = {}
+        self._via_jpaths_cache = {}
 
-    def is_file(self, path: str) -> bool:
+    def _is_file(self, path: str) -> bool:
         path = P.abspath(path)
         try:
-            return self._is_file[path]
+            return self._is_file_cache[path]
         except KeyError:
             result = P.isfile(path)
-            self._is_file[path] = result
+            self._is_file_cache[path] = result
             return result
 
-    def try_abs_path(self, importee) -> str | None:
+    def _try_abs_path(self, importee) -> str | None:
         return importee if P.isabs(importee) else None
 
-    def try_same_dir(self, importer: Path, importee: str) -> str | None:
+    def _try_same_dir(self, importer: Path, importee: str) -> str | None:
         importer_dir = P.dirname(P.join(self.root, importer))
 
         try:
-            return self._same_dir[(importer_dir, importee)]
+            return self._same_dir_cache[(importer_dir, importee)]
         except KeyError:
             joined = P.join(importer_dir, importee)
-            path = P.abspath(joined) if self.is_file(joined) else None
-            return self._same_dir.setdefault((importer_dir, importee), path)
+            path = P.abspath(joined) if self._is_file(joined) else None
+            return self._same_dir_cache.setdefault((importer_dir, importee), path)
 
-    def try_jpaths(self, importee: str) -> str | None:
+    def _try_jpaths(self, importee: str) -> str | None:
         try:
-            return self._via_jpaths[importee]
+            return self._via_jpaths_cache[importee]
         except KeyError:
             result = head_or_none(
                 P.abspath(path)
                 for jpath in reversed(self.jpaths)
-                if self.is_file(path := P.join(self.root, jpath, importee))
+                if self._is_file(path := P.join(self.root, jpath, importee))
             )
-            self._via_jpaths[importee] = result
+            self._via_jpaths_cache[importee] = result
             return result
 
     def resolve(self, importer: Path, importee: str) -> Path | None:
         return head_or_none(
             Path(path)
             for path in maybe(
-                self.try_abs_path(importee)
-                or self.try_same_dir(importer, P.normpath(importee))
-                or self.try_jpaths(P.normpath(importee))
+                self._try_abs_path(importee)
+                or self._try_same_dir(importer, P.normpath(importee))
+                or self._try_jpaths(P.normpath(importee))
             )
         )
 
