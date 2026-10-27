@@ -3,10 +3,11 @@ import os
 import os.path as P
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Set as AbstractSet
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import override
+from typing import Self, override
 
 import tree_sitter as ts
 
@@ -15,9 +16,7 @@ from joule.syntax import trees as T
 
 __all__ = [
     "ImportGraph",
-    "ImportGraphBuilder",
     "ImportResolver",
-    "ParallelImportGraphBuilder",
 ]
 
 
@@ -118,86 +117,242 @@ class ImportResolver:
         )
 
 
-class ImportGraph:
-    # Edge fields
-    imports: dict[Path, set[Path]]
-    imported_by: dict[Path, set[Path]]
-
-    # Incremental update fields
-    importees: dict[Path, set[str]]
-    basename_imported_by: dict[str, set[Path]]
-
-    malformed: list[Path]
-
-    def __init__(self):
-        self.imports = defaultdict(set)
-        self.imported_by = defaultdict(set)
-
-        self.importees = defaultdict(set)
-        self.basename_imported_by = defaultdict(set)
-
-        self.malformed = []
-
-    def add_import(
-        self,
-        importer: Path,
-        raw_importee: str,
-        resolved_importee: Path | None,
-    ):
-        raw_importee = sys.intern(raw_importee)
-
-        self.importees[importer].add(raw_importee)
-        self.basename_imported_by[P.basename(raw_importee)].add(importer)
-
-        if resolved_importee is not None:
-            self.imports[importer].add(resolved_importee)
-            self.imported_by[resolved_importee].add(importer)
-
-
-type MapFn = Callable[
+type ImporteesMapper = Callable[
     [ImporteesCollector, list[Path]],
     Iterable[Importees],
 ]
 
 
-class ImportGraphBuilder:
-    root: Path
-    jpaths: list[Path]
+def discard_from[K, V](index: dict[K, set[V]], key: K, value: V):
+    if (values := index.get(key)) is not None:
+        values.discard(value)
+
+        if len(values) == 0:
+            del index[key]
+
+
+class ImportGraph:
+    """The imports between the files of a workspace folder.
+
+    Build a graph with `build` or `build_in_parallel`. Then keep it current with
+    `file_created`, `file_changed`, and `file_deleted`.
+    """
+
+    _root: Path
+    _jpaths: list[Path]
+
+    # Edges
+    _imports: dict[Path, set[Path]]
+    _imported_by: dict[Path, set[Path]]
+
+    # Indices for incremental updates
+    _importees: dict[Path, set[str]]
+    _basename_imported_by: dict[str, set[Path]]
+
+    _malformed: set[Path]
 
     def __init__(self, root: Path, jpaths: list[Path]):
-        self.root = root
-        self.jpaths = jpaths
+        self._root = root
+        self._jpaths = jpaths
 
-    def build(self, docs: list[Path]) -> ImportGraph:
-        return self.do_build(docs, map)
+        self._imports = defaultdict(set)
+        self._imported_by = defaultdict(set)
 
-    def do_build(self, docs: list[Path], map_fn: MapFn) -> ImportGraph:
-        graph = ImportGraph()
-        resolver = ImportResolver(self.root, self.jpaths)
-        importees_of = map_fn(collect_importees, docs)
+        self._importees = defaultdict(set)
+        self._basename_imported_by = defaultdict(set)
 
-        for importer, (importees, error) in zip(docs, importees_of, strict=True):
-            if error:
-                graph.malformed.append(importer)
+        self._malformed = set()
 
-            for importee in importees:
-                resolved = resolver.resolve(importer, importee)
-                graph.add_import(importer, importee, resolved)
+    @classmethod
+    def build(cls, root: Path, jpaths: list[Path], docs: Iterable[Path]) -> Self:
+        return cls._build(root, jpaths, docs, map)
+
+    @classmethod
+    def build_in_parallel(
+        cls,
+        root: Path,
+        jpaths: list[Path],
+        docs: Iterable[Path],
+        *,
+        batch_size: int = 256,
+    ) -> Self:
+        parallelism = max(2, os.process_cpu_count() or 2)
+
+        with ProcessPoolExecutor(max_workers=parallelism) as executor:
+            mapper = functools.partial(executor.map, chunksize=batch_size)
+            return cls._build(root, jpaths, docs, mapper)
+
+    def imports_of(self, path: Path) -> AbstractSet[Path]:
+        return self._imports.get(path, frozenset())
+
+    def importers_of(self, path: Path) -> AbstractSet[Path]:
+        return self._imported_by.get(path, frozenset())
+
+    def edges(self) -> Iterator[tuple[Path, Path]]:
+        return (
+            (importer, importee)
+            for importer, importees in self._imports.items()
+            for importee in importees
+        )
+
+    @property
+    def malformed(self) -> AbstractSet[Path]:
+        return self._malformed
+
+    @property
+    def pretty(self) -> str:
+        """Returns all the data of the graph as sorted text, for tests and debugging.
+
+        Paths under the root are relative to the root.
+        """
+
+        def show(value: Path | str) -> str:
+            match value:
+                case Path() if value.is_relative_to(self._root):
+                    return str(value.relative_to(self._root))
+                case Path():
+                    return str(value)
+                case _:
+                    return repr(value)
+
+        sections: dict[str, dict] = {
+            "imports": self._imports,
+            "imported by": self._imported_by,
+            "importees": self._importees,
+            "file names": self._basename_imported_by,
+        }
+
+        lines = [
+            line
+            for title, index in sections.items()
+            for line in [
+                f"{title}:",
+                *sorted(
+                    f"  {show(key)}: {show(value)}"
+                    for key, values in index.items()
+                    for value in values
+                ),
+            ]
+        ]
+
+        lines += ["malformed:", *sorted(f"  {show(path)}" for path in self._malformed)]
+        return "\n".join(lines) + "\n"
+
+    @override
+    def __repr__(self) -> str:
+        edges = sum(map(len, self._imports.values()))
+        malformed = len(self._malformed)
+        return f"ImportGraph(root={str(self._root)!r}, {edges} edges, {malformed} malformed)"
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        match other:
+            case ImportGraph():
+                return (
+                    (self._root, self._jpaths) == (other._root, other._jpaths)
+                    and self._imports == other._imports
+                    and self._imported_by == other._imported_by
+                    and self._importees == other._importees
+                    and self._basename_imported_by == other._basename_imported_by
+                    and self._malformed == other._malformed
+                )
+            case _:
+                return NotImplemented
+
+    def file_created(self, path: Path):
+        """Resolves again the imports that the new file can change.
+
+        A new file can shadow a candidate with a lower priority, or make an unresolved
+        import resolve. This applies to all files, also to files that are not documents.
+        If the new file is a document, also call `file_changed`.
+        """
+        # Each candidate of an importee ends with the file name of the importee. Thus
+        # only the imports with the same file name can change.
+        importers = set(self._basename_imported_by.get(P.basename(path), ()))
+        resolver = self._resolver()
+
+        for importer in importers:
+            self._resolve_again(importer, resolver)
+
+    def file_changed(self, path: Path):
+        """Collects the imports of the document again. Also use it for a new document."""
+        importees, malformed = collect_importees(path)
+        self._remove_document(path)
+        self._add_document(path, importees, malformed, self._resolver())
+
+    def file_deleted(self, path: Path):
+        # The imports of the file can now resolve to a candidate with a lower priority.
+        importers = self._imported_by.get(path, set()) - {path}
+        self._remove_document(path)
+        resolver = self._resolver()
+
+        for importer in importers:
+            self._resolve_again(importer, resolver)
+
+    @classmethod
+    def _build(
+        cls,
+        root: Path,
+        jpaths: list[Path],
+        docs: Iterable[Path],
+        mapper: ImporteesMapper,
+    ) -> Self:
+        graph = cls(root, jpaths)
+        resolver = graph._resolver()
+        docs = list(docs)
+        importees_of = mapper(collect_importees, docs)
+
+        for doc, (importees, malformed) in zip(docs, importees_of, strict=True):
+            graph._add_document(doc, importees, malformed, resolver)
 
         return graph
 
+    def _resolver(self) -> ImportResolver:
+        # The caches of a resolver become incorrect when somebody creates or deletes a
+        # file. Thus each build and each event uses a new resolver.
+        return ImportResolver(self._root, self._jpaths)
 
-class ParallelImportGraphBuilder(ImportGraphBuilder):
-    batch_size: int
+    def _add_document(
+        self,
+        path: Path,
+        importees: list[str],
+        malformed: bool,
+        resolver: ImportResolver,
+    ):
+        if malformed:
+            self._malformed.add(path)
 
-    def __init__(self, root: Path, jpaths: list[Path], batch_size: int = 256):
-        super().__init__(root, jpaths)
-        self.batch_size = batch_size
+        for importee in map(sys.intern, importees):
+            self._importees[path].add(importee)
+            self._basename_imported_by[P.basename(importee)].add(path)
 
-    @override
-    def build(self, docs: list[Path]) -> ImportGraph:
-        parallelism: int = max(2, os.process_cpu_count() or 2)
+            if (resolved := resolver.resolve(path, importee)) is not None:
+                self._imports[path].add(resolved)
+                self._imported_by[resolved].add(path)
 
-        with ProcessPoolExecutor(max_workers=parallelism) as executor:
-            map_fn: MapFn = functools.partial(executor.map, chunksize=self.batch_size)
-            return self.do_build(docs, map_fn)
+    def _remove_document(self, path: Path):
+        for importee in self._imports.pop(path, set()):
+            discard_from(self._imported_by, importee, path)
+
+        for importee in self._importees.pop(path, set()):
+            discard_from(self._basename_imported_by, P.basename(importee), path)
+
+        self._malformed.discard(path)
+
+    def _resolve_again(self, importer: Path, resolver: ImportResolver):
+        resolved = {
+            path
+            for importee in self._importees.get(importer, set())
+            for path in maybe(resolver.resolve(importer, importee))
+        }
+
+        before = self._imports.pop(importer, set())
+
+        for importee in before - resolved:
+            discard_from(self._imported_by, importee, importer)
+
+        for importee in resolved - before:
+            self._imported_by[importee].add(importer)
+
+        if resolved:
+            self._imports[importer] = resolved

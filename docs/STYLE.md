@@ -46,7 +46,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 ## Names
 
-- Give a class a noun name that tells its role: `DefinitionProvider`, `ScopeResolver`, `ImportResolver`, `ImportGraphBuilder`, `FolderIndex`.
+- Give a class a noun name that tells its role: `DefinitionProvider`, `ScopeResolver`, `ImportResolver`, `ImportGraph`, `FolderIndex`.
 - Give a function or a method a verb name: `serve`, `resolve`, `build`, `find_definition`, `discover_docs`.
 - Name conversions `to_*` and `from_*`, for example `to_range`, `to_location`, `from_cst`, and `from_lsp`.
 - Name a helper that gets a value from a node `*_of`, for example `span_of`, `text_of`, `field_of`, and `enum_of`.
@@ -158,7 +158,7 @@ A reader must understand a test without other parts of the file. Write each test
 
 - **Do not write tautological tests.** A test must be able to fail if the code under test is incorrect. Do not get the expected value from the code under test, or from a copy of its logic, for example the inverted map of the edges. Do not assert only what the setup of the test made true, for example that a file exists after the test made it. Make the expected value only from the data of the test, for example the fake documents or the `SpanDSL` constructors.
 - **Declare the data in the test.** Each test makes only the documents and files that it needs, next to its assertions. Do not share one large fixture, such as a module-level workspace, between tests. A shared fixture separates the data from the test that uses it. Also, a change for one test can break other tests.
-- **Remove expensive setup. Do not share it.** Do not put state in `setUpClass` to make a slow setup run only one time. Instead, make the setup cheap. For example, use the sequential `ImportGraphBuilder` in tests, not the process pool of `ParallelImportGraphBuilder`.
+- **Remove expensive setup. Do not share it.** Do not put state in `setUpClass` to make a slow setup run only one time. Instead, make the setup cheap. For example, use the sequential `ImportGraph.build` in tests, not the process pool of `ImportGraph.build_in_parallel`.
 - **Make the setup visible.** Use context managers, such as `jpaths(...)`, `layout(...)`, and `fake_workspace(...)`, in the `with` statement of the test. Python enters them in sequence. Thus put each setting before the context manager that uses it, for example `jpaths(...)` before `fake_workspace(...)`.
 - **Assert at the level of the domain.** Write assertion helpers that take the objects of the test, for example `assertImports(index, f1, f2)`. Do not use raw paths or the internal dictionaries in the tests.
 - **Make failures easy to read.** In each assertion helper, set `__tracebackhide__ = True`, so that a failure points to the line in the test. Show paths relative to the workspace root.

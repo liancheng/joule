@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from joule.workspace import discover_docs, resolve_document
 from tests import FakeWorkspaceTestCase
 
@@ -16,8 +14,7 @@ class TestFolderIndex(FakeWorkspaceTestCase):
             self.symlink("vendor/lib", "gen"),
             self.symlink("alias.libsonnet", "gen/lib.libsonnet"),
         ):
-            docs = discover_docs(self.root, ["libsonnet"], None)
             self.assertEqual(
-                [self.rel_path(doc) for doc in docs],
-                [Path("gen/lib.libsonnet")],
+                discover_docs(self.root, ["libsonnet"], None),
+                [self.root.joinpath("gen/lib.libsonnet")],
             )

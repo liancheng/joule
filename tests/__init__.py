@@ -2,13 +2,14 @@ import dataclasses as D
 import shutil
 import tempfile
 import unittest
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import override
 
 import ocdiff
 
-from joule.analysis.imports import ImportGraphBuilder
+from joule.analysis.imports import ImportGraph
 from joule.config import Config
 from joule.syntax.trees import Tree
 from joule.workspace import FolderIndex, discover_docs
@@ -18,6 +19,10 @@ from tests.dsl import FakeDocument
 class TreeTestCase(unittest.TestCase):
     @override
     def assertEqual(self, first, second, msg=None):
+        # Handle `Tree`s here, not with `addTypeEqualityFunc`. `unittest` uses a type
+        # equality function only if both arguments have exactly the same type, and each
+        # node type is a different subclass of `Tree`. Thus two trees whose roots have
+        # different types do not get the diff.
         if isinstance(first, Tree) and isinstance(second, Tree):
             if first != second:
                 diff = ocdiff.console_diff(first.pretty, second.pretty)
@@ -60,10 +65,32 @@ class FakeWorkspaceTestCase(TreeTestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
         self.current_config = Config()
+        self.addTypeEqualityFunc(ImportGraph, self.assertImportGraphEqual)
 
-    def rel_path(self, path_like: str | Path | FakeDocument) -> Path:
-        path_like = path_like.path if isinstance(path_like, FakeDocument) else path_like
-        return self.root.joinpath(path_like).relative_to(self.root)
+    def assertImportGraphEqual(
+        self,
+        first: ImportGraph,
+        second: ImportGraph,
+        msg: str | None = None,
+    ):
+        __tracebackhide__ = True
+
+        if first != second:
+            diff = ocdiff.console_diff(first.pretty, second.pretty)
+            raise self.failureException(diff if msg is None else f"{msg}\n{diff}")
+
+    def build_import_graph(self) -> ImportGraph:
+        paths = discover_docs(
+            self.root,
+            self.current_config.extensions,
+            self.current_config.exclude,
+        )
+
+        return ImportGraph.build(self.root, self.current_config.jpaths, paths)
+
+    def delete(self, *paths: str | Path):
+        for path in paths:
+            self.root.joinpath(path).unlink()
 
     def purge(self):
         for child in self.root.iterdir():
@@ -126,19 +153,10 @@ class FakeWorkspaceTestCase(TreeTestCase):
         return FakeDocument(source, uri=uri)
 
     @contextmanager
-    def workspace(self, *docs: FakeDocument):
+    def workspace(self, *docs: FakeDocument) -> Generator[FolderIndex]:
         self.provision(*(self.file(Path.from_uri(doc.uri), doc.text) for doc in docs))
 
-        paths = discover_docs(
-            self.root,
-            self.current_config.extensions,
-            self.current_config.exclude,
-        )
-
-        builder = ImportGraphBuilder(self.root, self.current_config.jpaths)
-        graph = builder.build(paths)
-
         try:
-            yield FolderIndex(graph)
+            yield FolderIndex(self.build_import_graph())
         finally:
             self.purge()

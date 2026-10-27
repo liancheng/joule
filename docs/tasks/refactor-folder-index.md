@@ -12,14 +12,12 @@ Joule has two layers:
 
 The classes are:
 
-| Class                        | Layer   | Role                                                                                                           |
-| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `FolderService`              | Service | Finds the documents, builds the index outside the event loop, and gets the LSP events of one workspace folder. |
-| `FolderIndex`                | Core    | Holds the `ImportGraph` and the cache of resolved documents.                                                   |
-| `ImportGraph`                | Core    | Holds the edges, `malformed`, and the update indices. It has no caches.                                        |
-| `ImportGraphBuilder`         | Core    | Builds an `ImportGraph` sequentially.                                                                          |
-| `ParallelImportGraphBuilder` | Service | Builds an `ImportGraph` with a process pool.                                                                   |
-| `ImportResolver`             | Core    | Resolves importees like the file importer of Jsonnet, with caches that have a short life.                      |
+| Class            | Layer   | Role                                                                                                           |
+| ---------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `FolderService`  | Service | Finds the documents, builds the index outside the event loop, and gets the LSP events of one workspace folder. |
+| `FolderIndex`    | Core    | Holds the `ImportGraph` and the cache of resolved documents.                                                   |
+| `ImportGraph`    | Core    | Builds the graph sequentially or with a process pool, and updates it on file events. Its indices are private.  |
+| `ImportResolver` | Core    | Resolves importees like the file importer of Jsonnet, with caches that have a short life.                      |
 
 #### Design decision: How long do the resolver caches live?
 
@@ -55,9 +53,12 @@ Joule takes option 2. `FolderIndex` gets each event. It updates the graph first,
    - **Cons:** Each production caller must create a `ProcessPoolExecutor`.
 3. `do_build` gets the `map` parameter. `ImportGraphBuilder.build` is sequential, and `ParallelImportGraphBuilder.build` uses a pool.
    - **Pros:** The production callers get a parallel build with no setup. The tests get a cheap sequential build.
-   - **Cons:** One more class.
+   - **Cons:** One more class. The graph and its builders share the configuration (`root` and `jpaths`), so the update methods must get a resolver from the caller.
+4. `ImportGraph` has two class methods, `build` and `build_in_parallel`. The graph keeps `root` and `jpaths`, and it makes a new resolver for each build and each event.
+   - **Pros:** The production callers get a parallel build with no setup. The tests get a cheap sequential build. The interface shows no resolver, importees, or indices.
+   - **Cons:** None found.
 
-Joule takes option 3.
+Joule takes option 4. Before, it took option 3.
 
 ### Concurrency rules
 
@@ -115,23 +116,22 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 
 ### Step: Update the import graph incrementally
 
-Add methods that change `ImportGraph`. Each method resolves imports with a new `ImportResolver`.
+Merge `ImportGraphBuilder` and `ParallelImportGraphBuilder` into `ImportGraph`. The interface is:
 
-- `update_file(path)`:
-  1. Collect the importees of the document again. Also collect them if the document is malformed, as the build does.
-  2. Replace the edges of the document, its index entries, and its entry in `malformed`.
-- `add_file(path)`:
-  1. Resolve again the imports that `basename_imported_by[basename(path)]` finds. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not documents, such as `.json` import targets.
-  2. If `path` is a document, also collect and resolve its imports.
-- `remove_file(path)`:
-  1. Remove the edges from the document, and its index entries.
-  2. Resolve again the imports in `imported_by[path]`. These imports can now resolve to a candidate with a lower priority.
+- `ImportGraph.build(root, jpaths, docs)` and `ImportGraph.build_in_parallel(root, jpaths, docs)`.
+- The queries `imports_of(path)`, `importers_of(path)`, `edges()`, and `malformed`.
+- The file events. Each event uses a new `ImportResolver`:
+  - `file_created(path)`: resolve again the imports with the file name of `path`. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not documents, such as `.json` import targets.
+  - `file_changed(path)`: collect the importees of the document again, also if it is malformed. Then replace its edges, its index entries, and its entry in `malformed`.
+  - `file_deleted(path)`: remove the edges from the file and its index entries. Then resolve again the imports in `importers_of(path)`. These imports can now resolve to a candidate with a lower priority.
 
-Test each method against a full build:
+The graph does not know which files are documents. That is a rule of the discovery, so `FolderService` applies it. When somebody creates a document, the service calls `file_created` and then `file_changed`.
+
+Test each event against a full build:
 
 1. Apply a change to a workspace of `FakeWorkspaceTestCase`.
-2. Update the graph incrementally.
-3. Make sure that the graph is equal to a new graph that `ImportGraphBuilder` builds from the changed workspace.
+2. Send the event to the graph.
+3. Make sure that the graph is equal to a new graph that `ImportGraph.build` makes from the changed workspace. `ImportGraph.__eq__` compares all the data of the graph, also the private indices. Thus a test also finds an index entry that an event did not remove.
 
 Commit: ``feat: Update `ImportGraph` incrementally on file changes``
 

@@ -6,7 +6,7 @@ from typing import Annotated
 import typer
 from typer import Typer
 
-from joule.analysis.imports import ParallelImportGraphBuilder
+from joule.analysis.imports import ImportGraph
 from joule.server import server
 from joule.workspace import discover_docs
 
@@ -66,11 +66,13 @@ def benchmark(
     docs = discover_docs(root, extension, exclude)
     discovered = time.perf_counter()
 
-    graph = ParallelImportGraphBuilder(root, [root]).build(docs)
+    graph = ImportGraph.build_in_parallel(root, [root], docs)
     built = time.perf_counter()
 
-    edges = sum(map(len, graph.imports.values()))
-    malformed_output.write_text("".join(f"{path}\n" for path in graph.malformed))
+    edges = sum(1 for _ in graph.edges())
+    malformed_output.write_text(
+        "".join(f"{path}\n" for path in sorted(graph.malformed))
+    )
 
     typer.echo(
         dedent(

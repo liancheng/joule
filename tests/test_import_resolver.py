@@ -16,11 +16,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
         __tracebackhide__ = True
         resolver = ImportResolver(self.root, self.current_config.jpaths)
         self.assertEqual(
-            head_or_none(
-                self.rel_path(path)
-                for path in maybe(resolver.resolve(Path(importer), str(importee)))
-            ),
-            head_or_none(self.rel_path(path) for path in maybe(resolved)),
+            resolver.resolve(Path(importer), str(importee)),
+            head_or_none(self.root.joinpath(path) for path in maybe(resolved)),
         )
 
     def assertNotResolved(

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from lsprotocol import types as L
 
-from joule.analysis.imports import ParallelImportGraphBuilder
+from joule.analysis.imports import ImportGraph
 from joule.config import Config
 from joule.syntax import trees as T
 from joule.workspace import FolderIndex, discover_docs, resolve_document
@@ -25,7 +25,6 @@ class FolderService:
         root = Path.from_uri(self.folder.uri).absolute()
         jpaths = [Path(path) for path in self.config.jpaths]
 
-        builder = ParallelImportGraphBuilder(root, jpaths)
         docs = await A.to_thread(
             discover_docs,
             root,
@@ -33,7 +32,8 @@ class FolderService:
             self.config.exclude,
         )
 
-        self.index = FolderIndex(await A.to_thread(builder.build, docs))
+        build = ImportGraph.build_in_parallel
+        self.index = FolderIndex(await A.to_thread(build, root, jpaths, docs))
 
     @property
     def ready(self) -> bool:
