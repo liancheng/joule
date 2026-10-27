@@ -97,6 +97,11 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 - To dispatch on types, use `match` / `case`. Do not use chains of `isinstance`. If other cases are possible, add `case _:` at the end.
 - To bind a value and test it in one expression, use the walrus operator: `if (child := node.child_by_field_name(name)) is None:`.
+- Do not test the truth value of a value that is not a `bool`, as in `if x:` or `if not x:`. Write the condition explicitly:
+  - For an optional value, compare with `None`: `if x is None:`.
+  - For a container or a string, compare its length: `if len(items) == 0:`.
+
+  An implicit test cannot tell `None` from an empty container, `0`, or `""`. For example, `if not path:` is also true for an empty string.
 - After a guard that raises an exception, put the normal path in an explicit `else:` block:
 
   ```python

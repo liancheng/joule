@@ -354,5 +354,5 @@ class ImportGraph:
         for importee in resolved - before:
             self._imported_by[importee].add(importer)
 
-        if resolved:
+        if len(resolved) > 0:
             self._imports[importer] = resolved
