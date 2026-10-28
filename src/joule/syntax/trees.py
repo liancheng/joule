@@ -152,12 +152,12 @@ class Span:
 
     def contains(self, other: Point | Span) -> bool:
         if isinstance(other, Point):
-            other = Span.from_points(other, other)
-
-        return (
-            self.packed_start <= other.packed_start
-            and other.packed_end <= self.packed_end
-        )
+            return self.packed_start <= other.packed <= self.packed_end
+        else:
+            return (
+                self.packed_start <= other.packed_start
+                and other.packed_end <= self.packed_end
+            )
 
     def merge(self, other: Span) -> Span:
         return Span(
@@ -304,9 +304,6 @@ class Tree:
         return []
 
     def node_at(self, target: Point | Span) -> Tree | None:
-        if isinstance(target, Point):
-            target = Span.from_points(target, target)
-
         candidate = head_or_none(
             node
             for child in self.children
