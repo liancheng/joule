@@ -5,7 +5,7 @@ import unittest
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import override
+from typing import cast, override
 
 import ocdiff
 
@@ -30,6 +30,11 @@ class TreeTestCase(unittest.TestCase):
                 raise self.failureException(message)
         else:
             super().assertEqual(first, second, msg)
+
+    def assertIsDefined[U](self, value: U | None) -> U:
+        __tracebackhide__ = True
+        self.assertIsNotNone(value)
+        return cast(U, value)
 
 
 class FakeDocumentTestCase(TreeTestCase):

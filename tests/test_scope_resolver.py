@@ -1,4 +1,3 @@
-from joule.maybe import just
 from joule.syntax import trees as T
 from joule.syntax.trees import BinaryOp as B
 from tests import FakeDocumentTestCase
@@ -8,10 +7,7 @@ class TestScopeResolver(FakeDocumentTestCase):
     def assertVarBinding(self, owner: T.Tree, var: T.Id.Var, target: T.Tree):
         __tracebackhide__ = True
 
-        binding = var.binding
-        self.assertIsNotNone(binding)
-
-        binding = just(binding)
+        binding = self.assertIsDefined(var.binding)
         self.assertEqual(owner, binding.scope.owner)
         self.assertEqual(binding.scope.get(var.name), binding)
         self.assertEqual(binding.target, target)
@@ -22,18 +18,14 @@ class TestScopeResolver(FakeDocumentTestCase):
         self.assertIsInstance(field.key, T.StaticKey)
         key = field.key.to(T.StaticKey)
 
-        binding = key.id.binding
-        self.assertIsNotNone(binding)
-
-        binding = just(binding)
+        binding = self.assertIsDefined(key.id.binding)
         self.assertEqual(owner, binding.scope.owner)
         self.assertEqual(binding.scope.get(key.id.name), binding)
         self.assertEqual(binding.target, field.value)
 
     def assertVarRef(self, var: T.Id.Var, *refs: T.Id.VarRef):
         __tracebackhide__ = True
-        self.assertIsNotNone(var.references)
-        expected_refs = just(var.references)
+        expected_refs = self.assertIsDefined(var.references)
         self.assertCountEqual(expected_refs, refs)
 
     def test_local(self):
@@ -225,7 +217,7 @@ class TestScopeResolver(FakeDocumentTestCase):
         )
 
         p = t.var_at(2)
-        p_param = just(p.parent).to(T.Param)
+        p_param = self.assertIsDefined(p.parent).to(T.Param)
         p_ref = t.var_ref_at(3)
 
         self.assertVarBinding(t.node_at(1).to(T.Fn), p, p_param)

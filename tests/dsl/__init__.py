@@ -9,7 +9,6 @@ import tree_sitter as ts
 from rich.text import Text
 
 from joule.analysis.scopes import resolve
-from joule.maybe import just
 from joule.syntax import trees as T
 from joule.syntax.trees import Array
 from tests.dsl import span_markers
@@ -168,7 +167,10 @@ class FakeDocument(LineMap):
         return SpanDSL(merged_span.packed_start, merged_span.packed_end)
 
     def node_at(self, *marks: int) -> T.Tree:
-        return just(self.body.node_at(self.at(*marks)))
+        if node := self.body.node_at(self.at(*marks)):
+            return node
+        else:
+            raise ValueError(f"No node marked by mark(s): {', '.join(map(str, marks))}")
 
     def num_at(self, *marks: int) -> T.Num:
         return self.node_at(*marks).to(T.Num)

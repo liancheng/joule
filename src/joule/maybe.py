@@ -7,10 +7,5 @@ def maybe[U](v: U | None) -> Maybe[U]:
     return () if v is None else (v,)
 
 
-def just[U](v: U | None) -> U:
-    assert v is not None
-    return v
-
-
 def optional[U](i: Iterable[U]) -> U | None:
     return next(iter(i), None)
