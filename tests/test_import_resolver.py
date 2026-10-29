@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from joule.analysis.imports import ImportResolver
-from joule.maybe import head_or_none, maybe
+from joule.maybe import maybe, optional
 from tests import FakeWorkspaceTestCase
 
 
@@ -17,7 +17,7 @@ class TestImportResolver(FakeWorkspaceTestCase):
         resolver = ImportResolver(self.root, self.current_config.jpaths)
         self.assertEqual(
             resolver.resolve(Path(importer), str(importee)),
-            head_or_none(self.root.joinpath(path) for path in maybe(resolved)),
+            optional(self.root.joinpath(path) for path in maybe(resolved)),
         )
 
     def assertNotResolved(

@@ -9,7 +9,7 @@ import lsprotocol.types as L
 import tree_sitter as ts
 import tree_sitter_jsonnet
 
-from joule.maybe import head_or_none, maybe
+from joule.maybe import maybe, optional
 from joule.syntax.pretty import Pretty
 
 __all__ = [
@@ -304,7 +304,7 @@ class Tree:
         return []
 
     def node_at(self, target: Point | Span) -> Tree | None:
-        candidate = head_or_none(
+        candidate = optional(
             node
             for child in self.children
             if child.span.contains(target)
@@ -886,7 +886,7 @@ class Param(Tree):
         return Param(
             span_of(node),
             id=Id.Var.from_cst(var),
-            default=head_or_none(Expr.from_cst(e) for e in maybe_default),
+            default=optional(Expr.from_cst(e) for e in maybe_default),
         )
 
     Tree.register(from_cst, "param")
@@ -1129,7 +1129,7 @@ class Slice(Tree):
         expect_node_type(node, "slice")
 
         def part(name: str) -> Expr | None:
-            return head_or_none(
+            return optional(
                 Expr.from_cst(n) for n in maybe(node.child_by_field_name(name))
             )
 

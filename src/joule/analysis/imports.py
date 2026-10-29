@@ -11,7 +11,7 @@ from typing import Self, override
 
 import tree_sitter as ts
 
-from joule.maybe import head_or_none, maybe
+from joule.maybe import maybe, optional
 from joule.syntax import trees as T
 
 __all__ = [
@@ -98,7 +98,7 @@ class ImportResolver:
         try:
             return self._via_jpaths_cache[importee]
         except KeyError:
-            result = head_or_none(
+            result = optional(
                 P.abspath(path)
                 for jpath in reversed(self.jpaths)
                 if self._is_file(path := P.join(self.root, jpath, importee))
@@ -107,7 +107,7 @@ class ImportResolver:
             return result
 
     def resolve(self, importer: Path, importee: str) -> Path | None:
-        return head_or_none(
+        return optional(
             Path(path)
             for path in maybe(
                 self._try_abs_path(importee)

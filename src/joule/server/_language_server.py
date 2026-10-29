@@ -8,7 +8,7 @@ from joule.features import (
     FoldingRangeProvider,
     ReferencesProvider,
 )
-from joule.maybe import head_or_none, maybe
+from joule.maybe import maybe, optional
 from joule.syntax import trees as T
 from joule.workspace import resolve_document
 
@@ -23,7 +23,7 @@ class JouleLanguageServer(LanguageServer):
         self.services = {}
 
     def find_service(self, uri: str) -> FolderService | None:
-        return head_or_none(
+        return optional(
             service
             for folder_uri, service in sorted(self.services.items(), reverse=True)
             if uri.startswith(folder_uri.rstrip("/") + "/")
