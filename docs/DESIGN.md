@@ -20,7 +20,7 @@ For the approach of Joule, see [Large repositories](#large-repositories).
 
 ### Deeper semantic intelligence
 
-The current Jsonnet language servers miss some cases that need deeper analysis. An example is a lambda function that other documents call:
+The current Jsonnet language servers miss some cases that need deeper analysis. An example is a lambda function that other sources call:
 
 ```jsonnet
 // f1.libsonnet
@@ -41,7 +41,7 @@ f({ f: 2 })
 
 Go-to-definition at (1) must go to (2) and to (3).
 
-For the approach of Joule, see [Cross-document analysis](#cross-document-analysis).
+For the approach of Joule, see [Cross-source analysis](#cross-source-analysis).
 
 ### Non-goals
 
@@ -63,7 +63,7 @@ For the approach of Joule, see [Cross-document analysis](#cross-document-analysi
 Joule operates at two levels:
 
 - **Workspace level**: Each LSP workspace folder has one `FolderService`. The `FolderService` finds the Jsonnet files of the folder and builds the `FolderIndex` of the folder, which holds the import graph. See [Workspace loading](#workspace-loading).
-- **Document level**: Joule builds the full AST of a document, with resolved scopes, only when a request needs it. See [Document analysis](#document-analysis).
+- **Source level**: Joule builds the full AST of a source, with resolved scopes, only when a request needs it. See [Source analysis](#source-analysis).
 
 TODO: Add a component diagram and the module layout (`joule.cli`, `joule.server`, `joule.features`, `joule.workspace`, `joule.analysis`, `joule.syntax`).
 
@@ -80,7 +80,7 @@ Each LSP workspace folder has one `FolderService`. A `FolderService` finds all t
 
 For each workspace folder, Joule does these steps:
 
-1. Find all the Jsonnet files with `fd`. Do not follow symlinks. Editors report only the real paths of files, so a document under a symlinked directory never gets updates.
+1. Find all the Jsonnet files with `fd`. Do not follow symlinks. Editors report only the real paths of files, so a source under a symlinked directory never gets updates.
 2. Parse each file into a CST with tree-sitter.
 3. Find all the `import` nodes. Ignore the `importstr` and `importbin` nodes.
 4. Parse each node into an `Import` AST node, and get the importee path.
@@ -117,9 +117,9 @@ A workspace folder can contain more than 100k Jsonnet files in deep and wide dir
 1. **Discovery.** `fd` is a Rust tool. It goes through the tree in parallel, with work stealing. Thus it finds all the source files in a deep and wide workspace very quickly.
 2. **Parse.** tree-sitter is also very fast. With 32 cores (an m8id.8xlarge has 32 vCPUs), it parses 100k Jsonnet files into CSTs in a few seconds.
 3. **Import graph.** The load gets only the `import` nodes from each CST to build the import graph (step 4 in [Import graph construction](#import-graph-construction)). Joule does the full AST construction and the per-file analysis, such as scope resolution, later.
-4. **On-demand ASTs.** The conversion from a CST to an AST is fast. Thus intelligent LSP operations, such as go-to-definition and find references, can build ASTs for tens to hundreds of documents for each request. See [On-demand ASTs](#on-demand-asts).
+4. **On-demand ASTs.** The conversion from a CST to an AST is fast. Thus intelligent LSP operations, such as go-to-definition and find references, can build ASTs for tens to hundreds of sources for each request. See [On-demand ASTs](#on-demand-asts).
 
-When the import graph of a folder is ready, go-to-definition and find references can start from the related documents. They follow the import graph and build only the ASTs that they need.
+When the import graph of a folder is ready, go-to-definition and find references can start from the related sources. They follow the import graph and build only the ASTs that they need.
 
 #### Design decision: eager vs. on-demand ASTs
 
@@ -138,9 +138,9 @@ When the import graph of a folder is ready, go-to-definition and find references
      - The first request on a document must wait for its AST.
      - Workspace-wide features must get their data in a different way. See [Open questions](#open-questions).
 
-Joule takes option 2. It is cheap enough to build ASTs for tens to hundreds of documents for each request. It is not cheap enough to build all of them at the start.
+Joule takes option 2. It is cheap enough to build ASTs for tens to hundreds of sources for each request. It is not cheap enough to build all of them at the start.
 
-## Document analysis
+## Source analysis
 
 ### Syntax trees
 
@@ -152,17 +152,17 @@ Joule builds the full AST of a file, with resolved scopes, only when an LSP meth
 
 #### AST cache
 
-The cache has one entry for each document URI. Each entry records a revision token for the content that Joule built the AST from. A lookup is a hit only if the stored token is equal to the current token of the document. If not, Joule builds the AST again and replaces the entry. See [where the revision token lives](#design-decision-where-the-revision-token-lives).
+The cache has one entry for each source URI. Each entry records a revision token for the content that Joule built the AST from. A lookup is a hit only if the stored token is equal to the current token of the source. If not, Joule builds the AST again and replaces the entry. See [where the revision token lives](#design-decision-where-the-revision-token-lives).
 
-The owner of the content of the document gives the token:
+The owner of the content of the source gives the token:
 
-| Document state     | Owner  | Revision token                                 |
+| Source state       | Owner  | Revision token                                 |
 | ------------------ | ------ | ---------------------------------------------- |
 | Open in the editor | Client | `("mem", version)`, from `didOpen`/`didChange` |
 | Closed             | Disk   | `("disk", mtime_ns, size, inode)`, from `stat` |
 
 - **Open documents.** The LSP `version` increases on each change, also on an undo. But it increases only in one open session. After `didClose` and `didOpen`, it can start again. Joule removes the entry on `didOpen` and on `didClose`, so it never compares versions from different sessions. The `"mem"` and `"disk"` tags prevent collisions between the two types of token.
-- **Closed documents.** The mtime alone is not sufficient. Some file systems have coarse timestamps. Also, tools such as `cp -p`, `rsync -t`, and `tar` keep the mtime. The `size` and the `inode` cover most of these cases, as the stat data in the git index does. A file can change in the same timestamp tick as the cache fill. This is the "racy git" problem of git. For such a file, Joule uses a content hash.
+- **Closed sources.** The mtime alone is not sufficient. Some file systems have coarse timestamps. Also, tools such as `cp -p`, `rsync -t`, and `tar` keep the mtime. The `size` and the `inode` cover most of these cases, as the stat data in the git index does. A file can change in the same timestamp tick as the cache fill. This is the "racy git" problem of git. For such a file, Joule uses a content hash.
 - **Invalidation.** Joule also removes entries on `workspace/didChangeWatchedFiles`. Thus most lookups do not need a `stat`.
 
 ##### Design decision: where the revision token lives
@@ -171,16 +171,16 @@ The owner of the content of the document gives the token:
    - **Pros:**
      - A lookup is a plain dictionary lookup. A separate validity check is not necessary.
    - **Cons:**
-     - Old versions of a document stay in the LRU until eviction. They take space from live entries.
+     - Old versions of a source stay in the LRU until eviction. They take space from live entries.
 2. Use only the URI as the key, and keep the token in the entry.
    - **Pros:**
-     - There is a maximum of one entry for each document. Thus all the capacity of the LRU is for live documents.
+     - There is a maximum of one entry for each source. Thus all the capacity of the LRU is for live sources.
    - **Cons:**
      - Each lookup must also compare the stored token with the current token.
 
 Joule takes option 2.
 
-##### Design decision: revision tokens for closed documents
+##### Design decision: revision tokens for closed sources
 
 1. Only the mtime.
    - **Pros:**
@@ -193,7 +193,7 @@ Joule takes option 2.
      - A cache hit never reads the file.
    - **Cons:**
      - It is more complex. To be fully correct, it needs the content hash for racy writes.
-3. A content hash of each document.
+3. A content hash of each source.
    - **Pros:**
      - It is the simplest option, and it is always correct.
      - It is cheap for open documents, because their text is already in memory.
@@ -204,7 +204,7 @@ Joule takes option 2.
 
 Joule must normalize cache keys in the same way as the import graph paths: lexically, without symlinks, and with consistent percent-encoding. If not, one file gets two entries, and lookups from the import graph do not hit the cache.
 
-A cached AST depends only on the content of its document, because scope resolution operates on one document. Thus the cache does not need to track dependencies. Cached cross-document results will need tokens that combine the tokens of all the documents that they depend on.
+A cached AST depends only on the content of its source, because scope resolution operates on one source. Thus the cache does not need to track dependencies. Cached cross-source results will need tokens that combine the tokens of all the sources that they depend on.
 
 ### Scope resolution
 
@@ -212,16 +212,16 @@ Scope resolution runs after Joule parses a Jsonnet source file into an AST. It d
 
 1. It binds local variables, object locals, and function parameters as `VarBinding`s. It keeps them in `VarScope`s.
 2. It binds static object field keys to their values as `FieldBinding`s. It keeps them in `FieldScope`s.
-3. It resolves variable and field references to their definitions. It does not examine other documents.
+3. It resolves variable and field references to their definitions. It does not examine other sources.
 
-The resolution of variable references is simple, because variables are always local to a document. See [Storage of resolution results](#storage-of-resolution-results).
+The resolution of variable references is simple, because variables are always local to a source. See [Storage of resolution results](#storage-of-resolution-results).
 
-A field reference can have more than one definition, and some definitions can come from imported documents. Resolution does not analyze imported documents. It records the origin of each definition on the `Id.FieldRef`:
+A field reference can have more than one definition, and some definitions can come from imported sources. Resolution does not analyze imported sources. It records the origin of each definition on the `Id.FieldRef`:
 
-- `("local", Field)`: a field of an object in the same document.
-- `("imported", URI)`: a field of an object in the imported document at `URI`.
+- `("local", Field)`: a field of an object in the same source.
+- `("imported", URI)`: a field of an object in the imported source at `URI`.
 
-`imported` origins connect references to other documents. [Cross-document analysis](#cross-document-analysis) follows them, and features such as go-to-definition and find references use its results. Thus the analysis of each document is self-contained, and the [cached ASTs](#ast-cache) do not need to track dependencies.
+`imported` origins connect references to other sources. [Cross-source analysis](#cross-source-analysis) follows them, and features such as go-to-definition and find references use its results. Thus the analysis of each source is self-contained, and the [cached ASTs](#ast-cache) do not need to track dependencies.
 
 Jsonnet uses lexical scopes. Joule models them with nested scopes. `VarScope` and `FieldScope` have a similar structure:
 
@@ -242,7 +242,7 @@ Joule keeps the resolution results on the AST nodes. Thus code can go through th
 - An `Id.Var` that is bound to a `Tree` node refers to its `VarBinding`. The `VarBinding` refers to its `VarScope`.
 - The `Id.Field` of a static field key refers to its `FieldBinding`. The `FieldBinding` refers to its `FieldScope`.
 
-Jsonnet variables are always local to a document: the `Id.Var` that defines an `Id.VarRef` is always in the same `Document`. For fast access, resolution also connects the two directly:
+Jsonnet variables are always local to a source: the `Id.Var` that defines an `Id.VarRef` is always in the same `Document`. For fast access, resolution also connects the two directly:
 
 - Each `Id.VarRef` refers to the `Id.Var` that defines it.
 - Each `Id.Var` keeps a list of all the `Id.VarRef`s that refer to it.
@@ -268,7 +268,7 @@ There are at least two options for the location of the resolution results:
 
 Joule takes option 2. Jsonnet is a simple language, so there is not much data to collect or keep. Recomputation is cheap: Joule can do a full recomputation of a file on each change. Also, Python has no mature equivalent of Salsa. With option 1, Joule must build the incremental machinery from the start.
 
-## Cross-document analysis
+## Cross-source analysis
 
 TODO: Tell how Joule follows values across `import` edges and function calls to answer queries such as the example in [Deeper semantic intelligence](#deeper-semantic-intelligence). This includes:
 
@@ -276,7 +276,7 @@ TODO: Tell how Joule follows values across `import` edges and function calls to 
 - How Joule finds the call sites of an imported function through the imported-by graph.
 - How Joule tracks which objects go into a parameter.
 - How Joule follows the `("imported", URI)` field origins that [scope resolution](#scope-resolution) records.
-- How Joule invalidates cached cross-document results. See [AST cache](#ast-cache).
+- How Joule invalidates cached cross-source results. See [AST cache](#ast-cache).
 
 ## Document synchronization
 
@@ -350,8 +350,8 @@ TODO: Tell how Joule measures TTII against the [scalability](#scalability) targe
 
 Do these only if a measurement shows a real problem.
 
-- **Interned paths in the import graph.** Each import resolution makes a new `Path`. Thus a file that many documents import exists as many `Path` objects, and each `Path` keeps its own cached strings and lists. Instead, store the paths of the graph as `str`s, and intern them with `sys.intern`, as Joule already does for the raw importees. Then the graph keeps one small string for each file. `sys.intern` does not accept `Path`s. A dictionary that keeps one `Path` for each file is also possible, but it saves less memory. The cost is that the resolver returns `str`s, and the callers convert between `Path` and `str` at the boundary.
-- **Interned identifier names in the AST cache.** The same identifier names occur in many documents. If the [AST cache](#ast-cache) keeps many ASTs, intern the `name` of each `Id` node in its `from_cst`. Python frees an interned string when nothing refers to it, so the evicted ASTs do not keep their names in memory. Do not intern all the text of the CST. String literals and numbers repeat less, and the extra work costs more than it saves.
+- **Interned paths in the import graph.** Each import resolution makes a new `Path`. Thus a file that many sources import exists as many `Path` objects, and each `Path` keeps its own cached strings and lists. Instead, store the paths of the graph as `str`s, and intern them with `sys.intern`, as Joule already does for the raw importees. Then the graph keeps one small string for each file. `sys.intern` does not accept `Path`s. A dictionary that keeps one `Path` for each file is also possible, but it saves less memory. The cost is that the resolver returns `str`s, and the callers convert between `Path` and `str` at the boundary.
+- **Interned identifier names in the AST cache.** The same identifier names occur in many sources. If the [AST cache](#ast-cache) keeps many ASTs, intern the `name` of each `Id` node in its `from_cst`. Python frees an interned string when nothing refers to it, so the evicted ASTs do not keep their names in memory. Do not intern all the text of the CST. String literals and numbers repeat less, and the extra work costs more than it saves.
 
 ## Open questions
 

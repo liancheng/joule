@@ -7,8 +7,9 @@ import typer
 from typer import Typer
 
 from joule.analysis.imports import ImportGraph
+from joule.analysis.sources import discover_sources
+from joule.config import SourcesConfig
 from joule.server import server
-from joule.workspace import discover_docs
 
 app = Typer(
     no_args_is_help=True,
@@ -55,18 +56,25 @@ def benchmark(
         Path,
         typer.Option(
             "--malformed-output",
-            help="File to write the absolute paths of documents that failed to parse.",
+            help="File to write the absolute paths of sources that failed to parse.",
         ),
     ] = Path("malformed.txt"),
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
     root = root.absolute()
 
+    config = SourcesConfig(
+        jpaths=[root],
+        extensions=extension,
+        exclude=[] if exclude is None else exclude,
+    )
+
     start = time.perf_counter()
-    docs = discover_docs(root, extension, exclude)
+    sources = discover_sources(root, config)
     discovered = time.perf_counter()
 
-    graph = ImportGraph.build_in_parallel(root, [root], docs)
+    # The build runs the discovery again.
+    graph = ImportGraph.build_in_parallel(root, config)
     built = time.perf_counter()
 
     edges = sum(1 for _ in graph.edges())
@@ -77,10 +85,9 @@ def benchmark(
     typer.echo(
         dedent(
             f"""\
-            Discovered {len(docs)} document(s) in {discovered - start:.3f}s
-            Built the import graph ({edges} import edge(s)) in {built - discovered:.3f}s
-            Total: {built - start:.3f}s
-            {len(graph.malformed)} document(s) failed to parse, see {malformed_output}
+            Discovered {len(sources)} source(s) in {discovered - start:.3f}s
+            Built the import graph ({edges} import edge(s)), including the discovery, in {built - discovered:.3f}s
+            {len(graph.malformed)} source(s) failed to parse, see {malformed_output}
             """
         )
     )

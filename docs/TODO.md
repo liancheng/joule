@@ -28,24 +28,24 @@ For each request, the server parses the document and runs scope resolution on it
 ### Workspace loading
 
 - `initialized` reads the configuration (`jpaths`, `exclude`, `extensions`) through `workspace/configuration`. Then it creates one `FolderService` for each workspace folder.
-- `FolderService` finds the documents with `fd`. Then it builds the import graph in a process pool, with batches of work and with cached import resolution.
+- `FolderService` finds the sources with `fd`. Then it builds the import graph in a process pool, with batches of work and with cached import resolution.
 - `joule benchmark` measures the discovery and the build of the import graph.
 
 ## TODO
 
 ### LSP features
 
-- [ ] **Unsaved content.** Joule reads documents from the disk. Thus the features show the last saved version of a file, not the editor buffer.
+- [ ] **Unsaved content.** Joule reads sources from the disk. Thus the features show the last saved version of a file, not the editor buffer.
 - [ ] **AST cache.** For each request, Joule parses and resolves the document again.
 - [ ] **Find references from a use.** If the cursor is on a reference, not on the definition, find references returns nothing. It must first resolve the reference to its definition.
 - [ ] **`includeDeclaration`.** Find references ignores this parameter. It never includes the definition in the results.
 - [ ] **Field references.** Go-to-definition and find references do not support fields (`o.f`) yet.
-- [ ] **Cross-document results.** Definitions and references stay in one document until cross-document analysis exists.
+- [ ] **Cross-source results.** Definitions and references stay in one source until cross-source analysis exists.
 
 ### Analysis
 
 - [ ] **Field reference resolution.** Scope resolution must record the origins of each field reference (`("local", Field)` or `("imported", URI)`). But at this time, Joule resolves only variable references.
-- [ ] **Cross-document analysis.** There is no implementation yet.
+- [ ] **Cross-source analysis.** There is no implementation yet.
 
 ### Server
 
@@ -56,7 +56,7 @@ For each request, the server parses the document and runs scope resolution on it
 ### Design document
 
 - [ ] Add the component diagram and the module layout to the Architecture section.
-- [ ] Write the Cross-document analysis section.
+- [ ] Write the Cross-source analysis section.
 - [ ] Write the Document synchronization section.
 - [ ] Tell how Joule measures TTII, in the Benchmarking section.
 - [ ] Answer the open questions.

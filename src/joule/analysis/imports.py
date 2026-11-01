@@ -6,17 +6,21 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from collections.abc import Set as AbstractSet
 from concurrent.futures import ProcessPoolExecutor
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Self, override
 
 import tree_sitter as ts
 
+from joule.analysis.sources import discover_sources
+from joule.config import SourcesConfig
 from joule.maybe import maybe, optional
 from joule.syntax import trees as T
 
 __all__ = [
     "ImportGraph",
     "ImportResolver",
+    "is_source",
 ]
 
 
@@ -28,8 +32,6 @@ def import_cursor() -> ts.QueryCursor:
 
 
 type Importees = tuple[list[str], bool]
-
-type ImporteesCollector = Callable[[Path], Importees]
 
 
 def collect_importees(path: Path) -> Importees:
@@ -56,6 +58,33 @@ def collect_importees(path: Path) -> Importees:
     return imports, root_node.has_error
 
 
+def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
+    def excludes(path: Path, pattern: str) -> bool:
+        pattern = pattern.strip("/")
+
+        # As in `.gitignore`:
+        #
+        # - A pattern without a slash matches a name at any depth.
+        # - A pattern with a slash matches a path from the root.
+        if "/" in pattern:
+            prefixes = [path.parts[1 : i + 1] for i in range(len(path.parts))]
+            return any(Path(*prefix).full_match(pattern) for prefix in prefixes)
+        else:
+            return any(fnmatch(part, pattern) for part in path.parts)
+
+    if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+        return False
+    else:
+        path = path.relative_to(root)
+        name = path.name.lower()
+
+        return (
+            any(name.endswith("." + ext.lower()) for ext in config.extensions)
+            and not any(part.startswith(".") for part in path.parts)
+            and not any(excludes(path, pattern) for pattern in config.exclude)
+        )
+
+
 class ImportResolver:
     root: Path
     jpaths: list[Path]
@@ -72,14 +101,15 @@ class ImportResolver:
         self._same_dir_cache = {}
         self._via_jpaths_cache = {}
 
-    def _is_file(self, path: str) -> bool:
-        path = P.abspath(path)
-        try:
-            return self._is_file_cache[path]
-        except KeyError:
-            result = P.isfile(path)
-            self._is_file_cache[path] = result
-            return result
+    def resolve(self, importer: Path, importee: str) -> Path | None:
+        return optional(
+            Path(path)
+            for path in maybe(
+                self._try_abs_path(importee)
+                or self._try_same_dir(importer, P.normpath(importee))
+                or self._try_jpaths(P.normpath(importee))
+            )
+        )
 
     def _try_abs_path(self, importee) -> str | None:
         return importee if P.isabs(importee) else None
@@ -94,6 +124,15 @@ class ImportResolver:
             path = P.abspath(joined) if self._is_file(joined) else None
             return self._same_dir_cache.setdefault((importer_dir, importee), path)
 
+    def _is_file(self, path: str) -> bool:
+        path = P.abspath(path)
+        try:
+            return self._is_file_cache[path]
+        except KeyError:
+            result = P.isfile(path)
+            self._is_file_cache[path] = result
+            return result
+
     def _try_jpaths(self, importee: str) -> str | None:
         try:
             return self._via_jpaths_cache[importee]
@@ -106,16 +145,8 @@ class ImportResolver:
             self._via_jpaths_cache[importee] = result
             return result
 
-    def resolve(self, importer: Path, importee: str) -> Path | None:
-        return optional(
-            Path(path)
-            for path in maybe(
-                self._try_abs_path(importee)
-                or self._try_same_dir(importer, P.normpath(importee))
-                or self._try_jpaths(P.normpath(importee))
-            )
-        )
 
+type ImporteesCollector = Callable[[Path], Importees]
 
 type ImporteesMapper = Callable[
     [ImporteesCollector, list[Path]],
@@ -123,7 +154,7 @@ type ImporteesMapper = Callable[
 ]
 
 
-def discard_from[K, V](index: dict[K, set[V]], key: K, value: V):
+def discard[K, V](index: dict[K, set[V]], key: K, value: V):
     if (values := index.get(key)) is not None:
         values.discard(value)
 
@@ -132,14 +163,8 @@ def discard_from[K, V](index: dict[K, set[V]], key: K, value: V):
 
 
 class ImportGraph:
-    """The imports between the files of a workspace folder.
-
-    Build a graph with `build` or `build_in_parallel`. Then keep it current with
-    `file_created`, `file_changed`, and `file_deleted`.
-    """
-
     _root: Path
-    _jpaths: list[Path]
+    _config: SourcesConfig
 
     # Edges
     _imports: dict[Path, set[Path]]
@@ -151,9 +176,9 @@ class ImportGraph:
 
     _malformed: set[Path]
 
-    def __init__(self, root: Path, jpaths: list[Path]):
+    def __init__(self, root: Path, config: SourcesConfig):
         self._root = root
-        self._jpaths = jpaths
+        self._config = config
 
         self._imports = defaultdict(set)
         self._imported_by = defaultdict(set)
@@ -164,15 +189,14 @@ class ImportGraph:
         self._malformed = set()
 
     @classmethod
-    def build(cls, root: Path, jpaths: list[Path], docs: Iterable[Path]) -> Self:
-        return cls._build(root, jpaths, docs, map)
+    def build(cls, root: Path, config: SourcesConfig) -> Self:
+        return cls._build(root, config, map)
 
     @classmethod
     def build_in_parallel(
         cls,
         root: Path,
-        jpaths: list[Path],
-        docs: Iterable[Path],
+        config: SourcesConfig,
         *,
         batch_size: int = 256,
     ) -> Self:
@@ -180,7 +204,7 @@ class ImportGraph:
 
         with ProcessPoolExecutor(max_workers=parallelism) as executor:
             mapper = functools.partial(executor.map, chunksize=batch_size)
-            return cls._build(root, jpaths, docs, mapper)
+            return cls._build(root, config, mapper)
 
     def imports_of(self, path: Path) -> AbstractSet[Path]:
         return self._imports.get(path, frozenset())
@@ -189,23 +213,40 @@ class ImportGraph:
         return self._imported_by.get(path, frozenset())
 
     def edges(self) -> Iterator[tuple[Path, Path]]:
-        return (
-            (importer, importee)
-            for importer, importees in self._imports.items()
-            for importee in importees
-        )
+        for importer, importees in self._imports.items():
+            for importee in importees:
+                yield importer, importee
 
     @property
     def malformed(self) -> AbstractSet[Path]:
         return self._malformed
 
+    def file_created(self, path: Path):
+        importers = self._basename_imported_by.get(P.basename(path), set())
+        resolver = self._resolver()
+
+        for importer in importers:
+            self._update(importer, resolver)
+
+        self.file_changed(path)
+
+    def file_changed(self, path: Path):
+        if is_source(self._config, self._root, path):
+            importees, malformed = collect_importees(path)
+            self._remove_source(path)
+            self._add_source(path, importees, malformed, self._resolver())
+
+    def file_deleted(self, path: Path):
+        # The imports of the file can now resolve to a candidate with a lower priority.
+        importers = self._imported_by.get(path, set()) - {path}
+        self._remove_source(path)
+        resolver = self._resolver()
+
+        for importer in importers:
+            self._update(importer, resolver)
+
     @property
     def pretty(self) -> str:
-        """Returns all the data of the graph as sorted text, for tests and debugging.
-
-        Paths under the root are relative to the root.
-        """
-
         def show(value: Path | str) -> str:
             match value:
                 case Path() if value.is_relative_to(self._root):
@@ -249,7 +290,7 @@ class ImportGraph:
         match other:
             case ImportGraph():
                 return (
-                    (self._root, self._jpaths) == (other._root, other._jpaths)
+                    (self._root, self._config) == (other._root, other._config)
                     and self._imports == other._imports
                     and self._imported_by == other._imported_by
                     and self._importees == other._importees
@@ -259,60 +300,25 @@ class ImportGraph:
             case _:
                 return NotImplemented
 
-    def file_created(self, path: Path):
-        """Resolves again the imports that the new file can change.
-
-        A new file can shadow a candidate with a lower priority, or make an unresolved
-        import resolve. This applies to all files, also to files that are not documents.
-        If the new file is a document, also call `file_changed`.
-        """
-        # Each candidate of an importee ends with the file name of the importee. Thus
-        # only the imports with the same file name can change.
-        importers = set(self._basename_imported_by.get(P.basename(path), ()))
-        resolver = self._resolver()
-
-        for importer in importers:
-            self._resolve_again(importer, resolver)
-
-    def file_changed(self, path: Path):
-        """Collects the imports of the document again. Also use it for a new document."""
-        importees, malformed = collect_importees(path)
-        self._remove_document(path)
-        self._add_document(path, importees, malformed, self._resolver())
-
-    def file_deleted(self, path: Path):
-        # The imports of the file can now resolve to a candidate with a lower priority.
-        importers = self._imported_by.get(path, set()) - {path}
-        self._remove_document(path)
-        resolver = self._resolver()
-
-        for importer in importers:
-            self._resolve_again(importer, resolver)
-
     @classmethod
-    def _build(
-        cls,
-        root: Path,
-        jpaths: list[Path],
-        docs: Iterable[Path],
-        mapper: ImporteesMapper,
-    ) -> Self:
-        graph = cls(root, jpaths)
+    def _build(cls, root: Path, config: SourcesConfig, mapper: ImporteesMapper) -> Self:
+        graph = cls(root, config)
         resolver = graph._resolver()
-        docs = list(docs)
-        importees_of = mapper(collect_importees, docs)
+        sources = discover_sources(root, config)
 
-        for doc, (importees, malformed) in zip(docs, importees_of, strict=True):
-            graph._add_document(doc, importees, malformed, resolver)
+        for source, (importees, malformed) in zip(
+            sources,
+            mapper(collect_importees, sources),
+            strict=True,
+        ):
+            graph._add_source(source, importees, malformed, resolver)
 
         return graph
 
     def _resolver(self) -> ImportResolver:
-        # The caches of a resolver become incorrect when somebody creates or deletes a
-        # file. Thus each build and each event uses a new resolver.
-        return ImportResolver(self._root, self._jpaths)
+        return ImportResolver(self._root, self._config.jpaths)
 
-    def _add_document(
+    def _add_source(
         self,
         path: Path,
         importees: list[str],
@@ -330,16 +336,16 @@ class ImportGraph:
                 self._imports[path].add(resolved)
                 self._imported_by[resolved].add(path)
 
-    def _remove_document(self, path: Path):
+    def _remove_source(self, path: Path):
         for importee in self._imports.pop(path, set()):
-            discard_from(self._imported_by, importee, path)
+            discard(self._imported_by, importee, path)
 
         for importee in self._importees.pop(path, set()):
-            discard_from(self._basename_imported_by, P.basename(importee), path)
+            discard(self._basename_imported_by, P.basename(importee), path)
 
         self._malformed.discard(path)
 
-    def _resolve_again(self, importer: Path, resolver: ImportResolver):
+    def _update(self, importer: Path, resolver: ImportResolver):
         resolved = {
             path
             for importee in self._importees.get(importer, set())
@@ -349,7 +355,7 @@ class ImportGraph:
         before = self._imports.pop(importer, set())
 
         for importee in before - resolved:
-            discard_from(self._imported_by, importee, importer)
+            discard(self._imported_by, importee, importer)
 
         for importee in resolved - before:
             self._imported_by[importee].add(importer)

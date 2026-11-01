@@ -10,9 +10,9 @@ from typing import cast, override
 import ocdiff
 
 from joule.analysis.imports import ImportGraph
-from joule.config import Config
+from joule.config import SourcesConfig
 from joule.syntax.trees import Tree
-from joule.workspace import FolderIndex, discover_docs
+from joule.workspace import FolderIndex
 from tests.dsl import FakeDocument
 
 
@@ -46,7 +46,7 @@ class FakeDocumentTestCase(TreeTestCase):
 
 class FakeWorkspaceTestCase(TreeTestCase):
     root: Path
-    current_config: Config
+    current_config: SourcesConfig
 
     @D.dataclass(frozen=True)
     class FsEntry:
@@ -69,7 +69,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
-        self.current_config = Config()
+        self.current_config = SourcesConfig()
         self.addTypeEqualityFunc(ImportGraph, self.assertImportGraphEqual)
 
     def assertImportGraphEqual(
@@ -85,13 +85,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
             raise self.failureException(diff if msg is None else f"{msg}\n{diff}")
 
     def build_import_graph(self) -> ImportGraph:
-        paths = discover_docs(
-            self.root,
-            self.current_config.extensions,
-            self.current_config.exclude,
-        )
-
-        return ImportGraph.build(self.root, self.current_config.jpaths, paths)
+        return ImportGraph.build(self.root, self.current_config)
 
     def delete(self, *paths: str | Path):
         for path in paths:

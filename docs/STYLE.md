@@ -33,10 +33,10 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 ## Modules and packages
 
 - Joule has these package layers, from low to high:
-  1. `syntax`: trees, the visitor, and the pretty-printer.
-  2. `analysis`: scopes and imports.
+  1. `config` and `syntax`: the configuration, the trees, the visitor, and the pretty-printer.
+  2. `analysis`: scopes, the discovery of sources, and imports.
   3. `features`: LSP providers.
-  4. `workspace`: `FolderIndex` and the discovery of documents. This layer and the lower layers are synchronous.
+  4. `workspace`: `FolderIndex`. This layer and the lower layers are synchronous.
   5. `server` and `cli`. The `server` package has the code that uses `asyncio`, threads, or process pools: `JouleLanguageServer` and `FolderService`.
 
   A module can import modules from its layer and from lower layers. It must not import modules from higher layers.
@@ -47,7 +47,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 ## Names
 
 - Give a class a noun name that tells its role: `DefinitionProvider`, `ScopeResolver`, `ImportResolver`, `ImportGraph`, `FolderIndex`.
-- Give a function or a method a verb name: `serve`, `resolve`, `build`, `find_definition`, `discover_docs`.
+- Give a function or a method a verb name: `serve`, `resolve`, `build`, `find_definition`, `discover_sources`.
 - Name conversions `to_*` and `from_*`, for example `to_range`, `to_location`, `from_cst`, and `from_lsp`.
 - Name a helper that gets a value from a node `*_of`, for example `span_of`, `text_of`, `field_of`, and `enum_of`.
 - In a small scope, use short conventional names:
@@ -119,7 +119,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 - If a parse fails, raise `MalformedError`. Put the node type in quotes in the message: `f'Expected {expected}, but got "{node.type}".'`.
 - `Tree.from_cst` changes a `MalformedError` into a `Malformed` node. Thus one bad subtree does not cause the full document to fail.
-- Catch I/O errors on documents as `OSError` at the boundary. Change them into `None` or into a "malformed" flag. Do not send them to the LSP handlers.
+- Catch I/O errors on sources as `OSError` at the boundary. Change them into `None` or into a "malformed" flag. Do not send them to the LSP handlers.
 - If the original exception gives no useful data, use `raise ... from None`.
 - Use `assert` only for invariants that the type checker cannot see.
 
@@ -155,14 +155,14 @@ Joule must operate on workspaces with 100k files. Thus, write hot paths carefull
 - Name assertion helpers in camelCase, as `unittest` does: `assertDefined`, `assertVarBinding`. Name test methods `test_<case>`, in snake case.
 - To put related cases into one test, use `self.subTest(...)`.
 - To make expected trees, use the `SpanDSL` constructors and the helpers in `tests.dsl`, for example `t.at(1).num(1)`, `bind(...)`, and `field(...)`.
-- If a test needs real files, make its class a subclass of `FakeWorkspaceTestCase`. Make the documents with `fake_document(source, path=...)`, and the other files with `layout(File(...), Dir(...), SymLink(...))`.
+- If a test needs real files, make its class a subclass of `FakeWorkspaceTestCase`. Make the sources with `fake_document(source, path=...)`, and the other files with `layout(File(...), Dir(...), SymLink(...))`.
 
 ### Self-contained tests
 
 A reader must understand a test without other parts of the file. Write each test as a short scenario that the reader can read from top to bottom:
 
 - **Do not write tautological tests.** A test must be able to fail if the code under test is incorrect. Do not get the expected value from the code under test, or from a copy of its logic, for example the inverted map of the edges. Do not assert only what the setup of the test made true, for example that a file exists after the test made it. Make the expected value only from the data of the test, for example the fake documents or the `SpanDSL` constructors.
-- **Declare the data in the test.** Each test makes only the documents and files that it needs, next to its assertions. Do not share one large fixture, such as a module-level workspace, between tests. A shared fixture separates the data from the test that uses it. Also, a change for one test can break other tests.
+- **Declare the data in the test.** Each test makes only the sources and files that it needs, next to its assertions. Do not share one large fixture, such as a module-level workspace, between tests. A shared fixture separates the data from the test that uses it. Also, a change for one test can break other tests.
 - **Remove expensive setup. Do not share it.** Do not put state in `setUpClass` to make a slow setup run only one time. Instead, make the setup cheap. For example, use the sequential `ImportGraph.build` in tests, not the process pool of `ImportGraph.build_in_parallel`.
 - **Make the setup visible.** Use context managers, such as `jpaths(...)`, `layout(...)`, and `fake_workspace(...)`, in the `with` statement of the test. Python enters them in sequence. Thus put each setting before the context manager that uses it, for example `jpaths(...)` before `fake_workspace(...)`.
 - **Assert at the level of the domain.** Write assertion helpers that take the objects of the test, for example `assertImports(index, f1, f2)`. Do not use raw paths or the internal dictionaries in the tests.
@@ -204,7 +204,7 @@ Apply STE at about 80%. Obey the rules below in most text. Break a rule only if 
 - **Simple tenses.** Use the simple present, the simple past, and the future. Do not use "-ing" forms as verbs or as nouns. Write "When Joule resolves an import, ...", not "When resolving an import, ...".
 - **No contractions.** Write "do not" and "is not", not "don't" and "isn't".
 - **Articles.** Keep "a", "an", and "the". Do not remove them to make a sentence shorter. Headings and short list items can omit them.
-- **One word for one thing.** Use the same word for the same thing in a text. Do not use that word for a different thing. In Joule, a _document_ is a Jsonnet source file that discovery found, and a _file_ is any file on the disk.
+- **One word for one thing.** Use the same word for the same thing in a text. Do not use that word for a different thing. In Joule, a _source_ is a Jsonnet file that discovery finds. A _document_ is a `Document` tree, or a source that is open in the LSP client. A _file_ is any file on the disk.
 - **Single-word verbs.** If a single verb has the same meaning as a phrasal verb, use the single verb. Write "remove", not "get rid of". Write "find", not "look up".
 - **Conditions first.** Put the condition before the instruction: "If the file does not exist, return `None`."
 - **Lists.** Use a vertical list for a sequence of steps, or for three or more items.

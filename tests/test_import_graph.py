@@ -102,7 +102,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         ):
             self.assertImports(index, importer=f1, importees=[f2, f3])
 
-    def test_non_document_importee(self):
+    def test_non_source_importee(self):
         f = self.fake_document(
             'import "data.json"',
             path="f1.jsonnet",
@@ -114,7 +114,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         )
 
         with self.workspace(f, data) as index:
-            # Document discovery does not find `.json` files, but they are importees.
+            # Source discovery does not find `.json` files, but they are importees.
             self.assertImports(index, importer=f, importees=[data])
 
     def test_unresolved_import(self):
@@ -154,7 +154,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f) as index:
             self.assertImports(index, importer=f, importees=[])
 
-    def test_malformed_document(self):
+    def test_malformed_source(self):
         f1 = self.fake_document(
             """\
             local a = import "f2.libsonnet";
@@ -240,7 +240,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f1) as index:
             self.provision(self.file("f2.libsonnet", f2.text))
             index.import_graph.file_created(f2.path)
-            index.import_graph.file_changed(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertImports(index, importer=f2, importees=[f1])
@@ -268,7 +267,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
         ):
             self.provision(self.file("app/lib.libsonnet", local.text))
             index.import_graph.file_created(local.path)
-            index.import_graph.file_changed(local.path)
 
             self.assertImports(index, importer=f1, importees=[local])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -297,14 +295,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f1, f2, f3) as index:
             self.provision(self.file("lib/util.libsonnet", lib_util.text))
             index.import_graph.file_created(lib_util.path)
-            index.import_graph.file_changed(lib_util.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertImports(index, importer=f2, importees=[lib_util])
             self.assertImports(index, importer=f3, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
-    def test_file_created_not_a_document(self):
+    def test_file_created_not_a_source(self):
         f = self.fake_document(
             """\
             local data = import "data.json";
@@ -324,7 +321,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             index.import_graph.file_created(data.path)
             index.import_graph.file_created(self.root.joinpath("notes.txt"))
 
-            # Only `import` makes edges, also for files that are not documents.
+            # Only `import` makes edges, also for files that are not sources.
             self.assertImports(index, importer=f, importees=[data])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
@@ -375,7 +372,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
             # The unresolved import resolves again when the file comes back.
             self.provision(self.file("f2.libsonnet", f2.text))
             index.import_graph.file_created(f2.path)
-            index.import_graph.file_changed(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertEqual(index.import_graph, self.build_import_graph())
