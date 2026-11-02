@@ -8,7 +8,7 @@ from textwrap import dedent
 import tree_sitter as ts
 from rich.text import Text
 
-from joule.analysis.scopes import resolve
+from joule.analysis.scopes import analyze
 from joule.syntax import trees as T
 from joule.syntax.trees import Array
 from tests.dsl import span_markers
@@ -140,7 +140,7 @@ class FakeDocument(LineMap):
     @cached_property
     def document(self) -> T.Document:
         doc = T.Tree.from_cst(self.cst.root_node).to(T.Document)
-        resolve(doc)
+        analyze(doc)
         return doc
 
     @cached_property

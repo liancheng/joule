@@ -3,7 +3,7 @@ from joule.syntax.trees import BinaryOp as B
 from tests import FakeDocumentTestCase
 
 
-class TestScopeResolver(FakeDocumentTestCase):
+class TestAnalyzer(FakeDocumentTestCase):
     def assertVarBinding(self, owner: T.Tree, var: T.Id.Var, target: T.Tree):
         __tracebackhide__ = True
 

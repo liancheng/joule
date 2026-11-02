@@ -12,7 +12,7 @@ from joule.features import (
 )
 from joule.maybe import maybe, optional
 from joule.syntax import trees as T
-from joule.workspace import resolve_document
+from joule.workspace import analyze_document
 
 from ._folder_service import FolderService
 
@@ -31,12 +31,12 @@ class JouleLanguageServer(LanguageServer):
             if Path.from_uri(uri).is_relative_to(Path.from_uri(folder_uri))
         )
 
-    def resolve_document(self, uri: str) -> T.Document | None:
+    def analyze_document(self, uri: str) -> T.Document | None:
         match self.find_service(uri):
             case None:
-                return resolve_document(uri)
+                return analyze_document(uri)
             case service:
-                return service.resolve_document(uri)
+                return service.analyze_document(uri)
 
 
 server = JouleLanguageServer("joule", "v0.0.1")
@@ -112,7 +112,7 @@ async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParam
     uri = params.text_document.uri
     return [
         symbol
-        for doc in maybe(ls.resolve_document(uri))
+        for doc in maybe(ls.analyze_document(uri))
         for symbol in DocumentSymbolProvider(doc).serve()
     ]
 
@@ -122,7 +122,7 @@ async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(ls.resolve_document(uri))
+        for doc in maybe(ls.analyze_document(uri))
         for location in DefinitionProvider(uri, doc).serve(params.position)
     ]
 
@@ -132,7 +132,7 @@ async def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(ls.resolve_document(uri))
+        for doc in maybe(ls.analyze_document(uri))
         for location in ReferencesProvider(uri, doc).serve(params.position)
     ]
 
@@ -142,6 +142,6 @@ async def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
     uri = params.text_document.uri
     return [
         location
-        for doc in maybe(ls.resolve_document(uri))
+        for doc in maybe(ls.analyze_document(uri))
         for location in FoldingRangeProvider().serve(doc)
     ]

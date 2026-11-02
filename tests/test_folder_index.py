@@ -7,7 +7,7 @@ from joule.analysis.imports import is_source
 from joule.analysis.sources import discover_sources
 from joule.config import Config, SourcesConfig
 from joule.server import FolderService
-from joule.workspace import resolve_document
+from joule.workspace import analyze_document
 from tests import FakeWorkspaceTestCase
 
 
@@ -15,7 +15,7 @@ class TestFolderIndex(FakeWorkspaceTestCase):
     def test_malformed_source(self):
         with self.layout(self.file(path := "bad.jsonnet", "}")):
             uri = self.root.joinpath(path).as_uri()
-            self.assertIsNone(resolve_document(uri))
+            self.assertIsNone(analyze_document(uri))
 
     def test_no_symlinks(self):
         with self.layout(
