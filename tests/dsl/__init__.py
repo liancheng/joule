@@ -127,7 +127,6 @@ class LineMap:
 class FakeDocument(LineMap):
     uri: str
     cst: ts.Tree
-    malformed: bool
 
     def __init__(self, text: str, uri: str) -> None:
         text = dedent(text)
@@ -135,7 +134,6 @@ class FakeDocument(LineMap):
         super().__init__(text)
         self.uri = uri
         self.cst = T.parse(text)
-        self.malformed = self.cst.root_node.has_error
 
     @cached_property
     def document(self) -> T.Document:

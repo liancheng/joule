@@ -119,7 +119,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 - If a parse fails, raise `MalformedError`. Put the node type in quotes in the message: `f'Expected {expected}, but got "{node.type}".'`.
 - `Tree.from_cst` changes a `MalformedError` into a `Malformed` node. Thus one bad subtree does not cause the full document to fail.
-- Catch I/O errors on sources as `OSError` at the boundary. Change them into `None` or into a "malformed" flag. Do not send them to the LSP handlers.
+- Catch I/O errors on sources as `OSError` at the boundary. Change them into `None`. Do not send them to the LSP handlers.
 - If the original exception gives no useful data, use `raise ... from None`.
 - Use `assert` only for invariants that the type checker cannot see.
 

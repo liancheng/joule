@@ -52,13 +52,6 @@ def benchmark(
             help="Glob of files or folders to ignore. Repeat to ignore several.",
         ),
     ] = None,
-    malformed_output: Annotated[
-        Path,
-        typer.Option(
-            "--malformed-output",
-            help="File to write the absolute paths of sources that failed to parse.",
-        ),
-    ] = Path("malformed.txt"),
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
     root = root.absolute()
@@ -76,18 +69,13 @@ def benchmark(
     # The build runs the discovery again.
     graph = ImportGraph.build_in_parallel(root, config)
     built = time.perf_counter()
-
-    edges = sum(1 for _ in graph.edges())
-    malformed_output.write_text(
-        "".join(f"{path}\n" for path in sorted(graph.malformed))
-    )
+    edges = len(graph)
 
     typer.echo(
         dedent(
             f"""\
             Discovered {len(sources)} source(s) in {discovered - start:.3f}s
             Built the import graph ({edges} import edge(s)), including the discovery, in {built - discovered:.3f}s
-            {len(graph.malformed)} source(s) failed to parse, see {malformed_output}
             """
         )
     )

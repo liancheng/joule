@@ -25,10 +25,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
         for importee in importees:
             self.assertIn(importer.path, g.importers_of(importee.path))
 
-    def assertMalformed(self, index: FolderIndex, docs: list[FakeDocument]):
-        __tracebackhide__ = True
-        self.assertSetEqual(index.import_graph.malformed, {doc.path for doc in docs})
-
     def test_simple_import(self):
         f1 = self.fake_document(
             """\
@@ -154,15 +150,15 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.workspace(f) as index:
             self.assertImports(index, importer=f, importees=[])
 
-    def test_malformed_source(self):
+    def test_source_with_syntax_error(self):
         f1 = self.fake_document(
             """\
             local a = import "f2.libsonnet";
             [
                 a,
-                // The malformed node affects only this array element. Thus the import
+                // The syntax error affects only this array element. Thus the import
                 // still parses, and the import graph records it.
-                { malformed }
+                { broken }
             ]
             """,
             path="f1.jsonnet",
@@ -174,7 +170,6 @@ class TestImportGraph(FakeWorkspaceTestCase):
         )
 
         with self.workspace(f1, f2) as index:
-            self.assertMalformed(index, [f1])
             self.assertImports(index, importer=f1, importees=[f2])
 
     def test_file_changed(self):
@@ -195,12 +190,12 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2, f3) as index:
             self.provision(self.file("f1.jsonnet", 'import "f3.libsonnet"'))
-            index.import_graph.file_changed(f1.path)
+            index.import_graph.on_file_changed(f1.path)
 
             self.assertImports(index, importer=f1, importees=[f3])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
-    def test_file_changed_malformed(self):
+    def test_file_changed_syntax_error(self):
         f1 = self.fake_document(
             'import "f2.libsonnet"',
             path="f1.jsonnet",
@@ -213,16 +208,14 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.provision(self.file("f1.jsonnet", '[import "f2.libsonnet", {]'))
-            index.import_graph.file_changed(f1.path)
+            index.import_graph.on_file_changed(f1.path)
 
-            self.assertMalformed(index, [f1])
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
             self.provision(self.file("f1.jsonnet", "{}"))
-            index.import_graph.file_changed(f1.path)
+            index.import_graph.on_file_changed(f1.path)
 
-            self.assertMalformed(index, [])
             self.assertImports(index, importer=f1, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
@@ -239,7 +232,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1) as index:
             self.provision(self.file("f2.libsonnet", f2.text))
-            index.import_graph.file_created(f2.path)
+            index.import_graph.on_file_created(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertImports(index, importer=f2, importees=[f1])
@@ -266,7 +259,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, vendored) as index,
         ):
             self.provision(self.file("app/lib.libsonnet", local.text))
-            index.import_graph.file_created(local.path)
+            index.import_graph.on_file_created(local.path)
 
             self.assertImports(index, importer=f1, importees=[local])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -294,7 +287,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2, f3) as index:
             self.provision(self.file("lib/util.libsonnet", lib_util.text))
-            index.import_graph.file_created(lib_util.path)
+            index.import_graph.on_file_created(lib_util.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertImports(index, importer=f2, importees=[lib_util])
@@ -318,8 +311,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f) as index:
             self.provision(self.file("data.json", data.text), self.file("notes.txt"))
-            index.import_graph.file_created(data.path)
-            index.import_graph.file_created(self.root.joinpath("notes.txt"))
+            index.import_graph.on_file_created(data.path)
+            index.import_graph.on_file_created(self.root.joinpath("notes.txt"))
 
             # Only `import` makes edges, also for files that are not sources.
             self.assertImports(index, importer=f, importees=[data])
@@ -346,7 +339,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, local, vendored) as index,
         ):
             self.delete("app/lib.libsonnet")
-            index.import_graph.file_deleted(local.path)
+            index.import_graph.on_file_deleted(local.path)
 
             self.assertImports(index, importer=f1, importees=[vendored])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -364,14 +357,14 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.delete("f2.libsonnet")
-            index.import_graph.file_deleted(f2.path)
+            index.import_graph.on_file_deleted(f2.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
             # The unresolved import resolves again when the file comes back.
             self.provision(self.file("f2.libsonnet", f2.text))
-            index.import_graph.file_created(f2.path)
+            index.import_graph.on_file_created(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -389,10 +382,9 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.delete("f1.jsonnet")
-            index.import_graph.file_deleted(f1.path)
+            index.import_graph.on_file_deleted(f1.path)
 
             self.assertImports(index, importer=f1, importees=[])
-            self.assertMalformed(index, [])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
     def test_pretty(self):
@@ -422,19 +414,17 @@ class TestImportGraph(FakeWorkspaceTestCase):
                       f1.jsonnet: lib/f2.libsonnet
                     imported by:
                       lib/f2.libsonnet: f1.jsonnet
-                    importees:
+                    raw importees:
                       f1.jsonnet: 'lib/f2.libsonnet'
                       f1.jsonnet: 'missing.libsonnet'
                     file names:
                       'f2.libsonnet': f1.jsonnet
                       'missing.libsonnet': f1.jsonnet
-                    malformed:
-                      f1.jsonnet
                     """
                 ),
             )
 
             self.assertEqual(
                 repr(index.import_graph),
-                f"ImportGraph(root={str(self.root)!r}, 1 edges, 1 malformed)",
+                f"ImportGraph(root={str(self.root)!r}, 1 edges)",
             )

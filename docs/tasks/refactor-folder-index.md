@@ -73,7 +73,7 @@ Joule takes option 4. Before, it took option 3.
 Each step is one commit. After each step, all tests must pass. Verify each step with:
 
 - `./test.sh`, ruff, and `ty check`.
-- `joule benchmark` on grafonnet and on a large monorepo. The source, edge, and malformed counts must be the same as before the step, and the build time must not increase. At this time, grafonnet has 1,413 edges.
+- `joule benchmark` on grafonnet and on a large monorepo. The source and edge counts must be the same as before the step, and the build time must not increase. At this time, grafonnet has 1,413 edges.
 
 ### Progress
 
@@ -119,10 +119,10 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 Merge `ImportGraphBuilder` and `ParallelImportGraphBuilder` into `ImportGraph`. The interface is:
 
 - `ImportGraph.build(root, jpaths, docs)` and `ImportGraph.build_in_parallel(root, jpaths, docs)`.
-- The queries `imports_of(path)`, `importers_of(path)`, `edges()`, and `malformed`.
+- The queries `imports_of(path)`, `importers_of(path)`, and `edges()`.
 - The file events. Each event uses a new `ImportResolver`:
   - `file_created(path)`: resolve again the imports with the file name of `path`. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not sources, such as `.json` import targets.
-  - `file_changed(path)`: collect the importees of the source again, also if it is malformed. Then replace its edges, its index entries, and its entry in `malformed`.
+  - `file_changed(path)`: collect the importees of the source again. Then replace its edges and its index entries.
   - `file_deleted(path)`: remove the edges from the file and its index entries. Then resolve again the imports in `importers_of(path)`. These imports can now resolve to a candidate with a lower priority.
 
 The graph does not know which files are sources. That is a rule of the discovery, so `FolderService` applies it. When somebody creates a source, the service calls `file_created` and then `file_changed`.

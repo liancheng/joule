@@ -3,7 +3,7 @@ import os
 import os.path as P
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from collections.abc import Set as AbstractSet
 from concurrent.futures import ProcessPoolExecutor
 from fnmatch import fnmatch
@@ -31,14 +31,14 @@ def import_cursor() -> ts.QueryCursor:
     return ts.QueryCursor(query)
 
 
-type Importees = tuple[list[str], bool]
+type Importees = dict[str, Path | None]
 
 
-def collect_importees(path: Path) -> Importees:
+def collect_importees(path: Path, resolver: ImportResolver) -> Importees:
     try:
         source = path.read_bytes()
     except OSError:
-        return [], True
+        return {}
 
     root_node = T.parse(source).root_node
 
@@ -48,14 +48,12 @@ def collect_importees(path: Path) -> Importees:
         except T.MalformedError, ValueError:
             return None
 
-    imports = [
-        import_.importee.value
+    return {
+        (raw := import_.importee.value): resolver.resolve(path, raw)
         for node in import_cursor().captures(root_node).get("import", [])
         for import_ in maybe(get_import_or_none(node))
         if import_.kind == T.ImportKind.Default
-    ]
-
-    return imports, root_node.has_error
+    }
 
 
 def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
@@ -115,6 +113,7 @@ class ImportResolver:
         return importee if P.isabs(importee) else None
 
     def _try_same_dir(self, importer: Path, importee: str) -> str | None:
+        """Looks for the importee under the same directory the importer belongs to."""
         importer_dir = P.dirname(P.join(self.root, importer))
 
         try:
@@ -134,6 +133,7 @@ class ImportResolver:
             return result
 
     def _try_jpaths(self, importee: str) -> str | None:
+        """Looks for the importee under jpath folders."""
         try:
             return self._via_jpaths_cache[importee]
         except KeyError:
@@ -154,39 +154,33 @@ type ImporteesMapper = Callable[
 ]
 
 
-def discard[K, V](index: dict[K, set[V]], key: K, value: V):
-    if (values := index.get(key)) is not None:
-        values.discard(value)
-
-        if len(values) == 0:
-            del index[key]
-
-
 class ImportGraph:
     _root: Path
     _config: SourcesConfig
 
-    # Edges
+    # Maps each importer to the absolute paths its imports resolve to. Unresolved
+    # imports are left out.
     _imports: dict[Path, set[Path]]
+
+    # The reverse of `_imports`: maps each file to the importers that import it.
     _imported_by: dict[Path, set[Path]]
 
-    # Indices for incremental updates
-    _importees: dict[Path, set[str]]
-    _basename_imported_by: dict[str, set[Path]]
+    # Maps each importer to its raw importee strings, unresolved ones included.
+    _raw_importees: dict[Path, set[str]]
 
-    _malformed: set[Path]
+    # Maps a file name to the importers with a raw importee of that name, whatever file
+    # the importee resolves to, if any.
+    _file_name_imported_by: dict[str, set[Path]]
 
     def __init__(self, root: Path, config: SourcesConfig):
         self._root = root
         self._config = config
 
-        self._imports = defaultdict(set)
-        self._imported_by = defaultdict(set)
+        self._imports = defaultdict(set[Path])
+        self._imported_by = defaultdict(set[Path])
 
-        self._importees = defaultdict(set)
-        self._basename_imported_by = defaultdict(set)
-
-        self._malformed = set()
+        self._raw_importees = defaultdict(set[str])
+        self._file_name_imported_by = defaultdict(set[Path])
 
     @classmethod
     def build(cls, root: Path, config: SourcesConfig) -> Self:
@@ -212,38 +206,50 @@ class ImportGraph:
     def importers_of(self, path: Path) -> AbstractSet[Path]:
         return self._imported_by.get(path, frozenset())
 
-    def edges(self) -> Iterator[tuple[Path, Path]]:
-        for importer, importees in self._imports.items():
-            for importee in importees:
-                yield importer, importee
+    def on_file_created(self, path: Path):
+        # A new file can shadow the current target of an importee. When a file is
+        # created, find all the files that import a file with the same name. Then
+        # resolve their importees again.
+        #
+        # For example, jpaths is `lib`. The importee `f2.libsonnet` in `app/f1.jsonnet`
+        # resolves to `lib/f2.libsonnet`:
+        #
+        #   // app/f1.jsonnet
+        #   import "f2.libsonnet"
+        #
+        #   // lib/f2.libsonnet
+        #   1
+        #
+        # Then create the file `app/f2.libsonnet`:
+        #
+        #   // app/f2.libsonnet
+        #   2
+        #
+        # Now the importee resolves to the new file. A file in the folder of the
+        # importer has a higher priority than a file in jpaths.
 
-    @property
-    def malformed(self) -> AbstractSet[Path]:
-        return self._malformed
-
-    def file_created(self, path: Path):
-        importers = self._basename_imported_by.get(P.basename(path), set())
-        resolver = self._resolver()
+        importers = set(self._file_name_imported_by.get(P.basename(path), ()))
+        resolver = ImportResolver(self._root, self._config.jpaths)
 
         for importer in importers:
-            self._update(importer, resolver)
+            self._refresh(importer, resolver)
 
-        self.file_changed(path)
+        self.on_file_changed(path)
 
-    def file_changed(self, path: Path):
+    def on_file_changed(self, path: Path):
         if is_source(self._config, self._root, path):
-            importees, malformed = collect_importees(path)
-            self._remove_source(path)
-            self._add_source(path, importees, malformed, self._resolver())
+            resolver = ImportResolver(self._root, self._config.jpaths)
+            importees = collect_importees(path, resolver)
+            self._sync_imports(path, importees)
 
-    def file_deleted(self, path: Path):
+    def on_file_deleted(self, path: Path):
         # The imports of the file can now resolve to a candidate with a lower priority.
-        importers = self._imported_by.get(path, set()) - {path}
-        self._remove_source(path)
-        resolver = self._resolver()
+        importers = self.importers_of(path) - {path}
+        resolver = ImportResolver(self._root, self._config.jpaths)
+        self._sync_imports(path, {})
 
         for importer in importers:
-            self._update(importer, resolver)
+            self._refresh(importer, resolver)
 
     @property
     def pretty(self) -> str:
@@ -259,8 +265,8 @@ class ImportGraph:
         sections: dict[str, dict] = {
             "imports": self._imports,
             "imported by": self._imported_by,
-            "importees": self._importees,
-            "file names": self._basename_imported_by,
+            "raw importees": self._raw_importees,
+            "file names": self._file_name_imported_by,
         }
 
         lines = [
@@ -276,89 +282,68 @@ class ImportGraph:
             ]
         ]
 
-        lines += ["malformed:", *sorted(f"  {show(path)}" for path in self._malformed)]
         return "\n".join(lines) + "\n"
+
+    def __len__(self) -> int:
+        # Number of edges in the import graph.
+        return sum(map(len, self._imports.values()))
 
     @override
     def __repr__(self) -> str:
-        edges = sum(map(len, self._imports.values()))
-        malformed = len(self._malformed)
-        return f"ImportGraph(root={str(self._root)!r}, {edges} edges, {malformed} malformed)"
+        return f"ImportGraph(root={str(self._root)!r}, {len(self)} edges)"
 
     @override
     def __eq__(self, other: object) -> bool:
-        match other:
-            case ImportGraph():
-                return (
-                    (self._root, self._config) == (other._root, other._config)
-                    and self._imports == other._imports
-                    and self._imported_by == other._imported_by
-                    and self._importees == other._importees
-                    and self._basename_imported_by == other._basename_imported_by
-                    and self._malformed == other._malformed
-                )
-            case _:
-                return NotImplemented
+        return (
+            isinstance(other, ImportGraph)
+            and self._root == other._root
+            and self._config == other._config
+            and self._imports == other._imports
+            and self._imported_by == other._imported_by
+            and self._raw_importees == other._raw_importees
+            and self._file_name_imported_by == other._file_name_imported_by
+        )
 
     @classmethod
     def _build(cls, root: Path, config: SourcesConfig, mapper: ImporteesMapper) -> Self:
         graph = cls(root, config)
-        resolver = graph._resolver()
         sources = discover_sources(root, config)
+        resolver = ImportResolver(root, config.jpaths)
+        collect_fn = functools.partial(collect_importees, resolver=resolver)
 
-        for source, (importees, malformed) in zip(
-            sources,
-            mapper(collect_importees, sources),
-            strict=True,
-        ):
-            graph._add_source(source, importees, malformed, resolver)
+        for importer, importees in zip(sources, mapper(collect_fn, sources)):
+            graph._sync_imports(importer, importees)
 
         return graph
 
-    def _resolver(self) -> ImportResolver:
-        return ImportResolver(self._root, self._config.jpaths)
+    def _sync_imports(self, importer: Path, importees: Importees):
+        # Removes a source file from the import graph.
+        for importee in self._imports.pop(importer, set()):
+            self._discard(self._imported_by, importee, importer)
 
-    def _add_source(
-        self,
-        path: Path,
-        importees: list[str],
-        malformed: bool,
-        resolver: ImportResolver,
-    ):
-        if malformed:
-            self._malformed.add(path)
+        for importee in self._raw_importees.pop(importer, set()):
+            self._discard(self._file_name_imported_by, P.basename(importee), importer)
 
-        for importee in map(sys.intern, importees):
-            self._importees[path].add(importee)
-            self._basename_imported_by[P.basename(importee)].add(path)
+        for raw, resolved in importees.items():
+            raw = sys.intern(raw)
+            self._raw_importees[importer].add(raw)
+            self._file_name_imported_by[P.basename(raw)].add(importer)
 
-            if (resolved := resolver.resolve(path, importee)) is not None:
-                self._imports[path].add(resolved)
-                self._imported_by[resolved].add(path)
+            if resolved is not None:
+                self._imports[importer].add(resolved)
+                self._imported_by[resolved].add(importer)
 
-    def _remove_source(self, path: Path):
-        for importee in self._imports.pop(path, set()):
-            discard(self._imported_by, importee, path)
-
-        for importee in self._importees.pop(path, set()):
-            discard(self._basename_imported_by, P.basename(importee), path)
-
-        self._malformed.discard(path)
-
-    def _update(self, importer: Path, resolver: ImportResolver):
-        resolved = {
-            path
-            for importee in self._importees.get(importer, set())
-            for path in maybe(resolver.resolve(importer, importee))
+    def _refresh(self, importer: Path, resolver: ImportResolver):
+        importees = {
+            raw: resolver.resolve(importer, raw)
+            for raw in self._raw_importees.get(importer, set())
         }
 
-        before = self._imports.pop(importer, set())
+        self._sync_imports(importer, importees)
 
-        for importee in before - resolved:
-            discard(self._imported_by, importee, importer)
+    def _discard[K, V](self, index: dict[K, set[V]], key: K, value: V):
+        if (values := index.get(key)) is not None:
+            values.discard(value)
 
-        for importee in resolved - before:
-            self._imported_by[importee].add(importer)
-
-        if len(resolved) > 0:
-            self._imports[importer] = resolved
+            if len(values) == 0:
+                del index[key]

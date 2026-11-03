@@ -23,13 +23,13 @@ class FolderIndex:
         self.import_graph = import_graph
 
     def on_file_created(self, path: Path):
-        self.import_graph.file_created(path)
+        self.import_graph.on_file_created(path)
 
     def on_file_changed(self, path: Path):
-        self.import_graph.file_changed(path)
+        self.import_graph.on_file_changed(path)
 
     def on_file_deleted(self, path: Path):
-        self.import_graph.file_deleted(path)
+        self.import_graph.on_file_deleted(path)
 
     # TODO: Caches analyzed AST trees and invalidates on updates.
     def analyze_document(self, uri: str) -> T.Document | None:
