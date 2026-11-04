@@ -6,11 +6,11 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from collections.abc import Set as AbstractSet
 from concurrent.futures import ProcessPoolExecutor
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Self, override
 
 import tree_sitter as ts
+from gitignore_parser import parse_gitignore_str
 
 from joule.analysis.sources import discover_sources
 from joule.config import SourcesConfig
@@ -56,31 +56,21 @@ def collect_importees(path: Path, resolver: ImportResolver) -> Importees:
     }
 
 
+@functools.cache
+def exclusion_matcher(root: Path, patterns: tuple[str, ...]) -> Callable[[str], bool]:
+    # Hidden files and directories are excluded, as `fd` does by default.
+    return parse_gitignore_str("\n".join([".*", *patterns]), root)
+
+
 def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
-    def excludes(path: Path, pattern: str) -> bool:
-        pattern = pattern.strip("/")
-
-        # As in `.gitignore`:
-        #
-        # - A pattern without a slash matches a name at any depth.
-        # - A pattern with a slash matches a path from the root.
-        if "/" in pattern:
-            prefixes = [path.parts[1 : i + 1] for i in range(len(path.parts))]
-            return any(Path(*prefix).full_match(pattern) for prefix in prefixes)
-        else:
-            return any(fnmatch(part, pattern) for part in path.parts)
-
-    if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
-        return False
-    else:
-        path = path.relative_to(root)
-        name = path.name.lower()
-
-        return (
-            any(name.endswith("." + ext.lower()) for ext in config.extensions)
-            and not any(part.startswith(".") for part in path.parts)
-            and not any(excludes(path, pattern) for pattern in config.exclude)
-        )
+    excluded = exclusion_matcher(root, tuple(config.exclude))
+    return (
+        path.is_relative_to(root)
+        and path.is_file()
+        and not path.is_symlink()
+        and not excluded(path.as_posix())
+        and any(path.name.endswith(f".{ext}") for ext in config.extensions)
+    )
 
 
 class ImportResolver:

@@ -29,11 +29,11 @@ class TestFolderIndex(FakeWorkspaceTestCase):
             )
 
     def test_is_source_matches_discovery(self):
-        config = SourcesConfig(exclude=["experimental"])
+        config = SourcesConfig(exclude=["experimental/", ".*/", ".*"])
 
         with self.layout(
             self.file("a/x.jsonnet"),
-            self.file("a/Y.JSONNET"),
+            self.file("a/Y.jsonnet"),
             self.file("a/lib.libsonnet"),
             self.file("a/t.jsonnet.TEMPLATE"),
             self.file("a/data.json"),
@@ -61,7 +61,7 @@ class TestFolderIndex(FakeWorkspaceTestCase):
                 obtained,
                 {
                     Path("a/x.jsonnet"),
-                    Path("a/Y.JSONNET"),
+                    Path("a/Y.jsonnet"),
                     Path("a/lib.libsonnet"),
                     Path("a/t.jsonnet.TEMPLATE"),
                 },

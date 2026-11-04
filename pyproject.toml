@@ -5,6 +5,7 @@ description = "A toy Jsonnet language server"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "gitignore-parser>=0.1.13",
     "pydantic>=2.13.5",
     "pygls>=2.1.1",
     "rich>=14.2.0",
