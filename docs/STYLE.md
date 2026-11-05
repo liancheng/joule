@@ -114,6 +114,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 - For a short choice between two values, use a conditional expression. If the expression is too long for one line, put it in parentheses on more than one line.
 - If you must restore a state, use `with` and `@contextmanager`. Examples are the current scope and the breadcrumb of symbols (`activate`).
 - If a constructor has many arguments of the same type, give each argument as a keyword argument on its own line. Examples are `L.DocumentSymbol(...)` and `T.Field(...)`.
+- To make a `Path` from parts, use `Path.joinpath`, not the `/` operator: `root.joinpath("lib", name)`. An LSP server can find the usages of a method, but not the usages of an operator.
 
 ## Errors
 
