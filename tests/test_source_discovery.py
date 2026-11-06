@@ -104,8 +104,8 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertImportGraphInSync(index.import_graph)
 
         self.delete("f2.libsonnet", "data.json")
-        index.on_file_deleted(self.root / "f2.libsonnet")
-        index.on_file_deleted(self.root / "data.json")
+        index.on_file_deleted(self.root.joinpath("f2.libsonnet"))
+        index.on_file_deleted(self.root.joinpath("data.json"))
         self.assertImportGraphInSync(index.import_graph)
 
     def test_service_applies_queued_events(self):
@@ -139,6 +139,6 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         assert index is not None
         self.assertImportGraphInSync(index.import_graph)
         self.assertSetEqual(
-            index.import_graph.imports_of(self.root / "f3.libsonnet"),
-            {self.root / "f1.jsonnet"},
+            index.import_graph.imports_of(self.root.joinpath("f3.libsonnet")),
+            {self.root.joinpath("f1.jsonnet")},
         )
