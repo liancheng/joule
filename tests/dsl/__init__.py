@@ -22,7 +22,7 @@ class FsEntry:
 
 @D.dataclass(frozen=True)
 class FileEntry(FsEntry):
-    content: str = ""
+    text: str = ""
 
 
 @D.dataclass(frozen=True)

@@ -2,7 +2,7 @@ from textwrap import dedent
 
 from joule.workspace import FolderIndex
 from tests import FakeWorkspaceTestCase
-from tests.dsl import FakeDocument
+from tests.dsl import FileEntry
 
 
 class TestImportGraph(FakeWorkspaceTestCase):
@@ -10,8 +10,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self,
         index: FolderIndex,
         *,
-        importer: FakeDocument,
-        importees: list[FakeDocument],
+        importer: FileEntry,
+        importees: list[FileEntry],
     ):
         __tracebackhide__ = True
 
@@ -29,7 +29,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.jpaths("."):
             self.assertImports(
                 index=self.index_workspace(
-                    f1 := self.fake_document(
+                    f1 := self.file(
                         "f1.jsonnet",
                         """\
                         [
@@ -38,8 +38,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
                         ]
                         """,
                     ),
-                    f2 := self.fake_document("f2.libsonnet", "1"),
-                    f3 := self.fake_document("f3.libsonnet", "2"),
+                    f2 := self.file("f2.libsonnet", "1"),
+                    f3 := self.file("f3.libsonnet", "2"),
                 ),
                 importer=f1,
                 importees=[f2, f3],
@@ -49,7 +49,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.jpaths("."):
             self.assertImports(
                 index=self.index_workspace(
-                    f1 := self.fake_document(
+                    f1 := self.file(
                         "f1.jsonnet",
                         """\
                         [
@@ -58,7 +58,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
                         ]
                         """,
                     ),
-                    f2 := self.fake_document("f2.libsonnet", "1"),
+                    f2 := self.file("f2.libsonnet", "1"),
                 ),
                 importer=f1,
                 importees=[f2],
@@ -68,7 +68,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         with self.jpaths("vendor"):
             self.assertImports(
                 index=self.index_workspace(
-                    f1 := self.fake_document(
+                    f1 := self.file(
                         "app/f1.jsonnet",
                         """\
                         [
@@ -77,8 +77,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
                         ]
                         """,
                     ),
-                    f2 := self.fake_document("app/f2.libsonnet", "1"),
-                    f3 := self.fake_document("vendor/sub/f3.libsonnet", "2"),
+                    f2 := self.file("app/f2.libsonnet", "1"),
+                    f3 := self.file("vendor/sub/f3.libsonnet", "2"),
                 ),
                 importer=f1,
                 importees=[f2, f3],
@@ -88,8 +88,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
         # Source discovery does not find `.json` files, but they are importees.
         self.assertImports(
             index=self.index_workspace(
-                f := self.fake_document("f1.jsonnet", 'import "data.json"'),
-                data := self.fake_document("data.json", "{}"),
+                f := self.file("f1.jsonnet", 'import "data.json"'),
+                data := self.file("data.json", "{}"),
             ),
             importer=f,
             importees=[data],
@@ -98,7 +98,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_unresolved_import(self):
         self.assertImports(
             index=self.index_workspace(
-                f := self.fake_document(
+                f := self.file(
                     "f1.jsonnet",
                     'import "missing.libsonnet"',
                 ),
@@ -115,7 +115,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         self.assertImports(
             index=self.index_workspace(
-                f := self.fake_document(
+                f := self.file(
                     "f1.jsonnet",
                     """\
                     local text = importstr "notes.txt";
@@ -131,7 +131,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_no_imports(self):
         self.assertImports(
             index=self.index_workspace(
-                f := self.fake_document("app/f1.jsonnet", "{}"),
+                f := self.file("app/f1.jsonnet", "{}"),
             ),
             importer=f,
             importees=[],
@@ -140,7 +140,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_source_with_syntax_error(self):
         self.assertImports(
             index=self.index_workspace(
-                f1 := self.fake_document(
+                f1 := self.file(
                     "f1.jsonnet",
                     """\
                     [
@@ -151,7 +151,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
                     ]
                     """,
                 ),
-                f2 := self.fake_document("f2.libsonnet", "1"),
+                f2 := self.file("f2.libsonnet", "1"),
             ),
             importer=f1,
             importees=[f2],
@@ -159,9 +159,9 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
     def test_file_changed(self):
         index = self.index_workspace(
-            f1 := self.fake_document("f1.jsonnet", 'import "f2.libsonnet"'),
-            self.fake_document("f2.libsonnet", "1"),
-            f3 := self.fake_document("f3.libsonnet", "2"),
+            f1 := self.file("f1.jsonnet", 'import "f2.libsonnet"'),
+            self.file("f2.libsonnet", "1"),
+            f3 := self.file("f3.libsonnet", "2"),
         )
 
         self.provision(self.file("f1.jsonnet", 'import "f3.libsonnet"'))
@@ -172,8 +172,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
     def test_file_changed_syntax_error(self):
         index = self.index_workspace(
-            f1 := self.fake_document("f1.jsonnet", 'import "f2.libsonnet"'),
-            f2 := self.fake_document("f2.libsonnet", "1"),
+            f1 := self.file("f1.jsonnet", 'import "f2.libsonnet"'),
+            f2 := self.file("f2.libsonnet", "1"),
         )
 
         self.provision(self.file("f1.jsonnet", '[import "f2.libsonnet", {]'))
@@ -189,13 +189,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self.assertEqual(index.import_graph, self.build_import_graph())
 
     def test_file_created_resolves_import(self):
-        f2 = self.fake_document(
+        f2 = self.file(
             "f2.libsonnet",
             'import "f1.jsonnet"',
         )
 
         index = self.index_workspace(
-            f1 := self.fake_document(
+            f1 := self.file(
                 "f1.jsonnet",
                 'import "f2.libsonnet"',
             ),
@@ -209,15 +209,15 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self.assertEqual(index.import_graph, self.build_import_graph())
 
     def test_file_created_shadows_jpath(self):
-        local = self.fake_document("app/lib.libsonnet", "2")
+        local = self.file("app/lib.libsonnet", "2")
 
         with self.jpaths("vendor"):
             index = self.index_workspace(
-                f1 := self.fake_document(
+                f1 := self.file(
                     "app/f1.jsonnet",
                     'import "lib.libsonnet"',
                 ),
-                self.fake_document(
+                self.file(
                     "vendor/lib.libsonnet",
                     "1",
                 ),
@@ -230,21 +230,21 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.assertEqual(index.import_graph, self.build_import_graph())
 
     def test_file_created_with_same_file_name(self):
-        lib_util = self.fake_document(
+        lib_util = self.file(
             "lib/util.libsonnet",
             "1",
         )
 
         index = self.index_workspace(
-            f1 := self.fake_document(
+            f1 := self.file(
                 "a/f1.jsonnet",
                 'import "util.libsonnet"',
             ),
-            f2 := self.fake_document(
+            f2 := self.file(
                 "b/f2.jsonnet",
                 'import "../lib/util.libsonnet"',
             ),
-            f3 := self.fake_document(
+            f3 := self.file(
                 "c/f3.jsonnet",
                 'import "util.jsonnet"',
             ),
@@ -259,13 +259,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self.assertEqual(index.import_graph, self.build_import_graph())
 
     def test_file_created_not_a_source(self):
-        data = self.fake_document(
+        data = self.file(
             "data.json",
             "{}",
         )
 
         index = self.index_workspace(
-            f := self.fake_document(
+            f := self.file(
                 "f1.jsonnet",
                 """\
                 local data = import "data.json";
@@ -286,15 +286,15 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_file_deleted_falls_back_to_jpath(self):
         with self.jpaths("vendor"):
             index = self.index_workspace(
-                f1 := self.fake_document(
+                f1 := self.file(
                     "app/f1.jsonnet",
                     'import "lib.libsonnet"',
                 ),
-                local := self.fake_document(
+                local := self.file(
                     "app/lib.libsonnet",
                     "1",
                 ),
-                vendored := self.fake_document(
+                vendored := self.file(
                     "vendor/lib.libsonnet",
                     "2",
                 ),
@@ -308,11 +308,11 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
     def test_file_deleted_importee(self):
         index = self.index_workspace(
-            f1 := self.fake_document(
+            f1 := self.file(
                 "f1.jsonnet",
                 'import "./f2.libsonnet"',
             ),
-            f2 := self.fake_document(
+            f2 := self.file(
                 "f2.libsonnet",
                 "1",
             ),
@@ -333,11 +333,11 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
     def test_file_deleted_importer(self):
         index = self.index_workspace(
-            f1 := self.fake_document(
+            f1 := self.file(
                 "f1.jsonnet",
                 '[import "f2.libsonnet", {]',
             ),
-            self.fake_document(
+            self.file(
                 "f2.libsonnet",
                 "1",
             ),
@@ -352,11 +352,11 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_pretty(self):
         with self.jpaths("."):
             index = self.index_workspace(
-                self.fake_document(
+                self.file(
                     "lib/f2.libsonnet",
                     "1",
                 ),
-                self.fake_document(
+                self.file(
                     "f1.jsonnet",
                     """\
                     local a = import "lib/f2.libsonnet";

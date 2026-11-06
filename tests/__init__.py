@@ -80,18 +80,17 @@ class FakeWorkspaceTestCase(TreeTestCase):
             else:
                 child.unlink()
 
-    def file(self, path: str | Path, content: str = "") -> FileEntry:
-        path = self.root.joinpath(path)
-        return FileEntry(path, content)
+    def file(self, path: str | Path, text: str = "") -> FileEntry:
+        return FileEntry(self.root.joinpath(path), text)
 
     def dir(self, path: str | Path) -> DirEntry:
-        path = self.root.joinpath(path)
-        return DirEntry(path)
+        return DirEntry(self.root.joinpath(path))
 
     def symlink(self, link: str | Path, target: str | Path) -> SymLinkEntry:
-        link = self.root.joinpath(link)
-        target = self.root.joinpath(target)
-        return SymLinkEntry(link, target)
+        return SymLinkEntry(
+            self.root.joinpath(link),
+            self.root.joinpath(target),
+        )
 
     def provision(self, *entries: FsEntry):
         for entry in entries:
@@ -99,9 +98,9 @@ class FakeWorkspaceTestCase(TreeTestCase):
                 case DirEntry():
                     entry.path.mkdir(parents=True, exist_ok=True)
 
-                case FileEntry(content=content):
+                case FileEntry(text=text):
                     entry.path.parent.mkdir(parents=True, exist_ok=True)
-                    entry.path.write_text(content)
+                    entry.path.write_text(text)
 
                 case SymLinkEntry():
                     entry.path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,10 +137,6 @@ class FakeWorkspaceTestCase(TreeTestCase):
         with self.update_source_config(jpaths=list(entries)):
             yield
 
-    def fake_document(self, path: str, source: str) -> FakeDocument:
-        uri = self.root.joinpath(path).as_uri()
-        return FakeDocument(source, uri=uri)
-
-    def index_workspace(self, *docs: FakeDocument) -> FolderIndex:
-        self.provision(*(doc.fs_entry for doc in docs))
+    def index_workspace(self, *entries: FsEntry) -> FolderIndex:
+        self.provision(*entries)
         return FolderIndex(self.build_import_graph())

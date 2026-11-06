@@ -80,7 +80,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
 
     def test_file_events(self):
         index = self.index_workspace(
-            self.fake_document(
+            self.file(
                 "f1.jsonnet",
                 """\
                 local a = import "f2.libsonnet";
