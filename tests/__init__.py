@@ -5,7 +5,7 @@ import unittest
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import cast, override
+from typing import Any, cast, override
 
 import ocdiff
 
@@ -46,7 +46,7 @@ class FakeDocumentTestCase(TreeTestCase):
 
 class FakeWorkspaceTestCase(TreeTestCase):
     root: Path
-    current_config: SourcesConfig
+    source_config: SourcesConfig
 
     @D.dataclass(frozen=True)
     class FsEntry:
@@ -69,7 +69,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()
-        self.current_config = SourcesConfig()
+        self.source_config = SourcesConfig()
         self.addTypeEqualityFunc(ImportGraph, self.assertImportGraphEqual)
 
     def assertImportGraphEqual(
@@ -85,7 +85,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
             raise self.failureException(diff if msg is None else f"{msg}\n{diff}")
 
     def build_import_graph(self) -> ImportGraph:
-        return ImportGraph.build(self.root, self.current_config)
+        return ImportGraph.build(self.root, self.source_config)
 
     def delete(self, *paths: str | Path):
         for path in paths:
@@ -107,7 +107,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
     def symlink(self, link: str | Path, target: str | Path) -> SymLink:
         return self.SymLink(link, target)
 
-    def provision(self, *entries: FsEntry):
+    def provision(self, *entries: FsEntry | FakeDocument):
         for entry in entries:
             path = self.root.joinpath(entry.path)
 
@@ -124,22 +124,39 @@ class FakeWorkspaceTestCase(TreeTestCase):
                     target = self.root.joinpath(target)
                     path.symlink_to(target, target_is_directory=target.is_dir())
 
+                case FakeDocument() as doc:
+                    self.provision(self.file(Path.from_uri(doc.uri), doc.text))
+
                 case _:
                     raise TypeError(f"Unsupported layout entry: {entry!r}")
 
     @contextmanager
-    def jpaths(self, *entries: str):
-        before = self.current_config
-        update = {"jpaths": list(entries)}
-        self.current_config = self.current_config.model_copy(update=update)
+    def update_source_config(self, **kwargs):
+        before = self.source_config
+        self.source_config = self.source_config.model_copy(update=kwargs)
 
         try:
             yield
         finally:
-            self.current_config = before
+            self.source_config = before
 
     @contextmanager
-    def layout(self, *entries: FsEntry):
+    def exclude(self, *patterns: str):
+        with self.update_source_config(exclude=list(patterns)):
+            yield
+
+    @contextmanager
+    def extensions(self, *patterns: str):
+        with self.update_source_config(extensions=list(patterns)):
+            yield
+
+    @contextmanager
+    def jpaths(self, *entries: str):
+        with self.update_source_config(jpaths=list(entries)):
+            yield
+
+    @contextmanager
+    def layout(self, *entries: FsEntry | FakeDocument):
         self.provision(*entries)
 
         try:

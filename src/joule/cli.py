@@ -63,7 +63,7 @@ def benchmark(
     )
 
     start = time.perf_counter()
-    sources = discover_sources(root, config)
+    sources = discover_sources(config, root)
     discovered = time.perf_counter()
 
     # The build runs the discovery again.

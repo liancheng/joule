@@ -188,9 +188,16 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f3.libsonnet",
         )
 
-        with self.workspace(f1, f2, f3) as index:
-            self.provision(self.file("f1.jsonnet", 'import "f3.libsonnet"'))
-            index.import_graph.on_file_changed(f1.path)
+        with (
+            self.workspace(f1, f2, f3) as index,
+            self.layout(
+                self.file(
+                    "f1.jsonnet",
+                    'import "f3.libsonnet"',
+                )
+            ),
+        ):
+            index.on_file_changed(f1.path)
 
             self.assertImports(index, importer=f1, importees=[f3])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -208,13 +215,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.provision(self.file("f1.jsonnet", '[import "f2.libsonnet", {]'))
-            index.import_graph.on_file_changed(f1.path)
+            index.on_file_changed(f1.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
             self.provision(self.file("f1.jsonnet", "{}"))
-            index.import_graph.on_file_changed(f1.path)
+            index.on_file_changed(f1.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -232,7 +239,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1) as index:
             self.provision(self.file("f2.libsonnet", f2.text))
-            index.import_graph.on_file_created(f2.path)
+            index.on_file_created(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertImports(index, importer=f2, importees=[f1])
@@ -259,7 +266,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, vendored) as index,
         ):
             self.provision(self.file("app/lib.libsonnet", local.text))
-            index.import_graph.on_file_created(local.path)
+            index.on_file_created(local.path)
 
             self.assertImports(index, importer=f1, importees=[local])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -287,7 +294,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2, f3) as index:
             self.provision(self.file("lib/util.libsonnet", lib_util.text))
-            index.import_graph.on_file_created(lib_util.path)
+            index.on_file_created(lib_util.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertImports(index, importer=f2, importees=[lib_util])
@@ -311,8 +318,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f) as index:
             self.provision(self.file("data.json", data.text), self.file("notes.txt"))
-            index.import_graph.on_file_created(data.path)
-            index.import_graph.on_file_created(self.root.joinpath("notes.txt"))
+            index.on_file_created(data.path)
+            index.on_file_created(self.root.joinpath("notes.txt"))
 
             # Only `import` makes edges, also for files that are not sources.
             self.assertImports(index, importer=f, importees=[data])
@@ -339,7 +346,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             self.workspace(f1, local, vendored) as index,
         ):
             self.delete("app/lib.libsonnet")
-            index.import_graph.on_file_deleted(local.path)
+            index.on_file_deleted(local.path)
 
             self.assertImports(index, importer=f1, importees=[vendored])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -357,14 +364,14 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.delete("f2.libsonnet")
-            index.import_graph.on_file_deleted(f2.path)
+            index.on_file_deleted(f2.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())
 
             # The unresolved import resolves again when the file comes back.
             self.provision(self.file("f2.libsonnet", f2.text))
-            index.import_graph.on_file_created(f2.path)
+            index.on_file_created(f2.path)
 
             self.assertImports(index, importer=f1, importees=[f2])
             self.assertEqual(index.import_graph, self.build_import_graph())
@@ -382,7 +389,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         with self.workspace(f1, f2) as index:
             self.delete("f1.jsonnet")
-            index.import_graph.on_file_deleted(f1.path)
+            index.on_file_deleted(f1.path)
 
             self.assertImports(index, importer=f1, importees=[])
             self.assertEqual(index.import_graph, self.build_import_graph())

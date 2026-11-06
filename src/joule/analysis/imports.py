@@ -58,8 +58,7 @@ def collect_importees(path: Path, resolver: ImportResolver) -> Importees:
 
 @functools.cache
 def exclusion_matcher(root: Path, patterns: tuple[str, ...]) -> Callable[[str], bool]:
-    # Hidden files and directories are excluded, as `fd` does by default.
-    return parse_gitignore_str("\n".join([".*", *patterns]), root)
+    return parse_gitignore_str("\n".join(patterns), root)
 
 
 def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
@@ -233,7 +232,6 @@ class ImportGraph:
             self._sync_imports(path, importees)
 
     def on_file_deleted(self, path: Path):
-        # The imports of the file can now resolve to a candidate with a lower priority.
         importers = self.importers_of(path) - {path}
         resolver = ImportResolver(self._root, self._config.jpaths)
         self._sync_imports(path, {})
@@ -297,7 +295,7 @@ class ImportGraph:
     @classmethod
     def _build(cls, root: Path, config: SourcesConfig, mapper: ImporteesMapper) -> Self:
         graph = cls(root, config)
-        sources = discover_sources(root, config)
+        sources = discover_sources(config, root)
         resolver = ImportResolver(root, config.jpaths)
         collect_fn = functools.partial(collect_importees, resolver=resolver)
 
@@ -323,13 +321,18 @@ class ImportGraph:
                 self._imports[importer].add(resolved)
                 self._imported_by[resolved].add(importer)
 
-    def _refresh(self, importer: Path, resolver: ImportResolver):
+    def _refresh(self, path: Path, resolver: ImportResolver):
+        """Re-resolves imports in a source file pointed by `path`.
+
+        This method does not re-parse the source file, so the content of the source file
+        must not have changed since the last time it was resolved.
+        """
         importees = {
-            raw: resolver.resolve(importer, raw)
-            for raw in self._raw_importees.get(importer, set())
+            raw: resolver.resolve(path, raw)
+            for raw in self._raw_importees.get(path, set())
         }
 
-        self._sync_imports(importer, importees)
+        self._sync_imports(path, importees)
 
     def _discard[K, V](self, index: dict[K, set[V]], key: K, value: V):
         if (values := index.get(key)) is not None:

@@ -8,7 +8,7 @@ class SourcesConfig(BaseModel):
 
     jpaths: list[Path] = []
     extensions: list[str] = ["jsonnet", "libsonnet", "jsonnet.TEMPLATE"]
-    exclude: list[str] = []
+    exclude: list[str] = [".*", ".*/"]
 
 
 class Config(BaseModel):

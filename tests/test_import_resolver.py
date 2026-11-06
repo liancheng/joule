@@ -14,7 +14,7 @@ class TestImportResolver(FakeWorkspaceTestCase):
         resolved: str | Path | None,
     ):
         __tracebackhide__ = True
-        resolver = ImportResolver(self.root, self.current_config.jpaths)
+        resolver = ImportResolver(self.root, self.source_config.jpaths)
         self.assertEqual(
             resolver.resolve(Path(importer), str(importee)),
             optional(self.root.joinpath(path) for path in maybe(resolved)),

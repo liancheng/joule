@@ -9,7 +9,7 @@ __all__ = [
 ]
 
 
-def discover_sources(root: Path, config: SourcesConfig) -> list[Path]:
+def discover_sources(config: SourcesConfig, root: Path) -> list[Path]:
     fd = shutil.which("fd") or shutil.which("fdfind")
 
     if fd is None:
