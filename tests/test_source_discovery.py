@@ -71,11 +71,12 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         )
 
     def test_no_symlinks(self):
-        with self.layout(
+        self.provision(
             self.file("f.jsonnet"),
             self.symlink("link.jsonnet", "f.jsonnet"),
-        ):
-            self.assertSourcesDiscovered(Path("f.jsonnet"))
+        )
+
+        self.assertSourcesDiscovered(Path("f.jsonnet"))
 
     def test_file_events(self):
         f1 = self.fake_document(
@@ -111,34 +112,35 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             self.assertImportGraphInSync(index.import_graph)
 
     def test_service_applies_queued_events(self):
-        with self.layout(
+        self.provision(
             self.file("f1.jsonnet", 'import "f2.libsonnet"'),
             self.file("f2.libsonnet", "{}"),
-        ):
-            folder = L.WorkspaceFolder(self.root.as_uri(), "workspace")
-            service = FolderService(folder, Config(sources=self.source_config))
+        )
 
-            # The events arrive before the index exists. The build also sees the
-            # changes, and the events are applied again after the build.
-            self.provision(self.file("f3.libsonnet", 'import "f1.jsonnet"'))
-            service.on_file_event(
-                L.FileEvent(self.uri("f3.libsonnet"), L.FileChangeType.Created)
-            )
-            self.delete("f2.libsonnet")
-            service.on_file_event(
-                L.FileEvent(self.uri("f2.libsonnet"), L.FileChangeType.Deleted)
-            )
+        folder = L.WorkspaceFolder(self.root.as_uri(), "workspace")
+        service = FolderService(folder, Config(sources=self.source_config))
 
-            self.assertFalse(service.ready)
-            A.run(service.start())
+        # The events arrive before the index exists. The build also sees the
+        # changes, and the events are applied again after the build.
+        self.provision(self.file("f3.libsonnet", 'import "f1.jsonnet"'))
+        service.on_file_event(
+            L.FileEvent(self.uri("f3.libsonnet"), L.FileChangeType.Created)
+        )
+        self.delete("f2.libsonnet")
+        service.on_file_event(
+            L.FileEvent(self.uri("f2.libsonnet"), L.FileChangeType.Deleted)
+        )
 
-            index = service.index
-            assert index is not None
-            self.assertImportGraphInSync(index.import_graph)
-            self.assertSetEqual(
-                index.import_graph.imports_of(self.root / "f3.libsonnet"),
-                {self.root / "f1.jsonnet"},
-            )
+        self.assertFalse(service.ready)
+        A.run(service.start())
+
+        index = service.index
+        assert index is not None
+        self.assertImportGraphInSync(index.import_graph)
+        self.assertSetEqual(
+            index.import_graph.imports_of(self.root / "f3.libsonnet"),
+            {self.root / "f1.jsonnet"},
+        )
 
     def uri(self, path: str) -> str:
         return self.root.joinpath(path).as_uri()

@@ -30,36 +30,37 @@ class TestImportResolver(FakeWorkspaceTestCase):
         self.assertResolved(importer=importer, importee=importee, resolved=None)
 
     def test_relative_to_importer(self):
-        with self.layout(
+        self.provision(
             self.file("a/main.jsonnet"),
             self.file("a/lib.libsonnet"),
-        ):
-            self.assertResolved(
-                importer="a/main.jsonnet",
-                importee="lib.libsonnet",
-                resolved="a/lib.libsonnet",
-            )
+        )
+
+        self.assertResolved(
+            importer="a/main.jsonnet",
+            importee="lib.libsonnet",
+            resolved="a/lib.libsonnet",
+        )
 
     def test_dots_collapsed(self):
-        with self.layout(
+        self.provision(
             self.file("a/main.jsonnet"),
             self.file("b/lib.libsonnet"),
-        ):
-            self.assertResolved(
-                importer="a/main.jsonnet",
-                importee="../b/./lib.libsonnet",
-                resolved="b/lib.libsonnet",
-            )
+        )
+
+        self.assertResolved(
+            importer="a/main.jsonnet",
+            importee="../b/./lib.libsonnet",
+            resolved="b/lib.libsonnet",
+        )
 
     def test_same_dir_over_jpaths(self):
-        with (
-            self.jpaths("vendor"),
-            self.layout(
-                self.file("a/main.jsonnet"),
-                self.file("a/lib.libsonnet"),
-                self.file("vendor/lib.libsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("a/main.jsonnet"),
+            self.file("a/lib.libsonnet"),
+            self.file("vendor/lib.libsonnet"),
+        )
+
+        with self.jpaths("vendor"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee="lib.libsonnet",
@@ -67,13 +68,12 @@ class TestImportResolver(FakeWorkspaceTestCase):
             )
 
     def test_jpath_fallback(self):
-        with (
-            self.jpaths("vendor"),
-            self.layout(
-                self.file("a/main.jsonnet"),
-                self.file("vendor/lib.libsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("a/main.jsonnet"),
+            self.file("vendor/lib.libsonnet"),
+        )
+
+        with self.jpaths("vendor"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee="lib.libsonnet",
@@ -81,14 +81,13 @@ class TestImportResolver(FakeWorkspaceTestCase):
             )
 
     def test_later_jpath_wins(self):
-        with (
-            self.jpaths("j1", "j2"),
-            self.layout(
-                self.file("a/main.jsonnet"),
-                self.file("j1/lib.libsonnet"),
-                self.file("j2/lib.libsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("a/main.jsonnet"),
+            self.file("j1/lib.libsonnet"),
+            self.file("j2/lib.libsonnet"),
+        )
+
+        with self.jpaths("j1", "j2"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee="lib.libsonnet",
@@ -96,13 +95,12 @@ class TestImportResolver(FakeWorkspaceTestCase):
             )
 
     def test_workspace_root_as_jpath(self):
-        with (
-            self.jpaths("."),
-            self.layout(
-                self.file("ci/builds/main.jsonnet"),
-                self.file("ci/utils.libsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("ci/builds/main.jsonnet"),
+            self.file("ci/utils.libsonnet"),
+        )
+
+        with self.jpaths("."):
             self.assertResolved(
                 importer="ci/builds/main.jsonnet",
                 importee="ci/utils.libsonnet",
@@ -110,29 +108,27 @@ class TestImportResolver(FakeWorkspaceTestCase):
             )
 
     def test_absolute_importee(self):
-        with (
-            self.jpaths("a"),
-            self.layout(
-                self.file("b/lib.libsonnet"),
-                self.file("a/main.jsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("b/lib.libsonnet"),
+            self.file("a/main.jsonnet"),
+        )
+
+        with self.jpaths("a"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee=self.root.joinpath("b/lib.libsonnet"),
                 resolved="b/lib.libsonnet",
             )
 
-        with (
-            self.jpaths("a"),
-            self.layout(
-                self.file("a/main.jsonnet"),
-                self.file("a/lib.libsonnet"),
-                self.dir("a/sub"),
-                self.file("lib.libsonnet"),
-                self.symlink("link", target="a/sub"),
-            ),
-        ):
+        self.provision(
+            self.file("a/main.jsonnet"),
+            self.file("a/lib.libsonnet"),
+            self.dir("a/sub"),
+            self.file("lib.libsonnet"),
+            self.symlink("link", target="a/sub"),
+        )
+
+        with self.jpaths("a"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee=self.root.joinpath("link/../lib.libsonnet"),
@@ -141,44 +137,43 @@ class TestImportResolver(FakeWorkspaceTestCase):
             )
 
     def test_unresolved(self):
-        with (
-            self.jpaths("."),
-            self.layout(
-                self.file("a/main.jsonnet"),
-            ),
-        ):
+        self.provision(
+            self.file("a/main.jsonnet"),
+        )
+
+        with self.jpaths("."):
             self.assertNotResolved(
                 importer="a/main.jsonnet",
                 importee="missing.libsonnet",
             )
 
     def test_symlinks(self):
-        with self.layout(
+        self.provision(
             self.file("real/lib.libsonnet"),
             self.file("real/sub/main.jsonnet"),
             self.file("lib.libsonnet"),
             self.symlink("link", target="real/sub"),
-        ):
-            self.assertResolved(
-                importer="link/main.jsonnet",
-                importee="../lib.libsonnet",
-                # Check importer parent directory:
-                #   => {root}/link/../lib.libsonnet
-                #   => {root}/lib.libsonnet
-                resolved="lib.libsonnet",
-            )
+        )
 
-        with (
-            self.jpaths("j1", "j2"),
-            self.layout(
-                self.file("a/main.jsonnet"),
-                self.dir("elsewhere/sub"),
-                self.file("elsewhere/x.libsonnet"),
-                self.file("j1/x.libsonnet"),
-                self.dir("j2"),
-                self.symlink("j2/link", target="elsewhere/sub"),
-            ),
-        ):
+        self.assertResolved(
+            importer="link/main.jsonnet",
+            importee="../lib.libsonnet",
+            # Check importer parent directory:
+            #   => {root}/link/../lib.libsonnet
+            #   => {root}/lib.libsonnet
+            resolved="lib.libsonnet",
+        )
+
+        self.provision(
+            self.file("a/main.jsonnet"),
+            self.dir("elsewhere/sub"),
+            self.file("elsewhere/x.libsonnet"),
+            self.file("j1/x.libsonnet"),
+            self.dir("j2"),
+            self.symlink("j2/link", target="elsewhere/sub"),
+        )
+
+        with self.jpaths("j1", "j2"):
             self.assertResolved(
                 importer="a/main.jsonnet",
                 importee="link/../x.libsonnet",

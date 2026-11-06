@@ -5,7 +5,7 @@ import unittest
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, cast, override
+from typing import cast, override
 
 import ocdiff
 
@@ -154,15 +154,6 @@ class FakeWorkspaceTestCase(TreeTestCase):
     def jpaths(self, *entries: str):
         with self.update_source_config(jpaths=list(entries)):
             yield
-
-    @contextmanager
-    def layout(self, *entries: FsEntry | FakeDocument):
-        self.provision(*entries)
-
-        try:
-            yield
-        finally:
-            self.purge()
 
     def fake_document(self, source: str, path: str) -> FakeDocument:
         uri = self.root.joinpath(path).as_uri()

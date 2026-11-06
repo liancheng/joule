@@ -132,13 +132,12 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f1.jsonnet",
         )
 
-        with (
-            self.layout(
-                self.file("notes.txt", "notes"),
-                self.file("blob.bin", "blob"),
-            ),
-            self.workspace(f) as index,
-        ):
+        self.provision(
+            self.file("notes.txt", "notes"),
+            self.file("blob.bin", "blob"),
+        )
+
+        with self.workspace(f) as index:
             self.assertImports(index, importer=f, importees=[])
 
     def test_no_imports(self):
@@ -188,15 +187,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
             path="f3.libsonnet",
         )
 
-        with (
-            self.workspace(f1, f2, f3) as index,
-            self.layout(
-                self.file(
-                    "f1.jsonnet",
-                    'import "f3.libsonnet"',
-                )
-            ),
-        ):
+        with self.workspace(f1, f2, f3) as index:
+            self.provision(self.file("f1.jsonnet", 'import "f3.libsonnet"'))
             index.on_file_changed(f1.path)
 
             self.assertImports(index, importer=f1, importees=[f3])
