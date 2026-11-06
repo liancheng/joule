@@ -68,7 +68,9 @@ def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
         and path.is_file()
         and not path.is_symlink()
         and not excluded(path.as_posix())
-        and any(path.name.endswith(f".{ext}") for ext in config.extensions)
+        # `fd` by default is case-insensitive. Its `--extension` option is always
+        # case-insensitive.
+        and any(path.name.lower().endswith(f".{e.lower()}") for e in config.extensions)
     )
 
 

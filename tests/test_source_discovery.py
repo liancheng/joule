@@ -30,6 +30,23 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSetEqual(obtained, set(expected))
         self.assertSetEqual(obtained, discovered)
 
+    def test_case_insensitive(self):
+        self.provision(
+            self.file("F1.Jsonnet"),
+            self.file("f2.JSONNET"),
+            self.file("F3.jsonnet"),
+        )
+
+        self.assertSourcesDiscovered(
+            "F1.Jsonnet",
+            "f2.JSONNET",
+            "F3.jsonnet",
+        )
+
+    def test_extension_with_dot(self):
+        self.provision(self.file("f.jsonnet.TEMPLATE"))
+        self.assertSourcesDiscovered("f.jsonnet.TEMPLATE")
+
     def test_nested_excluded_folders(self):
         self.provision(
             self.file("f.jsonnet"),
