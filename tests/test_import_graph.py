@@ -24,6 +24,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         for importee in importees:
             self.assertIn(importer.path, g.importers_of(importee.path))
+            self.assertIn(importee.path, g.imports_of(importer.path))
 
     def test_simple_import(self):
         with self.jpaths("."):
@@ -88,11 +89,11 @@ class TestImportGraph(FakeWorkspaceTestCase):
         # Source discovery does not find `.json` files, but they are importees.
         self.assertImports(
             index=self.index_workspace(
-                f := self.file("f1.jsonnet", 'import "data.json"'),
-                data := self.file("data.json", "{}"),
+                f1 := self.file("f.jsonnet", 'import "data.json"'),
+                f2 := self.file("data.json", "{}"),
             ),
-            importer=f,
-            importees=[data],
+            importer=f1,
+            importees=[f2],
         )
 
     def test_unresolved_import(self):
@@ -140,13 +141,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
     def test_source_with_syntax_error(self):
         self.assertImports(
             index=self.index_workspace(
+                # The syntax error affects only the 2nd array element. Thus the import
+                # still parses, and the import graph records it.
                 f1 := self.file(
                     "f1.jsonnet",
                     """\
                     [
                         import "f2.libsonnet",
-                        // The syntax error affects only this array element. Thus the import
-                        // still parses, and the import graph records it.
                         { broken }
                     ]
                     """,
@@ -156,6 +157,8 @@ class TestImportGraph(FakeWorkspaceTestCase):
             importer=f1,
             importees=[f2],
         )
+
+    # ---
 
     def test_file_changed(self):
         index = self.index_workspace(
