@@ -77,13 +77,6 @@ class FakeWorkspaceTestCase(TreeTestCase):
         for path in paths:
             self.root.joinpath(path).unlink()
 
-    def purge(self):
-        for child in self.root.iterdir():
-            if child.is_dir(follow_symlinks=False):
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-
     def file(self, path: str | Path, text: str = "") -> FileEntry:
         return FileEntry(self.root.joinpath(path), text)
 
