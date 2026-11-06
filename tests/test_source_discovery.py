@@ -3,7 +3,7 @@ from pathlib import Path
 
 import lsprotocol.types as L
 
-from joule.analysis.imports import ImportGraph, is_source
+from joule.analysis.imports import is_source
 from joule.analysis.sources import discover_sources
 from joule.config import Config
 from joule.server import FolderService
@@ -11,10 +11,6 @@ from tests import FakeWorkspaceTestCase
 
 
 class TestSourceDiscovery(FakeWorkspaceTestCase):
-    def assertImportGraphInSync(self, graph: ImportGraph):
-        __tracebackhide__ = True
-        self.assertEqual(graph, self.build_import_graph())
-
     def assertSourcesDiscovered(self, *expected: Path):
         __tracebackhide__ = True
 

@@ -66,6 +66,10 @@ class FakeWorkspaceTestCase(TreeTestCase):
             diff = ocdiff.console_diff(first.pretty, second.pretty)
             raise self.failureException(diff if msg is None else f"{msg}\n{diff}")
 
+    def assertImportGraphInSync(self, graph: ImportGraph):
+        __tracebackhide__ = True
+        self.assertEqual(graph, self.build_import_graph())
+
     def build_import_graph(self) -> ImportGraph:
         return ImportGraph.build(self.root, self.source_config)
 

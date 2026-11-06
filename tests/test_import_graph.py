@@ -171,7 +171,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         index.on_file_changed(f1.path)
 
         self.assertImports(index, importer=f1, importees=[f3])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_changed_syntax_error(self):
         index = self.index_workspace(
@@ -183,13 +183,13 @@ class TestImportGraph(FakeWorkspaceTestCase):
         index.on_file_changed(f1.path)
 
         self.assertImports(index, importer=f1, importees=[f2])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
         self.provision(self.file("f1.jsonnet", "{}"))
         index.on_file_changed(f1.path)
 
         self.assertImports(index, importer=f1, importees=[])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_created_resolves_import(self):
         f2 = self.file(
@@ -209,7 +209,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         self.assertImports(index, importer=f1, importees=[f2])
         self.assertImports(index, importer=f2, importees=[f1])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_created_shadows_jpath(self):
         local = self.file("app/lib.libsonnet", "2")
@@ -230,7 +230,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             index.on_file_created(local.path)
 
             self.assertImports(index, importer=f1, importees=[local])
-            self.assertEqual(index.import_graph, self.build_import_graph())
+            self.assertImportGraphInSync(index.import_graph)
 
     def test_file_created_with_same_file_name(self):
         lib_util = self.file(
@@ -259,7 +259,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self.assertImports(index, importer=f1, importees=[])
         self.assertImports(index, importer=f2, importees=[lib_util])
         self.assertImports(index, importer=f3, importees=[])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_created_not_a_source(self):
         data = self.file(
@@ -284,7 +284,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
 
         # Only `import` makes edges, also for files that are not sources.
         self.assertImports(index, importer=f, importees=[data])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_deleted_falls_back_to_jpath(self):
         with self.jpaths("vendor"):
@@ -307,7 +307,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
             index.on_file_deleted(local.path)
 
             self.assertImports(index, importer=f1, importees=[vendored])
-            self.assertEqual(index.import_graph, self.build_import_graph())
+            self.assertImportGraphInSync(index.import_graph)
 
     def test_file_deleted_importee(self):
         index = self.index_workspace(
@@ -325,14 +325,14 @@ class TestImportGraph(FakeWorkspaceTestCase):
         index.on_file_deleted(f2.path)
 
         self.assertImports(index, importer=f1, importees=[])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
         # The unresolved import resolves again when the file comes back.
         self.provision(self.file("f2.libsonnet", f2.text))
         index.on_file_created(f2.path)
 
         self.assertImports(index, importer=f1, importees=[f2])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_file_deleted_importer(self):
         index = self.index_workspace(
@@ -350,7 +350,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         index.on_file_deleted(f1.path)
 
         self.assertImports(index, importer=f1, importees=[])
-        self.assertEqual(index.import_graph, self.build_import_graph())
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_pretty(self):
         with self.jpaths("."):
