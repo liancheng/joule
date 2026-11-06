@@ -1,8 +1,6 @@
-import dataclasses as D
 import shutil
 import tempfile
 import unittest
-from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast, override
@@ -13,7 +11,7 @@ from joule.analysis.imports import ImportGraph
 from joule.config import SourcesConfig
 from joule.syntax.trees import Tree
 from joule.workspace import FolderIndex
-from tests.dsl import FakeDocument
+from tests.dsl import DirEntry, FakeDocument, FileEntry, FsEntry, SymLinkEntry
 
 
 class TreeTestCase(unittest.TestCase):
@@ -47,22 +45,6 @@ class FakeDocumentTestCase(TreeTestCase):
 class FakeWorkspaceTestCase(TreeTestCase):
     root: Path
     source_config: SourcesConfig
-
-    @D.dataclass(frozen=True)
-    class FsEntry:
-        path: str | Path
-
-    @D.dataclass(frozen=True)
-    class File(FsEntry):
-        content: str = ""
-
-    @D.dataclass(frozen=True)
-    class Dir(FsEntry):
-        pass
-
-    @D.dataclass(frozen=True)
-    class SymLink(FsEntry):
-        target: str | Path
 
     @override
     def setUp(self):
@@ -98,34 +80,35 @@ class FakeWorkspaceTestCase(TreeTestCase):
             else:
                 child.unlink()
 
-    def file(self, path: str | Path, content: str = "") -> File:
-        return self.File(path, content)
+    def file(self, path: str | Path, content: str = "") -> FileEntry:
+        path = self.root.joinpath(path)
+        return FileEntry(path, content)
 
-    def dir(self, path: str | Path) -> Dir:
-        return self.Dir(path)
+    def dir(self, path: str | Path) -> DirEntry:
+        path = self.root.joinpath(path)
+        return DirEntry(path)
 
-    def symlink(self, link: str | Path, target: str | Path) -> SymLink:
-        return self.SymLink(link, target)
+    def symlink(self, link: str | Path, target: str | Path) -> SymLinkEntry:
+        link = self.root.joinpath(link)
+        target = self.root.joinpath(target)
+        return SymLinkEntry(link, target)
 
-    def provision(self, *entries: FsEntry | FakeDocument):
+    def provision(self, *entries: FsEntry):
         for entry in entries:
-            path = self.root.joinpath(entry.path)
-
             match entry:
-                case self.Dir():
-                    path.mkdir(parents=True, exist_ok=True)
+                case DirEntry():
+                    entry.path.mkdir(parents=True, exist_ok=True)
 
-                case self.File(content=content):
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content)
+                case FileEntry(content=content):
+                    entry.path.parent.mkdir(parents=True, exist_ok=True)
+                    entry.path.write_text(content)
 
-                case self.SymLink(target=target):
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    target = self.root.joinpath(target)
-                    path.symlink_to(target, target_is_directory=target.is_dir())
-
-                case FakeDocument() as doc:
-                    self.provision(self.file(Path.from_uri(doc.uri), doc.text))
+                case SymLinkEntry():
+                    entry.path.parent.mkdir(parents=True, exist_ok=True)
+                    entry.path.symlink_to(
+                        entry.target,
+                        target_is_directory=entry.target.is_dir(),
+                    )
 
                 case _:
                     raise TypeError(f"Unsupported layout entry: {entry!r}")
@@ -155,15 +138,10 @@ class FakeWorkspaceTestCase(TreeTestCase):
         with self.update_source_config(jpaths=list(entries)):
             yield
 
-    def fake_document(self, source: str, path: str) -> FakeDocument:
+    def fake_document(self, path: str, source: str) -> FakeDocument:
         uri = self.root.joinpath(path).as_uri()
         return FakeDocument(source, uri=uri)
 
-    @contextmanager
-    def workspace(self, *docs: FakeDocument) -> Generator[FolderIndex]:
-        self.provision(*(self.file(Path.from_uri(doc.uri), doc.text) for doc in docs))
-
-        try:
-            yield FolderIndex(self.build_import_graph())
-        finally:
-            self.purge()
+    def index_workspace(self, *docs: FakeDocument) -> FolderIndex:
+        self.provision(*(doc.fs_entry for doc in docs))
+        return FolderIndex(self.build_import_graph())

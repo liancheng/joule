@@ -79,39 +79,44 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSourcesDiscovered(Path("f.jsonnet"))
 
     def test_file_events(self):
-        f1 = self.fake_document(
-            """\
-            local a = import "f2.libsonnet";
-            local b = import "data.json";
-            [a, b]
-            """,
-            path="f1.jsonnet",
+        index = self.index_workspace(
+            self.fake_document(
+                "f1.jsonnet",
+                """\
+                local a = import "f2.libsonnet";
+                local b = import "data.json";
+                [a, b]
+                """,
+            ),
         )
 
-        with self.workspace(f1) as index:
-            self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
-            index.on_file_created(self.root.joinpath("f2.libsonnet"))
-            self.assertImportGraphInSync(index.import_graph)
+        self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
+        index.on_file_created(self.root.joinpath("f2.libsonnet"))
+        self.assertImportGraphInSync(index.import_graph)
 
-            self.provision(self.file("data.json", "{}"))
-            index.on_file_created(self.root.joinpath("data.json"))
-            self.assertImportGraphInSync(index.import_graph)
+        self.provision(self.file("data.json", "{}"))
+        index.on_file_created(self.root.joinpath("data.json"))
+        self.assertImportGraphInSync(index.import_graph)
 
-            self.provision(self.file("f2.libsonnet", "{}"))
-            index.on_file_changed(self.root.joinpath("f2.libsonnet"))
-            self.assertImportGraphInSync(index.import_graph)
+        self.provision(self.file("f2.libsonnet", "{}"))
+        index.on_file_changed(self.root.joinpath("f2.libsonnet"))
+        self.assertImportGraphInSync(index.import_graph)
 
-            # On macOS, editors can report a change as a creation.
-            self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
-            index.on_file_created(self.root.joinpath("f2.libsonnet"))
-            self.assertImportGraphInSync(index.import_graph)
+        # On macOS, editors can report a change as a creation.
+        self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
+        index.on_file_created(self.root.joinpath("f2.libsonnet"))
+        self.assertImportGraphInSync(index.import_graph)
 
-            self.delete("f2.libsonnet", "data.json")
-            index.on_file_deleted(self.root / "f2.libsonnet")
-            index.on_file_deleted(self.root / "data.json")
-            self.assertImportGraphInSync(index.import_graph)
+        self.delete("f2.libsonnet", "data.json")
+        index.on_file_deleted(self.root / "f2.libsonnet")
+        index.on_file_deleted(self.root / "data.json")
+        self.assertImportGraphInSync(index.import_graph)
 
     def test_service_applies_queued_events(self):
+
+        def uri(path: str) -> str:
+            return self.root.joinpath(path).as_uri()
+
         self.provision(
             self.file("f1.jsonnet", 'import "f2.libsonnet"'),
             self.file("f2.libsonnet", "{}"),
@@ -124,11 +129,11 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         # changes, and the events are applied again after the build.
         self.provision(self.file("f3.libsonnet", 'import "f1.jsonnet"'))
         service.on_file_event(
-            L.FileEvent(self.uri("f3.libsonnet"), L.FileChangeType.Created)
+            L.FileEvent(uri("f3.libsonnet"), L.FileChangeType.Created)
         )
         self.delete("f2.libsonnet")
         service.on_file_event(
-            L.FileEvent(self.uri("f2.libsonnet"), L.FileChangeType.Deleted)
+            L.FileEvent(uri("f2.libsonnet"), L.FileChangeType.Deleted)
         )
 
         self.assertFalse(service.ready)
@@ -141,6 +146,3 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             index.import_graph.imports_of(self.root / "f3.libsonnet"),
             {self.root / "f1.jsonnet"},
         )
-
-    def uri(self, path: str) -> str:
-        return self.root.joinpath(path).as_uri()

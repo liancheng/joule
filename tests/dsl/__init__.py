@@ -1,4 +1,5 @@
 import bisect
+import dataclasses as D
 import functools
 from functools import cached_property
 from itertools import accumulate, chain
@@ -12,6 +13,26 @@ from joule.analysis.scopes import analyze
 from joule.syntax import trees as T
 from joule.syntax.trees import Array
 from tests.dsl import span_markers
+
+
+@D.dataclass(frozen=True)
+class FsEntry:
+    path: Path
+
+
+@D.dataclass(frozen=True)
+class FileEntry(FsEntry):
+    content: str = ""
+
+
+@D.dataclass(frozen=True)
+class DirEntry(FsEntry):
+    pass
+
+
+@D.dataclass(frozen=True)
+class SymLinkEntry(FsEntry):
+    target: Path
 
 
 class SpanDSL(T.Span):
@@ -134,6 +155,10 @@ class FakeDocument(LineMap):
         super().__init__(text)
         self.uri = uri
         self.cst = T.parse(text)
+
+    @cached_property
+    def fs_entry(self) -> FileEntry:
+        return FileEntry(self.path, self.text)
 
     @cached_property
     def document(self) -> T.Document:
