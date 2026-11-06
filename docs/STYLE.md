@@ -46,7 +46,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
 
 ## Names
 
-- Give a class a noun name that tells its role: `DefinitionProvider`, `ScopeResolver`, `ImportResolver`, `ImportGraph`, `FolderIndex`.
+- Give a class a noun name that tells its role: `DefinitionProvider`, `Analyzer`, `ImportResolver`, `ImportGraph`, `FolderIndex`.
 - Give a function or a method a verb name: `serve`, `resolve`, `build`, `find_definition`, `discover_sources`.
 - Name conversions `to_*` and `from_*`, for example `to_range`, `to_location`, `from_cst`, and `from_lsp`.
 - Name a helper that gets a value from a node `*_of`, for example `span_of`, `text_of`, `field_of`, and `enum_of`.
@@ -136,7 +136,7 @@ This document tells how to write code for Joule. Follow it, so that new code is 
   # Each worker process compiles the query only one time. A compilation takes about 66 µs.
   ```
 
-- For a long explanation, use a `# NOTE: <topic>` block. If an example helps, add one. See the note about parameter scopes in `ScopeResolver.visit_fn`.
+- For a long explanation, use a `# NOTE: <topic>` block. If an example helps, add one. See the note about parameter scopes in `Analyzer.visit_fn`.
 - Put code names in backticks, for example `` `is_file` ``.
 
 ## Performance
@@ -156,7 +156,7 @@ Joule must operate on workspaces with 100k files. Thus, write hot paths carefull
 - Name assertion helpers in camelCase, as `unittest` does: `assertDefined`, `assertVarBinding`. Name test methods `test_<case>`, in snake case.
 - To put related cases into one test, use `self.subTest(...)`.
 - To make expected trees, use the `SpanDSL` constructors and the helpers in `tests.dsl`, for example `t.at(1).num(1)`, `bind(...)`, and `field(...)`.
-- If a test needs real files, make its class a subclass of `FakeWorkspaceTestCase`. Make the sources with `fake_document(source, path=...)`, and the other files with `provision(file(...), dir(...), symlink(...))`.
+- If a test needs real files, make its class a subclass of `FakeWorkspaceTestCase`. Make the entries with `file(...)`, `dir(...)`, and `symlink(...)`. Put them on the disk with `provision(...)`, or with `index_workspace(...)`, which also builds the `FolderIndex`. Each test gets a new temporary directory (`root`).
 
 ### Self-contained tests
 
@@ -165,8 +165,8 @@ A reader must understand a test without other parts of the file. Write each test
 - **Do not write tautological tests.** A test must be able to fail if the code under test is incorrect. Do not get the expected value from the code under test, or from a copy of its logic, for example the inverted map of the edges. Do not assert only what the setup of the test made true, for example that a file exists after the test made it. Make the expected value only from the data of the test, for example the fake documents or the `SpanDSL` constructors.
 - **Declare the data in the test.** Each test makes only the sources and files that it needs, next to its assertions. Do not share one large fixture, such as a module-level workspace, between tests. A shared fixture separates the data from the test that uses it. Also, a change for one test can break other tests.
 - **Remove expensive setup. Do not share it.** Do not put state in `setUpClass` to make a slow setup run only one time. Instead, make the setup cheap. For example, use the sequential `ImportGraph.build` in tests, not the process pool of `ImportGraph.build_in_parallel`.
-- **Make the setup visible.** Put the files on the disk with `provision(...)` before the `with` statement. Use context managers, such as `jpaths(...)` and `workspace(...)`, in the `with` statement of the test. Python enters them in sequence. Thus put each setting before the context manager that uses it, for example `jpaths(...)` before `workspace(...)`.
-- **Assert at the level of the domain.** Write assertion helpers that take the objects of the test, for example `assertImports(index, f1, f2)`. Do not use raw paths or the internal dictionaries in the tests.
+- **Make the setup visible.** Put the files on the disk with `provision(...)` or `index_workspace(...)`. Use the context managers `jpaths(...)`, `exclude(...)`, and `extensions(...)` for the settings of the sources. A setting applies only to the code in its `with` statement. Thus call `index_workspace(...)` and the builds inside it.
+- **Assert at the level of the domain.** Write assertion helpers that take the objects of the test, for example `assertImports(index, importer=f1, importees=[f2])`. Do not use raw paths or the internal dictionaries in the tests.
 - **Make failures easy to read.** In each assertion helper, set `__tracebackhide__ = True`, so that a failure points to the line in the test. Show paths relative to the workspace root.
 - **Let the names and the sources tell the case.** If a comment must explain the data, the data is too far from the test. Comment only a corner case that the source cannot show.
 

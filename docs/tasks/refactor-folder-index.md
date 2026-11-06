@@ -118,14 +118,14 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 
 Merge `ImportGraphBuilder` and `ParallelImportGraphBuilder` into `ImportGraph`. The interface is:
 
-- `ImportGraph.build(root, jpaths, docs)` and `ImportGraph.build_in_parallel(root, jpaths, docs)`.
+- `ImportGraph.build(root, config)` and `ImportGraph.build_in_parallel(root, config)`, with a `SourcesConfig`.
 - The queries `imports_of(path)`, `importers_of(path)`, and `edges()`.
 - The file events. Each event uses a new `ImportResolver`:
-  - `file_created(path)`: resolve again the imports with the file name of `path`. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not sources, such as `.json` import targets.
-  - `file_changed(path)`: collect the importees of the source again. Then replace its edges and its index entries.
-  - `file_deleted(path)`: remove the edges from the file and its index entries. Then resolve again the imports in `importers_of(path)`. These imports can now resolve to a candidate with a lower priority.
+  - `on_file_created(path)`: resolve again the imports with the file name of `path`. A new file can shadow a candidate with a lower priority. It can also make an unresolved import resolve. This applies to all files, also to files that are not sources, such as `.json` import targets.
+  - `on_file_changed(path)`: collect the importees of the source again. Then replace its edges and its index entries.
+  - `on_file_deleted(path)`: remove the edges from the file and its index entries. Then resolve again the imports in `importers_of(path)`. These imports can now resolve to a candidate with a lower priority.
 
-The graph does not know which files are sources. That is a rule of the discovery, so `FolderService` applies it. When somebody creates a source, the service calls `file_created` and then `file_changed`.
+`on_file_created` also collects the imports of the file. `on_file_changed` does nothing for a file that `is_source` rejects.
 
 Test each event against a full build:
 
@@ -140,11 +140,11 @@ Commit: ``feat: Update `ImportGraph` incrementally on file changes``
 - Group the configuration of the sources in `SourcesConfig`: `jpaths`, `extensions`, and `exclude`. `Config.sources` holds it, so the `workspace/configuration` section is `sources`. New options, such as `include`, go into `SourcesConfig`.
 - `ImportGraph(root, config)` gets a `SourcesConfig`. `ImportGraph.build` and `build_in_parallel` find the sources with `discover_sources`. Thus the graph alone decides which files are sources, and no caller passes that decision.
 - `joule.analysis.sources` has `discover_sources`, and `joule.analysis.imports` has `is_source`. `is_source` tells if `discover_sources` finds a file. It applies the extensions, the excluded globs, and the hidden files and directories as `fd` does. It does not apply `.gitignore`. Thus a new source in an ignored directory gets into the graph, but a new build does not find it.
-- `ImportGraph.file_created` also collects the imports of the file if it is a source. `file_changed` does nothing for a file that is not a source. `FolderIndex.on_file_created`, `on_file_changed`, and `on_file_deleted` call these methods.
+- `ImportGraph.on_file_created` also collects the imports of the file if it is a source. `on_file_changed` does nothing for a file that is not a source. `FolderIndex.on_file_created`, `on_file_changed`, and `on_file_deleted` call these methods.
 - On `initialized`, register a watcher for `**/*` with `client/registerCapability`. Watch all files, because files that are not sources, such as `.json` files, are also import targets. Register before the build starts, so that the services can queue the changes that occur during the build.
 - `FolderService.on_file_event` applies an event to the index. Before the index exists, it puts the event in a queue, and `start` applies the queue after the build. The events are idempotent, so it is safe to apply a change that the build already sees.
 - The handler of `workspace/didChangeWatchedFiles` is synchronous. Thus the events change the index on the event loop, in the sequence that the client sends them.
-- On macOS, editors can report a change of a file as a creation. `ImportGraph.file_created` and `file_changed` give the same result for a file that exists.
+- On macOS, editors can report a change of a file as a creation. `ImportGraph.on_file_created` and `on_file_changed` give the same result for a file that exists.
 
 Commit: ``feat: Update `FolderIndex` on file events``
 
