@@ -66,10 +66,10 @@ def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
     return (
         path.is_relative_to(root)
         and path.is_file()
-        and not path.is_symlink()
+        # Source discovery does not follow symlinks.
+        and path.resolve() == path
         and not excluded(path.as_posix())
-        # `fd` by default is case-insensitive. Its `--extension` option is always
-        # case-insensitive.
+        # The `--extension` option of `fd` is case-insensitive.
         and any(path.name.lower().endswith(f".{e.lower()}") for e in config.extensions)
     )
 

@@ -17,7 +17,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         files = [
             path
             for path in self.root.rglob("*", recurse_symlinks=True)
-            if path.is_file()
+            if not path.is_dir()
         ]
 
         obtained = {
@@ -95,13 +95,21 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             ("d/f.jsonnet"),
         )
 
-    def test_no_symlinks(self):
+    def test_no_symlinked_files(self):
         self.provision(
             self.file("d/f.jsonnet"),
             self.symlink("link.jsonnet", "d/f.jsonnet"),
         )
 
         self.assertSourcesDiscovered("d/f.jsonnet")
+
+    def test_no_symlinked_dirs(self):
+        self.provision(
+            self.file("d1/f.jsonnet"),
+            self.symlink("d2/d3", "d1"),
+        )
+
+        self.assertSourcesDiscovered("d1/f.jsonnet")
 
     def test_file_events(self):
         index = self.index_workspace(
