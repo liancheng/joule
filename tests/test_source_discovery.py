@@ -14,7 +14,11 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
     def assertSourcesDiscovered(self, *expected: str):
         __tracebackhide__ = True
 
-        files = [path for path in self.root.rglob("*") if not path.is_dir()]
+        files = [
+            path
+            for path in self.root.rglob("*", recurse_symlinks=True)
+            if path.is_file()
+        ]
 
         obtained = {
             path.relative_to(self.root)
