@@ -125,11 +125,6 @@ class FakeWorkspaceTestCase(TreeTestCase):
             yield
 
     @contextmanager
-    def extensions(self, *patterns: str):
-        with self.update_source_config(extensions=list(patterns)):
-            yield
-
-    @contextmanager
     def jpaths(self, *entries: str):
         with self.update_source_config(jpaths=list(entries)):
             yield

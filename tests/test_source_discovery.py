@@ -11,7 +11,7 @@ from tests import FakeWorkspaceTestCase
 
 
 class TestSourceDiscovery(FakeWorkspaceTestCase):
-    def assertSourcesDiscovered(self, *expected: Path):
+    def assertSourcesDiscovered(self, *expected: str):
         __tracebackhide__ = True
 
         files = [path for path in self.root.rglob("*") if not path.is_dir()]
@@ -27,7 +27,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             for path in discover_sources(self.source_config, self.root)
         }
 
-        self.assertSetEqual(obtained, set(expected))
+        self.assertSetEqual(obtained, set(map(Path, expected)))
         self.assertSetEqual(obtained, discovered)
 
     def test_case_insensitive(self):
@@ -47,6 +47,14 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.provision(self.file("f.jsonnet.TEMPLATE"))
         self.assertSourcesDiscovered("f.jsonnet.TEMPLATE")
 
+    def test_data_files(self):
+        self.provision(
+            self.file("f1.jsonnet"),
+            self.file("f2.json"),
+        )
+
+        self.assertSourcesDiscovered("f1.jsonnet")
+
     def test_nested_excluded_folders(self):
         self.provision(
             self.file("f.jsonnet"),
@@ -57,8 +65,8 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
 
         with self.exclude("excluded/"):
             self.assertSourcesDiscovered(
-                Path("f.jsonnet"),
-                Path("d/f.jsonnet"),
+                ("f.jsonnet"),
+                ("d/f.jsonnet"),
             )
 
     def test_hidden_files(self):
@@ -68,7 +76,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             self.file(".hidden"),
         )
 
-        self.assertSourcesDiscovered(Path("f.jsonnet"))
+        self.assertSourcesDiscovered("f.jsonnet")
 
     def test_nested_hidden_folders(self):
         self.provision(
@@ -79,17 +87,17 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         )
 
         self.assertSourcesDiscovered(
-            Path("f.jsonnet"),
-            Path("d/f.jsonnet"),
+            ("f.jsonnet"),
+            ("d/f.jsonnet"),
         )
 
     def test_no_symlinks(self):
         self.provision(
-            self.file("f.jsonnet"),
-            self.symlink("link.jsonnet", "f.jsonnet"),
+            self.file("d/f.jsonnet"),
+            self.symlink("link.jsonnet", "d/f.jsonnet"),
         )
 
-        self.assertSourcesDiscovered(Path("f.jsonnet"))
+        self.assertSourcesDiscovered("d/f.jsonnet")
 
     def test_file_events(self):
         index = self.index_workspace(

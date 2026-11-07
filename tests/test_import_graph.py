@@ -65,27 +65,19 @@ class TestImportGraph(FakeWorkspaceTestCase):
                 importees=[f2],
             )
 
-    def test_importer_dir_and_jpaths(self):
-        with self.jpaths("vendor"):
+    def test_importer_dir_over_jpaths(self):
+        with self.jpaths("lib"):
             self.assertImports(
                 index=self.index_workspace(
-                    f1 := self.file(
-                        "app/f1.jsonnet",
-                        """\
-                        [
-                            import "./f2.libsonnet",
-                            import "sub/f3.libsonnet",
-                        ]
-                        """,
-                    ),
-                    f2 := self.file("app/f2.libsonnet", "1"),
-                    f3 := self.file("vendor/sub/f3.libsonnet", "2"),
+                    f1 := self.file("f1.jsonnet", "import 'f2.libsonnet'"),
+                    f2 := self.file("f2.libsonnet", "1"),
+                    self.file("lib/f2.libsonnet", "2"),
                 ),
                 importer=f1,
-                importees=[f2, f3],
+                importees=[f2, f2],
             )
 
-    def test_non_source_importee(self):
+    def test_data_importee(self):
         # Source discovery does not find `.json` files, but they are importees.
         self.assertImports(
             index=self.index_workspace(
@@ -100,7 +92,7 @@ class TestImportGraph(FakeWorkspaceTestCase):
         self.assertImports(
             index=self.index_workspace(
                 f := self.file(
-                    "f1.jsonnet",
+                    "f.jsonnet",
                     'import "missing.libsonnet"',
                 ),
             ),
