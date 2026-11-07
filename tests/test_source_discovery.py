@@ -3,7 +3,7 @@ from pathlib import Path
 
 import lsprotocol.types as L
 
-from joule.analysis.imports import is_source
+from joule.analysis.imports import ImportGraph, is_source
 from joule.analysis.sources import discover_sources
 from joule.config import Config
 from joule.server import FolderService
@@ -178,4 +178,34 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSetEqual(
             index.import_graph.imports_of(self.root.joinpath("f3.libsonnet")),
             {self.root.joinpath("f1.jsonnet")},
+        )
+
+    def test_service_resolves_symlinked_root(self):
+        self.provision(
+            self.file("real/f1.jsonnet", 'import "f2.libsonnet"'),
+            self.symlink("link", "real"),
+        )
+
+        real = self.root.joinpath("real")
+        folder = L.WorkspaceFolder(self.root.joinpath("link").as_uri(), "workspace")
+        service = FolderService(folder, Config(sources=self.source_config))
+        A.run(service.start())
+
+        # Editors report the real paths of files.
+        self.provision(self.file("real/f2.libsonnet", "{}"))
+        service.on_file_event(
+            L.FileEvent(
+                real.joinpath("f2.libsonnet").as_uri(),
+                L.FileChangeType.Created,
+            )
+        )
+
+        index = service.index
+        assert index is not None
+        self.assertEqual(
+            index.import_graph, ImportGraph.build(real, self.source_config)
+        )
+        self.assertSetEqual(
+            index.import_graph.imports_of(real.joinpath("f1.jsonnet")),
+            {real.joinpath("f2.libsonnet")},
         )

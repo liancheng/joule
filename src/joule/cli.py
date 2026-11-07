@@ -54,7 +54,7 @@ def benchmark(
     ] = None,
 ):
     """Benchmark discovering Jsonnet files and building the import graph."""
-    root = root.absolute()
+    root = root.resolve()
 
     config = SourcesConfig(
         jpaths=[root],

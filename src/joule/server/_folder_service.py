@@ -21,7 +21,7 @@ class FolderService:
     def __init__(self, folder: L.WorkspaceFolder, config: Config):
         self.folder = folder
         self.config = config
-        self.root = Path.from_uri(folder.uri).absolute()
+        self.root = Path.from_uri(folder.uri).resolve()
         self.index = None
         self._pending_events = []
 
