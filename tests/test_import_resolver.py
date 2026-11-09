@@ -147,23 +147,21 @@ class TestImportResolver(FakeWorkspaceTestCase):
                 importee="missing.libsonnet",
             )
 
-    def test_symlinks(self):
+    def test_symlinked_file(self):
         self.provision(
-            self.file("real/lib.libsonnet"),
-            self.file("real/sub/main.jsonnet"),
-            self.file("lib.libsonnet"),
-            self.symlink("link", target="real/sub"),
+            self.file("d1/d2/f1.jsonent"),
+            self.file("d1/f2.libsonnet"),
+            self.file("f2.libsonnet"),
+            self.symlink("d3", "d1/d2"),
         )
 
         self.assertResolved(
-            importer="link/main.jsonnet",
-            importee="../lib.libsonnet",
-            # Check importer parent directory:
-            #   => {root}/link/../lib.libsonnet
-            #   => {root}/lib.libsonnet
-            resolved="lib.libsonnet",
+            importer="d3/f1.jsonent",
+            importee="../f2.libsonnet",
+            resolved="f2.libsonnet",
         )
 
+    def test_symlinks(self):
         self.provision(
             self.file("a/main.jsonnet"),
             self.dir("elsewhere/sub"),
