@@ -1,4 +1,5 @@
 import asyncio as A
+from functools import cached_property
 from pathlib import Path
 
 from lsprotocol import types as L
@@ -12,7 +13,6 @@ from joule.workspace import FolderIndex, analyze_document
 class FolderService:
     folder: L.WorkspaceFolder
     config: Config
-    root: Path
     index: FolderIndex | None
 
     # File events that arrive before the index exists.
@@ -21,9 +21,21 @@ class FolderService:
     def __init__(self, folder: L.WorkspaceFolder, config: Config):
         self.folder = folder
         self.config = config
-        self.root = Path.from_uri(folder.uri).resolve()
         self.index = None
         self._pending_events = []
+
+    @cached_property
+    def opened_root(self) -> Path:
+        """The unresolved absolute root path editors sent for this workspace folder,
+
+        Symlinks are not resolved, so that Joule works with symlinked workspace folders.
+        """
+        return Path.from_uri(self.folder.uri).absolute()
+
+    @cached_property
+    def root(self) -> Path:
+        """The resolved absolute root path of this workspace folder."""
+        return self.opened_root.resolve()
 
     async def start(self) -> None:
         build = ImportGraph.build_in_parallel
@@ -43,6 +55,14 @@ class FolderService:
                 self._pending_events.append(event)
             case index:
                 path = Path.from_uri(event.uri)
+
+                if (
+                    path.is_relative_to(self.opened_root)
+                    and self.opened_root != self.root
+                ):
+                    # Converts symlinked paths to their real paths, since source
+                    # discovery and import resolution do not follow symplinks.
+                    path = self.root.joinpath(path.relative_to(self.opened_root))
 
                 match event.type:
                     case L.FileChangeType.Created:

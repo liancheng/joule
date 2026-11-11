@@ -42,6 +42,7 @@ class FakeDocumentTestCase(TreeTestCase):
 
 
 class FakeWorkspaceTestCase(TreeTestCase):
+    sandbox_root: Path
     root: Path
     source_config: SourcesConfig
 
@@ -49,7 +50,8 @@ class FakeWorkspaceTestCase(TreeTestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
+        self.sandbox_root = Path(tmp.name).resolve()
+        self.root = self.sandbox_root
         self.source_config = SourcesConfig()
         self.addTypeEqualityFunc(ImportGraph, self.assertImportGraphEqual)
 
@@ -127,6 +129,16 @@ class FakeWorkspaceTestCase(TreeTestCase):
     def jpaths(self, *entries: str):
         with self.update_source_config(jpaths=list(entries)):
             yield
+
+    @contextmanager
+    def workspace_root(self, root: Path | str):
+        before = self.root
+        self.root = self.root.joinpath(root)
+
+        try:
+            yield
+        finally:
+            self.root = before
 
     def index_workspace(self, *entries: FsEntry) -> FolderIndex:
         self.provision(*entries)

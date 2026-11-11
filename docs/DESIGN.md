@@ -98,6 +98,26 @@ Import resolution follows the file importer of Jsonnet. Thus the graph contains 
 
 Joule joins and normalizes paths lexically. It collapses `.` and `..` as text, and it does not follow symlinks. Both dictionaries use the resolved path as the key.
 
+#### Design decision: Does Joule resolve `..` in importees through the OS?
+
+1. Remove `..` as text. Join the paths, then collapse `.` and `..` without file system calls.
+   - **Pros:**
+     - The result does not depend on the symlinks on the disk. This fits the symlink-free discovery in [Import graph construction](#import-graph-construction).
+     - go-jsonnet, sjsonnet, and Tanka (pinned to go-jsonnet 0.22.0) behave this way.
+   - **Cons:**
+     - An import through a symlinked directory resolves to a different file than in the C++ jsonnet and jrsonnet, which resolve `..` through the OS and follow symlinks.
+2. Resolve `..` through the OS.
+   - **Pros:**
+     - It matches the C++ jsonnet and jrsonnet. An import through a symlinked directory finds the file behind the symlink.
+   - **Cons:**
+     - The result depends on the symlinks on the disk. A source under a symlinked directory never gets updates, because [discovery does not follow symlinks](#import-graph-construction).
+
+Joule takes option 1. Joule follows go-jsonnet, and Tanka uses go-jsonnet. The lexical `..` also keeps the import graph consistent with the symlink-free discovery.
+
+#### Design decision: How does Joule treat a symlinked workspace root?
+
+Editors send the folder URI as the user opened it, without resolving symlinks. A watcher on that folder reports event paths through the symlink. The import graph keys paths under the resolved root. Thus `FolderService` keeps the folder path as opened next to the resolved root, and rewrites the event paths that go through the folder as opened. See `FolderService.on_file_event`.
+
 The search path is important in practice:
 
 - In large monorepos, most imports are relative to the root of the repository. Thus the repository root must be on the jpath.

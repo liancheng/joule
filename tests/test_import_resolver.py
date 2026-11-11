@@ -10,13 +10,13 @@ class TestImportResolver(FakeWorkspaceTestCase):
         self,
         *,
         importer: str | Path,
-        importee: str | Path,
+        importee: str,
         resolved: str | Path | None,
     ):
         __tracebackhide__ = True
         resolver = ImportResolver(self.root, self.source_config.jpaths)
         self.assertEqual(
-            resolver.resolve(Path(importer), str(importee)),
+            resolver.resolve(Path(importer), importee),
             optional(self.root.joinpath(path) for path in maybe(resolved)),
         )
 
@@ -51,6 +51,52 @@ class TestImportResolver(FakeWorkspaceTestCase):
             importer="a/main.jsonnet",
             importee="../b/./lib.libsonnet",
             resolved="b/lib.libsonnet",
+        )
+
+    def test_dots_escape_subdir(self):
+        self.provision(
+            self.file("a/b/main.jsonnet"),
+            self.file("x.libsonnet"),
+        )
+
+        self.assertResolved(
+            importer="a/b/main.jsonnet",
+            importee="../../x.libsonnet",
+            resolved="x.libsonnet",
+        )
+
+    def test_dots_above_workspace_root(self):
+        self.provision(f1 := self.file("f1.libsonnet"))
+
+        with self.workspace_root("d1"):
+            self.provision(self.file("d2/f2.jsonnet"))
+
+            self.assertResolved(
+                importer="d2/f2.jsonnet",
+                importee="../../f1.libsonnet",
+                resolved=f1.path.resolve(),
+            )
+
+    def test_dots_above_workspace_root_unresolved(self):
+        self.provision(self.file("a/main.jsonnet"))
+
+        self.assertNotResolved(
+            importer="a/main.jsonnet",
+            importee="../../x.libsonnet",
+        )
+
+    def test_trailing_slash_in_importee(self):
+        # go-jsonnet removes the trailing `/` when it joins the paths. The C++
+        # jsonnet rejects the import as a directory.
+        self.provision(
+            self.file("main.jsonnet"),
+            self.file("lib.libsonnet"),
+        )
+
+        self.assertResolved(
+            importer="main.jsonnet",
+            importee="lib.libsonnet/",
+            resolved="lib.libsonnet",
         )
 
     def test_same_dir_over_jpaths(self):
@@ -138,53 +184,63 @@ class TestImportResolver(FakeWorkspaceTestCase):
 
     def test_unresolved(self):
         self.provision(
-            self.file("a/main.jsonnet"),
+            self.file("d/f.jsonnet"),
         )
 
         with self.jpaths("."):
             self.assertNotResolved(
-                importer="a/main.jsonnet",
+                importer="d/f.jsonnet",
                 importee="missing.libsonnet",
             )
 
+    # Joule removes `..` as text, like go-jsonnet. The C++ jsonnet and jrsonnet
+    # resolve `..` through the OS, and follow symlinks. Thus these tests expect the
+    # results of go-jsonnet, not the results of the other two.
+
     def test_symlinked_file(self):
         self.provision(
-            self.file("d1/d2/f1.jsonent"),
+            self.file("d1/d2/f1.jsonnet"),
             self.file("d1/f2.libsonnet"),
             self.file("f2.libsonnet"),
             self.symlink("d3", "d1/d2"),
         )
 
         self.assertResolved(
-            importer="d3/f1.jsonent",
+            importer="d3/f1.jsonnet",
             importee="../f2.libsonnet",
+            # Check importer directory:
+            #   => {root}/d3/../f2.libsonnet
+            #   => {root}/f2.libsonnet
             resolved="f2.libsonnet",
         )
 
-    def test_symlinks(self):
+    def test_symlinked_dir_in_jpath(self):
         self.provision(
-            self.file("a/main.jsonnet"),
-            self.dir("elsewhere/sub"),
-            self.file("elsewhere/x.libsonnet"),
-            self.file("j1/x.libsonnet"),
+            self.file("d1/f1.jsonnet"),
+            self.dir("d2/d3"),
+            self.file("d2/f2.libsonnet"),
+            self.file("j1/f2.libsonnet"),
             self.dir("j2"),
-            self.symlink("j2/link", target="elsewhere/sub"),
+            self.symlink("j2/link", "d2/d3"),
         )
 
         with self.jpaths("j1", "j2"):
             self.assertResolved(
-                importer="a/main.jsonnet",
-                importee="link/../x.libsonnet",
-                # Check importer parent directory:
-                #   => {root}/a/link/../x.libsonnet
-                #   => {root}/a/x.libsonnet (Normalize)
+                importer="d1/f1.jsonnet",
+                importee="link/../f2.libsonnet",
+                # Check importer directory:
+                #   => {root}/d1/link/../f2.libsonnet
+                #   => {root}/d1/f2.libsonnet
                 #   => Not found
                 #
                 # Check jpath "j2":
-                #   => {root}/j2/x.libsonnet
+                #   => {root}/j2/link/../f2.libsonnet
+                #   => {root}/j2/f2.libsonnet
                 #   => Not found
                 #
                 # Check jpath "j1":
-                #   => {root}/j1/x.libsonnet
-                resolved="j1/x.libsonnet",
+                #   => {root}/j1/link/../f2.libsonnet
+                #   => {root}/j1/f2.libsonnet
+                #   => Found
+                resolved="j1/f2.libsonnet",
             )

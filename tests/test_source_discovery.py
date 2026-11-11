@@ -183,29 +183,43 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
     def test_service_resolves_symlinked_root(self):
         self.provision(
             self.file("real/f1.jsonnet", 'import "f2.libsonnet"'),
+            self.file("real/f3.libsonnet", "{}"),
             self.symlink("link", "real"),
         )
 
         real = self.root.joinpath("real")
-        folder = L.WorkspaceFolder(self.root.joinpath("link").as_uri(), "workspace")
-        service = FolderService(folder, Config(sources=self.source_config))
-        A.run(service.start())
+        link = self.root.joinpath("link")
 
-        # Editors report the real paths of files.
-        self.provision(self.file("real/f2.libsonnet", "{}"))
-        service.on_file_event(
-            L.FileEvent(
-                real.joinpath("f2.libsonnet").as_uri(),
-                L.FileChangeType.Created,
-            )
-        )
+        # A watcher on the symlinked folder reports event paths through the
+        # symlink. The folder URI keeps the symlink too. Editors can also report
+        # the real paths. Each way must update the index.
+        for folder_uri, event_path in [
+            (link.as_uri(), link.joinpath("f2.libsonnet")),
+            (real.as_uri(), real.joinpath("f2.libsonnet")),
+        ]:
+            with self.subTest(folder_uri=folder_uri):
+                folder = L.WorkspaceFolder(folder_uri, "workspace")
+                service = FolderService(folder, Config(sources=self.source_config))
+                A.run(service.start())
 
-        index = service.index
-        assert index is not None
-        self.assertEqual(
-            index.import_graph, ImportGraph.build(real, self.source_config)
-        )
-        self.assertSetEqual(
-            index.import_graph.imports_of(real.joinpath("f1.jsonnet")),
-            {real.joinpath("f2.libsonnet")},
-        )
+                self.provision(self.file("real/f2.libsonnet", "{}"))
+                service.on_file_event(
+                    L.FileEvent(event_path.as_uri(), L.FileChangeType.Created)
+                )
+
+                # A change through the symlink must reach the index. The index
+                # only accepts real paths.
+                self.provision(self.file("real/f2.libsonnet", 'import "f3.libsonnet"'))
+                service.on_file_event(
+                    L.FileEvent(event_path.as_uri(), L.FileChangeType.Changed)
+                )
+
+                index = service.index
+                assert index is not None
+                self.assertEqual(
+                    index.import_graph, ImportGraph.build(real, self.source_config)
+                )
+                self.assertSetEqual(
+                    index.import_graph.imports_of(real.joinpath("f2.libsonnet")),
+                    {real.joinpath("f3.libsonnet")},
+                )

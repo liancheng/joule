@@ -10,7 +10,7 @@ from joule.features import (
     FoldingRangeProvider,
     ReferencesProvider,
 )
-from joule.maybe import maybe, optional
+from joule.maybe import maybe
 from joule.syntax import trees as T
 from joule.workspace import analyze_document
 
@@ -25,11 +25,14 @@ class JouleLanguageServer(LanguageServer):
         self.services = {}
 
     def find_service(self, uri: str) -> FolderService | None:
-        return optional(
-            service
-            for folder_uri, service in sorted(self.services.items(), reverse=True)
-            if Path.from_uri(uri).is_relative_to(Path.from_uri(folder_uri))
-        )
+        matches = {
+            root: service
+            for service in self.services.values()
+            for root in {service.root, service.opened_root}
+            if Path.from_uri(uri).is_relative_to(root)
+        }
+
+        return matches.get(max(matches, default=None))
 
     def analyze_document(self, uri: str) -> T.Document | None:
         match self.find_service(uri):
