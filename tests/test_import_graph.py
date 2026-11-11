@@ -1,31 +1,9 @@
 from textwrap import dedent
 
-from joule.workspace import FolderIndex
 from tests import FakeWorkspaceTestCase
-from tests.dsl import FileEntry
 
 
 class TestImportGraph(FakeWorkspaceTestCase):
-    def assertImports(
-        self,
-        index: FolderIndex,
-        *,
-        importer: FileEntry,
-        importees: list[FileEntry],
-    ):
-        __tracebackhide__ = True
-
-        g = index.import_graph
-
-        self.assertSetEqual(
-            g.imports_of(importer.path),
-            {importee.path for importee in importees},
-        )
-
-        for importee in importees:
-            self.assertIn(importer.path, g.importers_of(importee.path))
-            self.assertIn(importee.path, g.imports_of(importer.path))
-
     def test_simple_import(self):
         with self.jpaths("."):
             self.assertImports(
@@ -181,6 +159,20 @@ class TestImportGraph(FakeWorkspaceTestCase):
         index.on_file_changed(f1.path)
 
         self.assertImports(index, importer=f1, importees=[])
+        self.assertImportGraphInSync(index.import_graph)
+
+    def test_file_created_already_indexed(self):
+        index = self.index_workspace(
+            f1 := self.file("f1.jsonnet", 'import "f2.libsonnet"'),
+            self.file("f2.libsonnet", "1"),
+            f3 := self.file("f3.libsonnet", "2"),
+        )
+
+        # On macOS, editors can report a change as a creation.
+        self.provision(self.file("f1.jsonnet", 'import "f3.libsonnet"'))
+        index.on_file_created(f1.path)
+
+        self.assertImports(index, importer=f1, importees=[f3])
         self.assertImportGraphInSync(index.import_graph)
 
     def test_file_created_resolves_import(self):

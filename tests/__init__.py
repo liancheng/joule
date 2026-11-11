@@ -71,6 +71,26 @@ class FakeWorkspaceTestCase(TreeTestCase):
         __tracebackhide__ = True
         self.assertEqual(graph, self.build_import_graph())
 
+    def assertImports(
+        self,
+        index: FolderIndex,
+        *,
+        importer: FileEntry,
+        importees: list[FileEntry],
+    ):
+        __tracebackhide__ = True
+
+        g = index.import_graph
+
+        self.assertSetEqual(
+            g.imports_of(importer.path),
+            {importee.path for importee in importees},
+        )
+
+        for importee in importees:
+            self.assertIn(importer.path, g.importers_of(importee.path))
+            self.assertIn(importee.path, g.imports_of(importer.path))
+
     def build_import_graph(self) -> ImportGraph:
         return ImportGraph.build(self.root, self.source_config)
 
