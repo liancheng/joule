@@ -20,7 +20,6 @@ from joule.syntax import trees as T
 __all__ = [
     "ImportGraph",
     "ImportResolver",
-    "is_source",
 ]
 
 
@@ -61,30 +60,17 @@ def exclusion_matcher(root: Path, patterns: tuple[str, ...]) -> Callable[[str], 
     return parse_gitignore_str("\n".join(patterns), root)
 
 
-def is_source(config: SourcesConfig, root: Path, path: Path) -> bool:
-    excluded = exclusion_matcher(root, tuple(config.exclude))
-    return (
-        path.is_relative_to(root)
-        and path.is_file()
-        # Source discovery does not follow symlinks.
-        and path.resolve() == path
-        and not excluded(path.as_posix())
-        # The `--extension` option of `fd` is case-insensitive.
-        and any(path.name.lower().endswith(f".{e.lower()}") for e in config.extensions)
-    )
-
-
 class ImportResolver:
-    root: Path
-    jpaths: list[Path]
+    _root: Path
+    _jpaths: list[Path]
 
     _is_file_cache: dict[str, bool]
     _same_dir_cache: dict[tuple[str, str], str | None]
     _via_jpaths_cache: dict[str, str | None]
 
     def __init__(self, root: Path, jpaths: list[Path]):
-        self.root = root
-        self.jpaths = jpaths
+        self._root = root
+        self._jpaths = jpaths
 
         self._is_file_cache = {}
         self._same_dir_cache = {}
@@ -105,7 +91,7 @@ class ImportResolver:
 
     def _try_same_dir(self, importer: Path, importee: str) -> str | None:
         """Looks for the importee under the same directory the importer belongs to."""
-        importer_dir = P.dirname(P.join(self.root, importer))
+        importer_dir = P.dirname(P.join(self._root, importer))
 
         try:
             return self._same_dir_cache[(importer_dir, importee)]
@@ -130,8 +116,8 @@ class ImportResolver:
         except KeyError:
             result = optional(
                 P.abspath(path)
-                for jpath in reversed(self.jpaths)
-                if self._is_file(path := P.join(self.root, jpath, importee))
+                for jpath in reversed(self._jpaths)
+                if self._is_file(path := P.join(self._root, jpath, importee))
             )
             self._via_jpaths_cache[importee] = result
             return result
@@ -228,7 +214,7 @@ class ImportGraph:
         self.on_file_changed(path)
 
     def on_file_changed(self, path: Path):
-        if is_source(self._config, self._root, path):
+        if self.is_source(path):
             resolver = ImportResolver(self._root, self._config.jpaths)
             importees = collect_importees(path, resolver)
             self._sync_imports(path, importees)
@@ -305,6 +291,21 @@ class ImportGraph:
             graph._sync_imports(importer, importees)
 
         return graph
+
+    def is_source(self, path: Path) -> bool:
+        excluded = exclusion_matcher(self._root, tuple(self._config.exclude))
+        return (
+            path.is_relative_to(self._root)
+            and path.is_file()
+            # Source discovery does not follow symlinks.
+            and path.resolve() == path
+            and not excluded(path.as_posix())
+            # The `--extension` option of `fd` is case-insensitive.
+            and any(
+                path.name.lower().endswith(f".{e.lower()}")
+                for e in self._config.extensions
+            )
+        )
 
     def _sync_imports(self, importer: Path, importees: Importees):
         # Removes a source file from the import graph.

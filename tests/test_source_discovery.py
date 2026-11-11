@@ -3,15 +3,16 @@ from pathlib import Path
 
 import lsprotocol.types as L
 
-from joule.analysis.imports import ImportGraph, is_source
+from joule.analysis.imports import ImportGraph
 from joule.analysis.sources import discover_sources
 from joule.config import Config
 from joule.server import FolderService
+from joule.workspace import FolderIndex
 from tests import FakeWorkspaceTestCase
 
 
 class TestSourceDiscovery(FakeWorkspaceTestCase):
-    def assertSourcesDiscovered(self, *expected: str):
+    def assertSourcesDiscovered(self, index: FolderIndex, *expected: str):
         __tracebackhide__ = True
 
         files = [
@@ -23,7 +24,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         obtained = {
             path.relative_to(self.root)
             for path in files
-            if is_source(self.source_config, self.root, path)
+            if index.import_graph.is_source(path)
         }
 
         discovered = {
@@ -35,55 +36,57 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSetEqual(obtained, discovered)
 
     def test_case_insensitive(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("F1.Jsonnet"),
             self.file("f2.JSONNET"),
             self.file("F3.jsonnet"),
         )
 
         self.assertSourcesDiscovered(
+            index,
             "F1.Jsonnet",
             "f2.JSONNET",
             "F3.jsonnet",
         )
 
     def test_extension_with_dot(self):
-        self.provision(self.file("f.jsonnet.TEMPLATE"))
-        self.assertSourcesDiscovered("f.jsonnet.TEMPLATE")
+        index = self.index_workspace(self.file("f.jsonnet.TEMPLATE"))
+        self.assertSourcesDiscovered(index, "f.jsonnet.TEMPLATE")
 
     def test_data_files(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("f1.jsonnet"),
             self.file("f2.json"),
         )
 
-        self.assertSourcesDiscovered("f1.jsonnet")
+        self.assertSourcesDiscovered(index, "f1.jsonnet")
 
     def test_nested_excluded_folders(self):
-        self.provision(
-            self.file("f.jsonnet"),
-            self.file("excluded/f.jsonnet"),
-            self.file("d/f.jsonnet"),
-            self.file("d/excluded/f.jsonnet"),
-        )
-
         with self.exclude("excluded/"):
+            index = self.index_workspace(
+                self.file("f.jsonnet"),
+                self.file("excluded/f.jsonnet"),
+                self.file("d/f.jsonnet"),
+                self.file("d/excluded/f.jsonnet"),
+            )
+
             self.assertSourcesDiscovered(
-                ("f.jsonnet"),
-                ("d/f.jsonnet"),
+                index,
+                "f.jsonnet",
+                "d/f.jsonnet",
             )
 
     def test_hidden_files(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("f.jsonnet"),
             self.file(".f.jsonnet"),
             self.file(".hidden"),
         )
 
-        self.assertSourcesDiscovered("f.jsonnet")
+        self.assertSourcesDiscovered(index, "f.jsonnet")
 
     def test_nested_hidden_folders(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("f.jsonnet"),
             self.file(".hidden/f.jsonnet"),
             self.file("d/f.jsonnet"),
@@ -91,28 +94,29 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         )
 
         self.assertSourcesDiscovered(
-            ("f.jsonnet"),
-            ("d/f.jsonnet"),
+            index,
+            "f.jsonnet",
+            "d/f.jsonnet",
         )
 
     def test_no_symlinked_files(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("d/f.jsonnet"),
             self.symlink("link.jsonnet", "d/f.jsonnet"),
         )
 
-        self.assertSourcesDiscovered("d/f.jsonnet")
+        self.assertSourcesDiscovered(index, "d/f.jsonnet")
 
     def test_no_symlinked_dirs(self):
-        self.provision(
+        index = self.index_workspace(
             self.file("d1/f.jsonnet"),
             self.symlink("d2/d3", "d1"),
         )
 
-        self.assertSourcesDiscovered("d1/f.jsonnet")
+        self.assertSourcesDiscovered(index, "d1/f.jsonnet")
 
     def test_file_events(self):
-        index = self.index_workspace(
+        self.provision(
             self.file(
                 "f1.jsonnet",
                 """\
@@ -123,20 +127,20 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             ),
         )
 
-        self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
+        index = self.index_workspace(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
         index.on_file_created(self.root.joinpath("f2.libsonnet"))
         self.assertImportGraphInSync(index.import_graph)
 
-        self.provision(self.file("data.json", "{}"))
+        index = self.index_workspace(self.file("data.json", "{}"))
         index.on_file_created(self.root.joinpath("data.json"))
         self.assertImportGraphInSync(index.import_graph)
 
-        self.provision(self.file("f2.libsonnet", "{}"))
+        index = self.index_workspace(self.file("f2.libsonnet", "{}"))
         index.on_file_changed(self.root.joinpath("f2.libsonnet"))
         self.assertImportGraphInSync(index.import_graph)
 
         # On macOS, editors can report a change as a creation.
-        self.provision(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
+        index = self.index_workspace(self.file("f2.libsonnet", 'import "f1.jsonnet"'))
         index.on_file_created(self.root.joinpath("f2.libsonnet"))
         self.assertImportGraphInSync(index.import_graph)
 
@@ -172,8 +176,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertFalse(service.ready)
         A.run(service.start())
 
-        index = service.index
-        assert index is not None
+        index = self.assertIsDefined(service.index)
         self.assertImportGraphInSync(index.import_graph)
         self.assertSetEqual(
             index.import_graph.imports_of(self.root.joinpath("f3.libsonnet")),
