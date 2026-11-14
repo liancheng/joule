@@ -11,7 +11,6 @@ from joule.features import (
     ReferencesProvider,
 )
 from joule.maybe import maybe
-from joule.syntax import trees as T
 from joule.workspace import analyze_document
 
 from ._folder_service import FolderService
@@ -33,13 +32,6 @@ class JouleLanguageServer(LanguageServer):
         }
 
         return matches.get(max(matches, default=None))
-
-    def analyze_document(self, uri: str) -> T.Document | None:
-        match self.find_service(uri):
-            case None:
-                return analyze_document(uri)
-            case service:
-                return service.analyze_document(uri)
 
 
 server = JouleLanguageServer("joule", "v0.0.1")
@@ -113,9 +105,10 @@ def did_change_watched_files(
 @server.feature(L.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParams):
     uri = params.text_document.uri
+    doc = ls.workspace.get_text_document(uri)
     return [
         symbol
-        for doc in maybe(ls.analyze_document(uri))
+        for doc in maybe(analyze_document(doc.uri, doc.source))
         for symbol in DocumentSymbolProvider(doc).serve()
     ]
 
@@ -123,9 +116,10 @@ async def document_symbol(ls: JouleLanguageServer, params: L.DocumentSymbolParam
 @server.feature(L.TEXT_DOCUMENT_DEFINITION)
 async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     uri = params.text_document.uri
+    doc = ls.workspace.get_text_document(uri)
     return [
         location
-        for doc in maybe(ls.analyze_document(uri))
+        for doc in maybe(analyze_document(doc.uri, doc.source))
         for location in DefinitionProvider(uri, doc).serve(params.position)
     ]
 
@@ -133,9 +127,10 @@ async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
 @server.feature(L.TEXT_DOCUMENT_REFERENCES)
 async def references(ls: JouleLanguageServer, params: L.ReferenceParams):
     uri = params.text_document.uri
+    doc = ls.workspace.get_text_document(uri)
     return [
         location
-        for doc in maybe(ls.analyze_document(uri))
+        for doc in maybe(analyze_document(doc.uri, doc.source))
         for location in ReferencesProvider(uri, doc).serve(params.position)
     ]
 
@@ -143,8 +138,9 @@ async def references(ls: JouleLanguageServer, params: L.ReferenceParams):
 @server.feature(L.TEXT_DOCUMENT_FOLDING_RANGE)
 async def folding_range(ls: JouleLanguageServer, params: L.FoldingRangeParams):
     uri = params.text_document.uri
+    doc = ls.workspace.get_text_document(uri)
     return [
         location
-        for doc in maybe(ls.analyze_document(uri))
+        for doc in maybe(analyze_document(doc.uri, doc.source))
         for location in FoldingRangeProvider().serve(doc)
     ]

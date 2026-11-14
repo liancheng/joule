@@ -39,7 +39,7 @@ def parse(source: str) -> tuple[str, dict[int, Span]]:
     for line in source.splitlines():
         if line.startswith(SOURCE_LEADER):
             line_no += 1
-            source_lines.append(line[4:])
+            source_lines.append(line[len(SOURCE_LEADER) :])
 
         elif line.startswith(MARK_LEADER):
             span_marks: list[SpanMark] = SPAN_MARKS.parse(line[len(MARK_LEADER) :])

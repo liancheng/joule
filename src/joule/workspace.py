@@ -5,10 +5,10 @@ from joule.analysis.scopes import analyze
 from joule.syntax import trees as T
 
 
-def analyze_document(uri: str) -> T.Document | None:
+def analyze_document(uri: str, source: str | None = None) -> T.Document | None:
     try:
-        source = Path.from_uri(uri).read_bytes()
-        doc = T.Document.from_cst(T.parse(source).root_node)
+        raw = Path.from_uri(uri).read_bytes() if source is None else source.encode()
+        doc = T.Document.from_cst(T.parse(raw).root_node)
     except OSError, T.MalformedError:
         return None
 
@@ -30,7 +30,3 @@ class FolderIndex:
 
     def on_file_deleted(self, path: Path):
         self.import_graph.on_file_deleted(path)
-
-    # TODO: Caches analyzed AST trees and invalidates on updates.
-    def analyze_document(self, uri: str) -> T.Document | None:
-        return analyze_document(uri)

@@ -6,8 +6,7 @@ from lsprotocol import types as L
 
 from joule.analysis.imports import ImportGraph
 from joule.config import Config
-from joule.syntax import trees as T
-from joule.workspace import FolderIndex, analyze_document
+from joule.workspace import FolderIndex
 
 
 class FolderService:
@@ -75,12 +74,3 @@ class FolderService:
     @property
     def ready(self) -> bool:
         return self.index is not None
-
-    def analyze_document(self, uri: str) -> T.Document | None:
-        # Single-document features do not need the import graph. Thus they do not
-        # wait for the discovery and the build.
-        return (
-            analyze_document(uri)
-            if self.index is None
-            else self.index.analyze_document(uri)
-        )

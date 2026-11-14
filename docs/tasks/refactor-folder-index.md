@@ -87,7 +87,7 @@ Each step is one commit. After each step, all tests must pass. Verify each step 
 - [x] Keep the data for incremental updates
 - [x] Update the import graph incrementally
 - [ ] Update the index on file events
-- [ ] Cache the resolved documents
+- [ ] Cache the resolved documents (deferred)
 
 ### Completed steps
 
@@ -149,6 +149,8 @@ Commit: ``feat: Update `ImportGraph` incrementally on file changes``
 Commit: ``feat: Update `FolderIndex` on file events``
 
 ### Step: Cache the resolved documents
+
+Deferred. Do this step only if a measurement shows that the parse and the scope resolution of a document are a bottleneck.
 
 - Add an LRU cache of resolved documents to `FolderIndex`.
 - Use the `(mtime_ns, size)` of the file as the cache key. For an open buffer, use the LSP version of the document. Then the cache entry of one source stays correct without events. The events are necessary only for invalidation across sources.
