@@ -6,3 +6,4 @@ JOULE_ROOT=$(
 )
 sh "$JOULE_ROOT/vendor/tree-sitter-jsonnet/sign-off.sh"
 sh "$JOULE_ROOT/test.sh"
+sh "$JOULE_ROOT/itest.sh"
