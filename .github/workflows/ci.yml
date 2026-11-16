@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv tool run ruff check src/ tests/
+      - run: uv tool run ruff format --check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - uses: astral-sh/setup-uv@v7
+      # Source discovery runs `fd`. Ubuntu installs it as `fdfind`.
+      - run: sudo apt-get install --yes fd-find
+      - run: uv sync --frozen
+      - run: ./test.sh
+
+  itest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - uses: astral-sh/setup-uv@v7
+      - run: sudo apt-get install --yes fd-find
+      # The itests use `vim.lsp.config`, which needs Neovim 0.11 or later.
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      # Sync before the tests start Joule. Thus the first start does not install the
+      # packages while the test waits for Joule to attach.
+      - run: uv sync --frozen
+      - run: ./itest.sh
