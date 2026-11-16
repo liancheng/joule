@@ -43,4 +43,13 @@ jobs:
       # Sync before the tests start Joule. Thus the first start does not install the
       # packages while the test waits for Joule to attach.
       - run: uv sync --frozen
+      # The cache keeps the plugins and the Lua build of lazy.nvim. The key changes
+      # when the pinned versions change.
+      - uses: actions/cache@v4
+        with:
+          path: .tests
+          key: itest-${{ runner.os }}-${{ hashFiles('itests/lazy-lock.json', 'itests/minit.lua', 'vendor/lazy.nvim/**') }}
+      # Install the pinned versions only. Do not update them.
       - run: ./itest.sh
+        env:
+          LAZY_OFFLINE: "1"

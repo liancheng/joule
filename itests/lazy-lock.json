@@ -1,0 +1,5 @@
+{
+  "busted": { "branch": "master", "commit": "22f8089f461a563fb9553ab56f926c6805850833" },
+  "hererocks": { "branch": "master", "commit": "ec31d070ae0076415c0175a2006b29496494d37a" },
+  "lazy.nvim": { "branch": "main", "commit": "306a05526ada86a7b30af95c5cc81ffba93fef97" }
+}
