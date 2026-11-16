@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from collections.abc import Set as AbstractSet
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Self, override
+from typing import Protocol, Self, override
 
 import tree_sitter as ts
 from gitignore_parser import parse_gitignore_str
@@ -18,6 +18,7 @@ from joule.maybe import maybe, optional
 from joule.syntax import trees as T
 
 __all__ = [
+    "BuildObserver",
     "ImportGraph",
     "ImportResolver",
 ]
@@ -123,6 +124,17 @@ class ImportResolver:
             return result
 
 
+class BuildObserver(Protocol):
+    """Receives the progress of an `ImportGraph` build.
+
+    The build calls the observer from the thread that runs the build.
+    """
+
+    def on_discovery_done(self, sources: int) -> None: ...
+
+    def on_source_collected(self, done: int, total: int) -> None: ...
+
+
 type ImporteesCollector = Callable[[Path], Importees]
 
 type ImporteesMapper = Callable[
@@ -160,8 +172,14 @@ class ImportGraph:
         self._file_name_imported_by = defaultdict(set[Path])
 
     @classmethod
-    def build(cls, root: Path, config: SourcesConfig) -> Self:
-        return cls._build(root, config, map)
+    def build(
+        cls,
+        root: Path,
+        config: SourcesConfig,
+        *,
+        observer: BuildObserver | None = None,
+    ) -> Self:
+        return cls._build(root, config, map, observer)
 
     @classmethod
     def build_in_parallel(
@@ -170,12 +188,13 @@ class ImportGraph:
         config: SourcesConfig,
         *,
         batch_size: int = 256,
+        observer: BuildObserver | None = None,
     ) -> Self:
         parallelism = max(2, os.process_cpu_count() or 2)
 
         with ProcessPoolExecutor(max_workers=parallelism) as executor:
             mapper = functools.partial(executor.map, chunksize=batch_size)
-            return cls._build(root, config, mapper)
+            return cls._build(root, config, mapper, observer)
 
     def imports_of(self, path: Path) -> AbstractSet[Path]:
         return self._imports.get(path, frozenset())
@@ -281,14 +300,29 @@ class ImportGraph:
         )
 
     @classmethod
-    def _build(cls, root: Path, config: SourcesConfig, mapper: ImporteesMapper) -> Self:
+    def _build(
+        cls,
+        root: Path,
+        config: SourcesConfig,
+        mapper: ImporteesMapper,
+        observer: BuildObserver | None,
+    ) -> Self:
         graph = cls(root, config)
         sources = discover_sources(config, root)
+        total = len(sources)
         resolver = ImportResolver(root, config.jpaths)
         collect_fn = functools.partial(collect_importees, resolver=resolver)
 
-        for importer, importees in zip(sources, mapper(collect_fn, sources)):
+        if observer is not None:
+            observer.on_discovery_done(total)
+
+        results = zip(sources, mapper(collect_fn, sources))
+
+        for done, (importer, importees) in enumerate(results, start=1):
             graph._sync_imports(importer, importees)
+
+            if observer is not None:
+                observer.on_source_collected(done, total)
 
         return graph
 

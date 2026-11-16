@@ -1,6 +1,23 @@
 from textwrap import dedent
+from typing import override
 
+from joule.analysis.imports import BuildObserver, ImportGraph
 from tests import FakeWorkspaceTestCase
+
+
+class RecordingObserver(BuildObserver):
+    calls: list[tuple[str, int] | tuple[str, int, int]]
+
+    def __init__(self):
+        self.calls = []
+
+    @override
+    def on_discovery_done(self, sources: int):
+        self.calls.append(("on_discovery_done", sources))
+
+    @override
+    def on_source_collected(self, done: int, total: int):
+        self.calls.append(("on_source_collected", done, total))
 
 
 class TestImportGraph(FakeWorkspaceTestCase):
@@ -375,3 +392,25 @@ class TestImportGraph(FakeWorkspaceTestCase):
                 repr(index.import_graph),
                 f"ImportGraph(root={str(self.root)!r}, 1 edges)",
             )
+
+    def test_build_observer(self):
+        self.provision(
+            self.file("f1.jsonnet", 'import "f2.libsonnet"'),
+            self.file("f2.libsonnet", "1"),
+            self.file("lib/f3.libsonnet", "2"),
+            # Source discovery does not find `.json` files.
+            self.file("data.json", "{}"),
+        )
+
+        observer = RecordingObserver()
+        ImportGraph.build(self.root, self.source_config, observer=observer)
+
+        self.assertEqual(
+            observer.calls,
+            [
+                ("on_discovery_done", 3),
+                ("on_source_collected", 1, 3),
+                ("on_source_collected", 2, 3),
+                ("on_source_collected", 3, 3),
+            ],
+        )

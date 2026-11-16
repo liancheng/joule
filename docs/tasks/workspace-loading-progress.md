@@ -73,7 +73,7 @@ Each step is one commit. After each step, `./test.sh` and `./lint.sh` must pass.
 
 ### Progress
 
-- [ ] Add `BuildObserver` to the build of `ImportGraph`
+- [x] Add `BuildObserver` to the build of `ImportGraph`
 - [ ] Report the progress from `FolderService`
 - [ ] Measure the cost of the reports
 
