@@ -32,7 +32,9 @@ jobs:
         with:
           submodules: true
       - uses: astral-sh/setup-uv@v7
-      - run: sudo apt-get install --yes fd-find
+      # lazy.nvim builds Lua 5.1 with hererocks to install busted. The build of Lua
+      # needs the readline headers.
+      - run: sudo apt-get install --yes fd-find libreadline-dev
       # The itests use `vim.lsp.config`, which needs Neovim 0.11 or later.
       - uses: rhysd/action-setup-vim@v1
         with:
