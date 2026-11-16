@@ -135,4 +135,51 @@ describe("joule", function()
       },
     }, response.result)
   end)
+
+  it("reports the progress of the workspace load", function()
+    local client = open("main.jsonnet", { "{ a: 1 }" })
+    -- Neovim names the workspace folder with its root path.
+    local folder = workspace
+
+    -- Each entry is the `value` of a `$/progress` message, in the order that Neovim
+    -- received them.
+    local values = {}
+
+    local function count_ends()
+      local count = 0
+      for _, value in ipairs(values) do
+        if value.kind == "end" then
+          count = count + 1
+        end
+      end
+      return count
+    end
+
+    local received = vim.wait(10000, function()
+      while true do
+        local params = client.progress:pop()
+        if params == nil then
+          break
+        elseif type(params.value) == "table" then
+          table.insert(values, params.value)
+        end
+      end
+
+      return count_ends() == 2
+    end, 50)
+
+    assert(received, "Joule did not report the end of both progress tokens")
+    assert.are.same({
+      { kind = "begin", title = "Discovering Jsonnet sources: " .. folder },
+      { kind = "end", title = "Discovering Jsonnet sources: " .. folder },
+      { kind = "begin", title = "Building import graph: " .. folder, percentage = 0 },
+      {
+        kind = "report",
+        title = "Building import graph: " .. folder,
+        percentage = 100,
+        message = "1/1 files",
+      },
+      { kind = "end", title = "Building import graph: " .. folder },
+    }, values)
+  end)
 end)

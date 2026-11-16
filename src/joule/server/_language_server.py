@@ -55,9 +55,10 @@ async def load_config(ls: JouleLanguageServer) -> Config:
 async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
     config = await load_config(ls)
     folders: dict[str, L.WorkspaceFolder] = ls.workspace.folders
+    sender = ls.work_done_progress if supports_progress(ls) else None
 
     ls.services = {
-        uri: FolderService(folder, config) for uri, folder in folders.items()
+        uri: FolderService(folder, config, sender) for uri, folder in folders.items()
     }
 
     # Watch the files before the build starts. Thus the services can queue the
@@ -68,12 +69,17 @@ async def initialized(ls: JouleLanguageServer, _: L.InitializedParams):
         await service.start()
 
 
+def supports_progress(ls: LanguageServer) -> bool:
+    return (
+        _ := ls.client_capabilities.window
+    ) is not None and _.work_done_progress is True
+
+
 async def watch_files(ls: LanguageServer):
     supported = (
         (_ := ls.client_capabilities.workspace) is not None
         and (_ := _.did_change_watched_files) is not None
-        and (_ := _.dynamic_registration) is not None
-        and _
+        and _.dynamic_registration is True
     )
 
     if supported:

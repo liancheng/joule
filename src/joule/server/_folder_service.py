@@ -8,19 +8,30 @@ from joule.analysis.imports import ImportGraph
 from joule.config import Config
 from joule.workspace import FolderIndex
 
+from ._progress import FolderProgress, ProgressSender
+
 
 class FolderService:
     folder: L.WorkspaceFolder
     config: Config
     index: FolderIndex | None
 
+    # Sends the progress of the load. `None` if the client does not show progress.
+    _sender: ProgressSender | None
+
     # File events that arrive before the index exists.
     _pending_events: list[L.FileEvent]
 
-    def __init__(self, folder: L.WorkspaceFolder, config: Config):
+    def __init__(
+        self,
+        folder: L.WorkspaceFolder,
+        config: Config,
+        sender: ProgressSender | None = None,
+    ):
         self.folder = folder
         self.config = config
         self.index = None
+        self._sender = sender
         self._pending_events = []
 
     @cached_property
@@ -37,8 +48,20 @@ class FolderService:
         return self.opened_root.resolve()
 
     async def start(self) -> None:
-        build = ImportGraph.build_in_parallel
-        graph = await A.to_thread(build, self.root, self.config.sources)
+        progress = await self._start_progress()
+
+        try:
+            build = ImportGraph.build_in_parallel
+            graph = await A.to_thread(
+                build,
+                self.root,
+                self.config.sources,
+                observer=progress,
+            )
+        finally:
+            if progress is not None:
+                await progress.finish()
+
         self.index = FolderIndex(graph)
 
         # The build can already see some of these changes. The events are idempotent,
@@ -47,6 +70,14 @@ class FolderService:
             self.on_file_event(event)
 
         self._pending_events.clear()
+
+    async def _start_progress(self) -> FolderProgress | None:
+        if self._sender is None:
+            return None
+
+        progress = FolderProgress(A.get_running_loop(), self._sender, self.folder)
+        await progress.start()
+        return progress
 
     def on_file_event(self, event: L.FileEvent):
         match self.index:
