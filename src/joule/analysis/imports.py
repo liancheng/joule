@@ -225,7 +225,7 @@ class ImportGraph:
         # importer has a higher priority than a file in jpaths.
 
         importers = set(self._file_name_imported_by.get(P.basename(path), ()))
-        resolver = ImportResolver(self._root, self._config.jpaths)
+        resolver = self.resolver()
 
         for importer in importers:
             self._refresh(importer, resolver)
@@ -234,17 +234,20 @@ class ImportGraph:
 
     def on_file_changed(self, path: Path):
         if self.is_source(path):
-            resolver = ImportResolver(self._root, self._config.jpaths)
+            resolver = self.resolver()
             importees = collect_importees(path, resolver)
             self._sync_imports(path, importees)
 
     def on_file_deleted(self, path: Path):
         importers = self.importers_of(path) - {path}
-        resolver = ImportResolver(self._root, self._config.jpaths)
+        resolver = self.resolver()
         self._sync_imports(path, {})
 
         for importer in importers:
             self._refresh(importer, resolver)
+
+    def resolver(self) -> ImportResolver:
+        return ImportResolver(self._root, self._config.jpaths)
 
     @property
     def pretty(self) -> str:
@@ -310,7 +313,7 @@ class ImportGraph:
         graph = cls(root, config)
         sources = discover_sources(config, root)
         total = len(sources)
-        resolver = ImportResolver(root, config.jpaths)
+        resolver = graph.resolver()
         collect_fn = functools.partial(collect_importees, resolver=resolver)
 
         if observer is not None:

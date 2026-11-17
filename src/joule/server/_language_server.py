@@ -126,7 +126,8 @@ async def definition(ls: JouleLanguageServer, params: L.DefinitionParams):
     return [
         location
         for doc in maybe(analyze_document(doc.uri, doc.source))
-        for location in DefinitionProvider(uri, doc).serve(params.position)
+        for service in maybe(ls.find_service(uri))
+        for location in DefinitionProvider(service.index).serve(doc, params.position)
     ]
 
 

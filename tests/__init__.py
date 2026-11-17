@@ -69,7 +69,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
 
     def assertImportGraphInSync(self, graph: ImportGraph):
         __tracebackhide__ = True
-        self.assertEqual(graph, self.build_import_graph())
+        self.assertEqual(graph, self._build_import_graph())
 
     def assertImports(
         self,
@@ -91,7 +91,7 @@ class FakeWorkspaceTestCase(TreeTestCase):
             self.assertIn(importer.path, g.importers_of(importee.path))
             self.assertIn(importee.path, g.imports_of(importer.path))
 
-    def build_import_graph(self) -> ImportGraph:
+    def _build_import_graph(self) -> ImportGraph:
         return ImportGraph.build(self.root, self.source_config)
 
     def delete(self, *paths: str | Path):
@@ -160,6 +160,14 @@ class FakeWorkspaceTestCase(TreeTestCase):
         finally:
             self.root = before
 
-    def index_workspace(self, *entries: FsEntry) -> FolderIndex:
+    def fake_document(self, path: str, source: str) -> FakeDocument:
+        return FakeDocument(source, self.root.joinpath(path).as_uri())
+
+    def index_workspace(self, *entries: FsEntry | FakeDocument) -> FolderIndex:
+        entries = tuple(
+            entry.fs_entry if isinstance(entry, FakeDocument) else entry
+            for entry in entries
+        )
+
         self.provision(*entries)
-        return FolderIndex(self.build_import_graph())
+        return FolderIndex(self._build_import_graph())

@@ -5,20 +5,20 @@ import lsprotocol.types as L
 
 from joule.maybe import maybe
 from joule.syntax import trees as T
+from joule.workspace import FolderIndex
 
 
 class DefinitionProvider:
     uri: str
-    doc: T.Document
+    index: FolderIndex
 
-    def __init__(self, uri: str, doc: T.Document):
-        self.uri = uri
-        self.doc = doc
+    def __init__(self, index: FolderIndex):
+        self.index = index
 
-    def serve(self, pos: L.Position) -> list[L.Location]:
+    def serve(self, doc: T.Document, pos: L.Position) -> list[L.Location]:
         return [
             location
-            for node in maybe(self.doc.node_at(T.Point.from_lsp(pos)))
+            for node in maybe(doc.node_at(T.Point.from_lsp(pos)))
             for location in self.find_definition(node)
         ]
 
@@ -32,14 +32,21 @@ class DefinitionProvider:
                 return ()
 
     def find_var_definition(self, node: T.Id.VarRef) -> Iterable[L.Location]:
-        return (var.span.to_location(self.uri) for var in maybe(node.var))
+        return (
+            var.span.to_location(uri)
+            for var in maybe(node.var)
+            for document in maybe(var.document)
+            for uri in maybe(document.uri)
+        )
 
     def find_field_definition(self, node: T.Id.FieldRef) -> Iterable[L.Location]:
         return (
-            binding.id.span.to_location(self.uri)
+            binding.id.span.to_location(uri)
             for parent in maybe(node.parent)
             for scope in self.find_field_scopes(parent.to(T.FieldAccess).target)
             for binding in maybe(scope.get(node.name))
+            for document in maybe(binding.id.document)
+            for uri in maybe(document.uri)
         )
 
     def find_field_scopes(self, node: T.Tree) -> Iterable[T.FieldScope]:
