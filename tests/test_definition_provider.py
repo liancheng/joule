@@ -1,6 +1,7 @@
 import lsprotocol.types as L
 
 from joule.features import DefinitionProvider
+from joule.maybe import maybe
 from joule.syntax import trees as T
 from joule.workspace import FolderIndex
 from tests import FakeWorkspaceTestCase
@@ -38,7 +39,12 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
 
         for point in points:
             obtained = provider.serve(doc.document, point.to_position())
-            expected = [L.Location(doc.uri, f.span.to_range()) for f in fields]
+            expected = [
+                L.Location(uri, f.span.to_range())
+                for f in fields
+                for root in maybe(f.document)
+                for uri in maybe(root.uri)
+            ]
             self.assertCountEqual(obtained, expected)
 
     def test_local(self):
