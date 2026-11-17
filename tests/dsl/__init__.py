@@ -164,6 +164,7 @@ class FakeDocument(LineMap):
     def document(self) -> T.Document:
         doc = T.Tree.from_cst(self.cst.root_node).to(T.Document)
         analyze(doc)
+        doc.uri = self.uri
         return doc
 
     @cached_property

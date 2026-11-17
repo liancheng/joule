@@ -12,7 +12,8 @@ def analyze_document(uri: str, source: str | None = None) -> T.Document | None:
     except OSError, T.MalformedError:
         return None
 
-    analyze(doc)
+    doc = analyze(doc)
+    doc.uri = uri
     return doc
 
 

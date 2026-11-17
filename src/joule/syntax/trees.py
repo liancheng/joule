@@ -381,6 +381,13 @@ class Paren(Expr):
 class Document(Tree):
     body: Expr
 
+    uri: str | None = D.field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
     top_level_scope: VarScope | None = D.field(
         default=None,
         init=False,
