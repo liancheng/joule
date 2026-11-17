@@ -288,6 +288,15 @@ class Tree:
         return hash((type(self), *init_field_values))
 
     @property
+    def document(self) -> Document | None:
+        root: Tree = self
+
+        while not isinstance(root, Document) and root.parent is not None:
+            root = root.parent
+
+        return root if isinstance(root, Document) else None
+
+    @property
     def pretty(self) -> str:
         return str(PrettyTree(self))
 
