@@ -352,12 +352,12 @@ class Malformed(Expr):
 
 @D.dataclass(slots=True)
 class Paren(Expr):
-    expr: Expr
+    body: Expr
 
     @property
     @override
     def children(self) -> Iterable[Tree]:
-        yield self.expr
+        yield self.body
 
     @staticmethod
     def from_cst(node: ts.Node) -> Expr:

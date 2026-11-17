@@ -41,11 +41,8 @@ class TestDefinitionProvider(FakeDocumentTestCase):
             """
         )
 
-        x = t.var_at(1)
-        y = t.var_at(2)
-
-        self.assertVarDefined(t, x, t.at(3).end, t.at(4).end)
-        self.assertVarDefined(t, y, t.at(5).end)
+        self.assertVarDefined(t, t.var_at(1), t.at(3).end, t.at(4).end)
+        self.assertVarDefined(t, t.var_at(2), t.at(5).end)
 
     def test_field(self):
         t = self.fake_document(
@@ -55,8 +52,37 @@ class TestDefinitionProvider(FakeDocumentTestCase):
             """
         )
 
-        f = t.node_at(1).to(T.Id.Field)
-        self.assertFieldDefined(t, f, t.at(2).end)
+        self.assertFieldDefined(t, t.node_at(1).to(T.Id.Field), t.at(2).end)
+
+    def test_nested_field(self):
+        t = self.fake_document(
+            """\
+            :   local obj = { f1: { f2: 1 } }; obj.f1.f2
+            >                       ^^1               ^^2
+            """
+        )
+
+        self.assertFieldDefined(t, t.node_at(1).to(T.Id.Field), t.at(2).end)
+
+    def test_field_in_nested_local(self):
+        t = self.fake_document(
+            """\
+            :   local obj1 = local obj2 = { f: 1 }; obj2; obj1.f
+            >                               ^1                 ^2
+            """
+        )
+
+        self.assertFieldDefined(t, t.node_at(1).to(T.Id.Field), t.at(2).end)
+
+    def test_returned_field(self):
+        t = self.fake_document(
+            """\
+            :   local fn(p) = { f: p }; fn(1).f
+            >                   ^1            ^2
+            """
+        )
+
+        self.assertFieldDefined(t, t.node_at(1).to(T.Id.Field), t.at(2).end)
 
     def test_field_multi_defs(self):
         t = self.fake_document(

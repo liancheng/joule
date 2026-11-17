@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from itertools import chain
 
 import lsprotocol.types as L
 
@@ -36,17 +37,35 @@ class DefinitionProvider:
     def find_field_definition(self, node: T.Id.FieldRef) -> Iterable[L.Location]:
         return (
             binding.id.span.to_location(self.uri)
-            for scope in self.find_field_scope(node)
+            for parent in maybe(node.parent)
+            for scope in self.find_field_scopes(parent.to(T.FieldAccess).target)
             for binding in maybe(scope.get(node.name))
         )
 
-    def find_field_scope(self, node: T.Tree) -> Iterable[T.FieldScope]:
+    def find_field_scopes(self, node: T.Tree) -> Iterable[T.FieldScope]:
         match node:
+            case T.AssertedExpr() | T.Document() | T.Fn() | T.Paren() | T.Local():
+                return self.find_field_scopes(node.body)
+
+            case T.Call():
+                return self.find_field_scopes(node.fn)
+
+            case T.FieldAccess():
+                return (
+                    scope
+                    for parent_scope in self.find_field_scopes(node.target)
+                    for binding in maybe(parent_scope.get(node.field.name))
+                    for scope in self.find_field_scopes(binding.target)
+                )
+
             case T.Id.FieldRef():
                 return (
                     scope
                     for parent in maybe(node.parent)
-                    for scope in self.find_field_scope(parent)
+                    if (field_access := parent.to(T.FieldAccess)) is not None
+                    for parent_scope in self.find_field_scopes(field_access.target)
+                    for binding in maybe(parent_scope.get(node.name))
+                    for scope in self.find_field_scopes(binding.target)
                 )
 
             case T.Id.VarRef():
@@ -54,18 +73,15 @@ class DefinitionProvider:
                     scope
                     for var in maybe(node.var)
                     for binding in maybe(var.binding)
-                    for scope in self.find_field_scope(binding.target)
+                    for scope in self.find_field_scopes(binding.target)
                 )
 
             case T.If():
                 return (
                     scope
-                    for expr in (node.consequence, node.alternative)
-                    for scope in self.find_field_scope(expr)
+                    for expr in chain([node.consequence], maybe(node.alternative))
+                    for scope in self.find_field_scopes(expr)
                 )
-
-            case T.FieldAccess():
-                return self.find_field_scope(node.target)
 
             case T.Object():
                 return maybe(node.field_scope)

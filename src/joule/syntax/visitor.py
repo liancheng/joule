@@ -249,7 +249,7 @@ class Visitor:
         pass
 
     def visit_paren(self, t: T.Paren):
-        self.visit_expr(t.expr)
+        self.visit_expr(t.body)
 
     def visit_self(self, t: T.Self):
         pass
