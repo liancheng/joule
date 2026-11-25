@@ -9,9 +9,9 @@ class TestImportResolver(FakeWorkspaceTestCase):
     def assertResolved(
         self,
         *,
-        importer: str | Path,
+        importer: str,
         importee: str,
-        resolved: str | Path | None,
+        resolved: str | None,
     ):
         __tracebackhide__ = True
         resolver = ImportResolver(self.root, self.source_config.jpaths)
@@ -23,8 +23,8 @@ class TestImportResolver(FakeWorkspaceTestCase):
     def assertNotResolved(
         self,
         *,
-        importer: str | Path,
-        importee: str | Path,
+        importer: str,
+        importee: str,
     ):
         __tracebackhide__ = True
         self.assertResolved(importer=importer, importee=importee, resolved=None)
@@ -220,7 +220,6 @@ class TestImportResolver(FakeWorkspaceTestCase):
             self.dir("d2/d3"),
             self.file("d2/f2.libsonnet"),
             self.file("j1/f2.libsonnet"),
-            self.dir("j2"),
             self.symlink("j2/link", "d2/d3"),
         )
 

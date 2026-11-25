@@ -22,7 +22,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
 
         for point in points:
             obtained = provider.serve(doc.document, point.to_position())
-            expected = [L.Location(doc.uri, var.span.to_range())]
+            expected = [var.span.to_location(doc.uri)]
             self.assertCountEqual(obtained, expected)
 
     def assertFieldDefined(
@@ -48,7 +48,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
             self.assertCountEqual(obtained, expected)
 
     def test_local(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\
@@ -65,7 +65,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
         self.assertVarDefined(index, t, y, t.at(5).end)
 
     def test_field(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\
@@ -79,7 +79,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
         self.assertFieldDefined(index, t, f, t.at(2).end)
 
     def test_nested_field(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\
@@ -93,7 +93,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
         self.assertFieldDefined(index, t, f2, t.at(2).end)
 
     def test_field_in_nested_local(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\
@@ -107,7 +107,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
         self.assertFieldDefined(index, t, f, t.at(2).end)
 
     def test_returned_field(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\
@@ -121,7 +121,7 @@ class TestDefinitionProvider(FakeWorkspaceTestCase):
         self.assertFieldDefined(index, t, f, t.at(2).end)
 
     def test_field_multi_defs(self):
-        index = self.index_workspace(
+        index = self.workspace(
             t := self.fake_document(
                 "f.jsonnet",
                 """\

@@ -30,7 +30,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSetEqual(obtained, discovered)
 
     def test_case_insensitive(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("F1.Jsonnet"),
             self.file("f2.JSONNET"),
             self.file("F3.jsonnet"),
@@ -44,11 +44,11 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         )
 
     def test_extension_with_dot(self):
-        index = self.index_workspace(self.file("f.jsonnet.TEMPLATE"))
+        index = self.workspace(self.file("f.jsonnet.TEMPLATE"))
         self.assertSourcesDiscovered(index, "f.jsonnet.TEMPLATE")
 
     def test_data_files(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("f1.jsonnet"),
             self.file("f2.json"),
         )
@@ -57,7 +57,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
 
     def test_nested_excluded_folders(self):
         with self.exclude("excluded/"):
-            index = self.index_workspace(
+            index = self.workspace(
                 self.file("f.jsonnet"),
                 self.file("excluded/f.jsonnet"),
                 self.file("d/f.jsonnet"),
@@ -71,7 +71,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
             )
 
     def test_hidden_files(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("f.jsonnet"),
             self.file(".f.jsonnet"),
             self.file(".hidden"),
@@ -80,7 +80,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSourcesDiscovered(index, "f.jsonnet")
 
     def test_nested_hidden_folders(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("f.jsonnet"),
             self.file(".hidden/f.jsonnet"),
             self.file("d/f.jsonnet"),
@@ -94,7 +94,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         )
 
     def test_no_symlinked_files(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("d/f.jsonnet"),
             self.symlink("link.jsonnet", "d/f.jsonnet"),
         )
@@ -102,7 +102,7 @@ class TestSourceDiscovery(FakeWorkspaceTestCase):
         self.assertSourcesDiscovered(index, "d/f.jsonnet")
 
     def test_no_symlinked_dirs(self):
-        index = self.index_workspace(
+        index = self.workspace(
             self.file("d1/f.jsonnet"),
             self.symlink("d2/d3", "d1"),
         )

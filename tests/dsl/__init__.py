@@ -5,6 +5,7 @@ from functools import cached_property
 from itertools import accumulate, chain
 from pathlib import Path
 from textwrap import dedent
+from typing import Protocol, runtime_checkable
 
 import tree_sitter as ts
 from rich.text import Text
@@ -15,24 +16,43 @@ from joule.syntax.trees import Array
 from tests.dsl import span_markers
 
 
-@D.dataclass(frozen=True)
-class FsEntry:
+@runtime_checkable
+class Provisionable(Protocol):
+    @property
+    def path(self) -> Path: ...
+
+    def provision(self) -> None: ...
+
+
+@D.dataclass(frozen=True, slots=True)
+class File:
     path: Path
-
-
-@D.dataclass(frozen=True)
-class FileEntry(FsEntry):
     text: str = ""
 
+    def provision(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(self.text) if len(self.text) > 0 else self.path.touch()
 
-@D.dataclass(frozen=True)
-class DirEntry(FsEntry):
-    pass
+
+@D.dataclass(frozen=True, slots=True)
+class Dir:
+    path: Path
+
+    def provision(self) -> None:
+        self.path.mkdir(parents=True, exist_ok=True)
 
 
-@D.dataclass(frozen=True)
-class SymLinkEntry(FsEntry):
+@D.dataclass(frozen=True, slots=True)
+class Symlink:
+    path: Path
     target: Path
+
+    def provision(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.target.exists():
+            self.path.symlink_to(self.target, target_is_directory=self.target.is_dir())
+        else:
+            raise FileNotFoundError()
 
 
 class SpanDSL(T.Span):
@@ -40,7 +60,7 @@ class SpanDSL(T.Span):
         return super().__repr__()
 
     @property
-    def dolloar(self) -> T.Dollar:
+    def dollar(self) -> T.Dollar:
         return T.Dollar(self)
 
     @property
@@ -150,15 +170,13 @@ class FakeDocument(LineMap):
     cst: ts.Tree
 
     def __init__(self, text: str, uri: str) -> None:
-        text = dedent(text)
-        text, self.spans = span_markers.parse(text)
+        text, self.spans = span_markers.parse(dedent(text))
         super().__init__(text)
         self.uri = uri
         self.cst = T.parse(text)
 
-    @cached_property
-    def fs_entry(self) -> FileEntry:
-        return FileEntry(self.path, self.text)
+    def provision(self) -> None:
+        File(self.path, self.text).provision()
 
     @cached_property
     def document(self) -> T.Document:

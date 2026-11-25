@@ -1,3 +1,4 @@
+import errno
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -10,16 +11,18 @@ from joule.analysis.imports import ImportGraph
 from joule.config import SourcesConfig
 from joule.syntax.trees import Tree
 from joule.workspace import FolderIndex
-from tests.dsl import DirEntry, FakeDocument, FileEntry, FsEntry, SymLinkEntry
+from tests.dsl import (
+    Dir,
+    FakeDocument,
+    File,
+    Provisionable,
+    Symlink,
+)
 
 
 class TreeTestCase(unittest.TestCase):
     @override
     def assertEqual(self, first, second, msg=None):
-        # Handle `Tree`s here, not with `addTypeEqualityFunc`. `unittest` uses a type
-        # equality function only if both arguments have exactly the same type, and each
-        # node type is a different subclass of `Tree`. Thus two trees whose roots have
-        # different types do not get the diff.
         if isinstance(first, Tree) and isinstance(second, Tree):
             if first != second:
                 diff = ocdiff.console_diff(first.pretty, second.pretty)
@@ -35,7 +38,8 @@ class TreeTestCase(unittest.TestCase):
 
 
 class FakeDocumentTestCase(TreeTestCase):
-    fake_uri = "file:///tmp/test.jsonnet"
+    # The URI Neovim picks for documents in unsaved buffer.
+    fake_uri = "file://"
 
     def fake_document(self, source: str) -> FakeDocument:
         return FakeDocument(source, uri=self.fake_uri)
@@ -75,8 +79,8 @@ class FakeWorkspaceTestCase(TreeTestCase):
         self,
         index: FolderIndex,
         *,
-        importer: FileEntry,
-        importees: list[FileEntry],
+        importer: File,
+        importees: list[File],
     ):
         __tracebackhide__ = True
 
@@ -98,37 +102,35 @@ class FakeWorkspaceTestCase(TreeTestCase):
         for path in paths:
             self.root.joinpath(path).unlink()
 
-    def file(self, path: str | Path, text: str = "") -> FileEntry:
-        return FileEntry(self.root.joinpath(path), text)
+    def file(self, path: str | Path, text: str = "") -> File:
+        return File(self.root.joinpath(path), text)
 
-    def dir(self, path: str | Path) -> DirEntry:
-        return DirEntry(self.root.joinpath(path))
+    def dir(self, path: str | Path) -> Dir:
+        return Dir(self.root.joinpath(path))
 
-    def symlink(self, link: str | Path, target: str | Path) -> SymLinkEntry:
-        return SymLinkEntry(
+    def symlink(self, link: str | Path, target: str | Path) -> Symlink:
+        return Symlink(
             self.root.joinpath(link),
             self.root.joinpath(target),
         )
 
-    def provision(self, *entries: FsEntry):
+    def provision(self, *entries: Provisionable):
         for entry in entries:
+            if not entry.path.is_relative_to(self.sandbox_root):
+                raise ValueError(
+                    f"{entry.path} is outside the test sandbox {self.sandbox_root}"
+                )
+
             match entry:
-                case DirEntry():
-                    entry.path.mkdir(parents=True, exist_ok=True)
-
-                case FileEntry(text=text):
-                    entry.path.parent.mkdir(parents=True, exist_ok=True)
-                    entry.path.write_text(text)
-
-                case SymLinkEntry():
-                    entry.path.parent.mkdir(parents=True, exist_ok=True)
-                    entry.path.symlink_to(
-                        entry.target,
-                        target_is_directory=entry.target.is_dir(),
+                case Symlink() if not entry.target.exists():
+                    raise FileNotFoundError(
+                        errno.ENOENT,
+                        "Symlink target not found",
+                        entry.target.as_posix(),
                     )
 
                 case _:
-                    raise TypeError(f"Unsupported layout entry: {entry!r}")
+                    entry.provision()
 
     @contextmanager
     def update_source_config(self, **kwargs):
@@ -163,11 +165,6 @@ class FakeWorkspaceTestCase(TreeTestCase):
     def fake_document(self, path: str, source: str) -> FakeDocument:
         return FakeDocument(source, self.root.joinpath(path).as_uri())
 
-    def index_workspace(self, *entries: FsEntry | FakeDocument) -> FolderIndex:
-        entries = tuple(
-            entry.fs_entry if isinstance(entry, FakeDocument) else entry
-            for entry in entries
-        )
-
+    def workspace(self, *entries: Provisionable) -> FolderIndex:
         self.provision(*entries)
         return FolderIndex(self._build_import_graph())
