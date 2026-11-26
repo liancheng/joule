@@ -7,7 +7,6 @@ from itertools import accumulate, chain
 from pathlib import Path
 from textwrap import dedent
 
-import tree_sitter as ts
 from rich.text import Text
 
 from joule.analysis.scopes import analyze
@@ -152,7 +151,7 @@ class FakeDocument(Provisionable):
         File(self.path, self.text).provision()
 
     @cached_property
-    def line_offsets(self) -> list[int]:
+    def _line_offsets(self) -> list[int]:
         # Computes the character offset of the first character in each line, used for
         # conversions between 2D points and 1D offsets.
         #
@@ -163,12 +162,9 @@ class FakeDocument(Provisionable):
         return list(accumulate(chain([0], map(len, lines))))
 
     @cached_property
-    def cst(self) -> ts.Tree:
-        return T.parse(self.text)
-
-    @cached_property
     def document(self) -> T.Document:
-        doc = T.Tree.from_cst(self.cst.root_node).to(T.Document)
+        cst = T.parse(self.text)
+        doc = T.Tree.from_cst(cst.root_node).to(T.Document)
         analyze(doc)
         doc.uri = self.uri
         return doc
@@ -184,17 +180,14 @@ class FakeDocument(Provisionable):
     @cached_property
     def span(self) -> SpanDSL:
         return SpanDSL.from_points(
-            self.point_of(0),
-            self.point_of(len(self.text)),
+            self._point_of(0),
+            self._point_of(len(self.text)),
         )
 
-    def point_of(self, offset: int) -> T.Point:
-        line = bisect.bisect_right(self.line_offsets, offset) - 1
-        column = offset - self.line_offsets[line]
+    def _point_of(self, offset: int) -> T.Point:
+        line = bisect.bisect_right(self._line_offsets, offset) - 1
+        column = offset - self._line_offsets[line]
         return T.Point(line=line, column=column)
-
-    def offset_of(self, point: T.Point) -> int:
-        return self.line_offsets[point.line] + point.column
 
     def at(self, *marks: int) -> SpanDSL:
         merged_span = functools.reduce(
@@ -240,7 +233,7 @@ class FakeDocument(Provisionable):
         """
 
         def offset_of(pos: T.Point) -> int:
-            return self.line_offsets[pos.line] + pos.column
+            return self._line_offsets[pos.line] + pos.column
 
         if isinstance(spans, tuple):
             spans = [spans]
