@@ -1,11 +1,11 @@
 import bisect
 import dataclasses as D
 import functools
+from abc import ABC, abstractmethod
 from functools import cached_property
 from itertools import accumulate, chain
 from pathlib import Path
 from textwrap import dedent
-from typing import Protocol, runtime_checkable
 
 import tree_sitter as ts
 from rich.text import Text
@@ -16,16 +16,15 @@ from joule.syntax.trees import Array
 from tests.dsl import span_markers
 
 
-@runtime_checkable
-class Provisionable(Protocol):
-    @property
-    def path(self) -> Path: ...
+class Provisionable(ABC):
+    path: Path
 
+    @abstractmethod
     def provision(self) -> None: ...
 
 
-@D.dataclass(frozen=True, slots=True)
-class File:
+@D.dataclass
+class File(Provisionable):
     path: Path
     text: str = ""
 
@@ -34,16 +33,16 @@ class File:
         self.path.write_text(self.text) if len(self.text) > 0 else self.path.touch()
 
 
-@D.dataclass(frozen=True, slots=True)
-class Dir:
+@D.dataclass
+class Dir(Provisionable):
     path: Path
 
     def provision(self) -> None:
         self.path.mkdir(parents=True, exist_ok=True)
 
 
-@D.dataclass(frozen=True, slots=True)
-class Symlink:
+@D.dataclass
+class Symlink(Provisionable):
     path: Path
     target: Path
 
@@ -140,43 +139,32 @@ def param(var: T.Id.Var, default: T.Expr | None = None) -> T.Param:
     return T.Param(span, var, default)
 
 
-class LineMap:
+class FakeDocument(Provisionable):
+    uri: str
     text: str
-    line_offsets: list[int]
+    spans: dict[int, T.Span]
 
-    def __init__(self, text: str) -> None:
-        self.text = text
+    def __init__(self, text: str, uri: str) -> None:
+        self.uri = uri
+        self.text, self.spans = span_markers.parse(dedent(text))
 
+    def provision(self) -> None:
+        File(self.path, self.text).provision()
+
+    @cached_property
+    def line_offsets(self) -> list[int]:
         # Computes the character offset of the first character in each line, used for
         # conversions between 2D points and 1D offsets.
         #
         # NOTE: An LSP range is a half-open intervals `[start, end)`. All text lines but
         # the last end with a newline. Adding an EOF "\0" helps simplify computing the
         # line offsets array.
-        lines = (text + "\0").splitlines(keepends=True)
-        self.line_offsets: list[int] = list(accumulate(chain([0], map(len, lines))))
+        lines = (self.text + "\0").splitlines(keepends=True)
+        return list(accumulate(chain([0], map(len, lines))))
 
-    def point_of(self, offset: int) -> T.Point:
-        line = bisect.bisect_right(self.line_offsets, offset) - 1
-        column = offset - self.line_offsets[line]
-        return T.Point(line=line, column=column)
-
-    def offset_of(self, point: T.Point) -> int:
-        return self.line_offsets[point.line] + point.column
-
-
-class FakeDocument(LineMap):
-    uri: str
-    cst: ts.Tree
-
-    def __init__(self, text: str, uri: str) -> None:
-        text, self.spans = span_markers.parse(dedent(text))
-        super().__init__(text)
-        self.uri = uri
-        self.cst = T.parse(text)
-
-    def provision(self) -> None:
-        File(self.path, self.text).provision()
+    @cached_property
+    def cst(self) -> ts.Tree:
+        return T.parse(self.text)
 
     @cached_property
     def document(self) -> T.Document:
@@ -199,6 +187,14 @@ class FakeDocument(LineMap):
             self.point_of(0),
             self.point_of(len(self.text)),
         )
+
+    def point_of(self, offset: int) -> T.Point:
+        line = bisect.bisect_right(self.line_offsets, offset) - 1
+        column = offset - self.line_offsets[line]
+        return T.Point(line=line, column=column)
+
+    def offset_of(self, point: T.Point) -> int:
+        return self.line_offsets[point.line] + point.column
 
     def at(self, *marks: int) -> SpanDSL:
         merged_span = functools.reduce(
